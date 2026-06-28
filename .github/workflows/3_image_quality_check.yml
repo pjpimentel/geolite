@@ -1,0 +1,86 @@
+name: image-quality-check
+
+on:
+  # chamado em sequencia (workflow_call) recebendo a imagem como artifact
+  # (`docker save`) — valida antes do push. `runner` permite rodar na arch nativa.
+  workflow_call:
+    inputs:
+      image:
+        description: docker image tag to run the checks against
+        required: true
+        type: string
+      version:
+        description: versao autorizada (do pre_release_check) pra validar contra `geolite --version`; vazio pula o check
+        required: false
+        default: ''
+        type: string
+      artifact:
+        description: optional artifact name with a `docker save` tarball to load before checking
+        required: false
+        default: ''
+        type: string
+      runner:
+        description: runner pra rodar os checks (use a arch nativa da imagem)
+        required: false
+        default: ubuntu-latest
+        type: string
+  # disparavel individualmente com uma tag ja publicada (faz pull e checa).
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'docker image tag (ex.: pjpimentel/geolite:latest)'
+        required: true
+        type: string
+      version:
+        description: 'versao esperada pra validar contra `geolite --version` (vazio pula o check)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  # checks sequenciais num job so: carrega a imagem uma vez e roda os steps em
+  # ordem (version > size > maldives). step que falha aborta os seguintes
+  # (`if: success()` implicito); o step de version e pulado quando version e
+  # vazia (PR) sem afetar os demais.
+  quality_check:
+    name: image quality check
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+    steps:
+      - name: download image artifact
+        if: inputs.artifact != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact }}
+          path: image
+      - name: load image
+        if: inputs.artifact != ''
+        run: docker load -i image/image.tar
+      - name: pull image
+        if: inputs.artifact == ''
+        run: docker pull ${{ inputs.image }}
+
+      - name: 0, validate --version matches release version
+        if: inputs.version != ''
+        run: |
+          expected="${{ inputs.version }}"
+          actual=$(docker run --rm ${{ inputs.image }} --version | awk '{print $NF}')
+          echo "expected=$expected actual=$actual"
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::version mismatch (release=$expected, image=$actual)"
+            exit 1
+          fi
+
+      - name: 1, ensure image under 20mb
+        run: |
+          limit=$((20 * 1024 * 1024))
+          size=$(docker image inspect ${{ inputs.image }} --format '{{.Size}}')
+          echo "image size: $((size / 1024 / 1024)) MiB ($size bytes), limit: $((limit / 1024 / 1024)) MiB"
+          if [ "$size" -ge "$limit" ]; then
+            echo "::error::image ${{ inputs.image }} is $((size / 1024 / 1024)) MiB, exceeds 20 MiB limit"
+            exit 1
+          fi
+
+      - name: 2, validate build maldives
+        run: docker run --rm ${{ inputs.image }} build maldives

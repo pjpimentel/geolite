@@ -1,0 +1,10 @@
+data
+test_data
+migrations
+node_modules
+
+
+# Added by cargo
+
+/target
+tmp

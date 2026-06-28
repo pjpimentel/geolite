@@ -1,0 +1,34 @@
+name: publish-release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'versao a publicar (ex.: 0.0.1)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # release nao anexa binario: a distribuicao eh via imagem docker (docker
+      # hub) e `cargo install` (crates.io). roda por ultimo, depois do push da
+      # imagem e do cargo publish, entao as notas apontam pra algo que ja existe.
+      - name: github release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          generate_release_notes: true
+          body: |
+            ## docker
+
+            ```
+            docker run --rm pjpimentel/geolite:${{ inputs.version }} --version
+            ```
+
+            imagem: https://hub.docker.com/r/pjpimentel/geolite

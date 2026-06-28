@@ -1,0 +1,112 @@
+name: build
+
+# builda UMA arquitetura (no runner nativo passado pelo caller, sem qemu):
+# docker build -> build_quality_check -> push. no push (release), empurra a
+# imagem que passou no QC pro ghcr com a tag versionada por arch
+# (ghcr.io/pjpimentel/geolite:<version>-<arch>). o distribute monta o manifest
+# multi-arch no docker hub a partir dessas tags.
+on:
+  workflow_call:
+    inputs:
+      arch:
+        description: arquitetura unica (amd64 | arm64)
+        required: true
+        type: string
+      runner:
+        description: 'runner nativo pra essa arch (ex.: ubuntu-latest, ubuntu-24.04-arm)'
+        required: true
+        type: string
+      version:
+        description: versao autorizada (do pre_release_check) usada na tag/label; so no push
+        required: false
+        default: ''
+        type: string
+      push:
+        description: empurra a tag versionada por arch pro ghcr (release)
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build_docker:
+    name: docker build (${{ inputs.arch }})
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@v3
+
+      # build nativo da arch, carregado no daemon e salvo como artifact pro
+      # build_quality_check e pro push (mesma imagem QC'd, sem rebuild).
+      - name: build (load)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/${{ inputs.arch }}
+          load: true
+          tags: geolite:build
+          labels: |
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ inputs.arch }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.arch }}
+
+      - name: save image (qc artifact)
+        run: docker save geolite:build -o image.tar
+
+      - name: upload qc artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: geolite-image-${{ inputs.arch }}
+          path: image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  build_quality_check:
+    needs: build_docker
+    uses: ./.github/workflows/3_image_quality_check.yml
+    with:
+      image: geolite:build
+      artifact: geolite-image-${{ inputs.arch }}
+      runner: ${{ inputs.runner }}
+      version: ${{ inputs.version }}
+
+  push:
+    name: push to ghcr (${{ inputs.arch }})
+    needs: build_quality_check
+    if: inputs.push
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: download image
+        uses: actions/download-artifact@v8
+        with:
+          name: geolite-image-${{ inputs.arch }}
+          path: image
+
+      - name: load image
+        run: docker load -i image/image.tar
+
+      - name: login to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # empurra exatamente a imagem que passou no quality_check, com a tag
+      # versionada por arch. sem rebuild, sem buildx.
+      - name: tag and push
+        env:
+          TAG: ghcr.io/pjpimentel/geolite:${{ inputs.version }}-${{ inputs.arch }}
+        run: |
+          docker tag geolite:build "$TAG"
+          docker push "$TAG"

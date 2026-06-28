@@ -1,0 +1,69 @@
+name: distribute
+
+# distribuicao pura: nao builda nem re-QC. monta o manifest multi-arch SO no
+# docker hub (`:<version>` + `:latest`) a partir das tags por-arch que o 2_build
+# empurrou pro ghcr (`:<version>-amd64` / `:<version>-arm64`). imagetools copia
+# blobs cross-registry; sem build, sem skopeo.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: 'versao a publicar (ex.: 0.0.1)'
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  docker:
+    name: publish to docker hub (multi-arch)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: setup buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: login to ghcr
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: login to docker hub
+        uses: docker/login-action@v3
+        with:
+          username: pjpimentel
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      # monta o manifest multi-arch no docker hub a partir das tags por-arch do ghcr.
+      - name: publish manifest (overwrite tags)
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          docker buildx imagetools create \
+            --tag pjpimentel/geolite:$VERSION \
+            --tag pjpimentel/geolite:latest \
+            ghcr.io/pjpimentel/geolite:$VERSION-amd64 \
+            ghcr.io/pjpimentel/geolite:$VERSION-arm64
+
+  crates:
+    name: crates.io
+    runs-on: ubuntu-latest
+    if: false
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+
+      - name: setup rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked

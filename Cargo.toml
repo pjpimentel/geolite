@@ -1,0 +1,45 @@
+[package]
+name = "geolite"
+version = "0.0.1"
+edition = "2024"
+description = "open source geocode solution"
+license = "AGPL-3.0-only"
+authors = ["Pedro José Pimentel Da Silva <pedro@pimentel.co>"]
+readme = "readme.md"
+repository = "https://github.com/pjpimentel/geolite"
+homepage = "https://geolite.pimentel.co"
+keywords = ["geocode", "openstreetmap", "osm"]
+categories = ["command-line-utilities", "science::geo"]
+include = ["src/**/*", "readme.md", "LICENSE"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "3", default-features = false, features = ["native-tls", "gzip"] }
+md5 = "0.7"
+prost = "0.13"
+flate2 = "1"
+rusqlite = { version = "0.32", features = ["bundled"] }
+indicatif = "0.17"
+geo = "0.28"
+geozero = { version = "0.14", features = ["with-geo", "with-wkb"] }
+rstar = "0.12"
+tiny_http = "0.12"
+tantivy = "0.26.1"
+sysinfo = "0.38.4"
+utoipa = "5.5.0"
+
+[profile.dev]
+opt-level = 0
+debug = 0
+incremental = true
+codegen-units = 256
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

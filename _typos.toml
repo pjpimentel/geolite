@@ -1,0 +1,42 @@
+[files]
+extend-exclude = ["tasks.md"]
+
+[default.extend-words]
+# portuguese words flagged as english misspellings
+algoritmos = "algoritmos"
+alternar = "alternar"
+argumentos = "argumentos"
+atual = "atual"
+candidata = "candidata"
+caracteres = "caracteres"
+cliente = "cliente"
+clientes = "clientes"
+comando = "comando"
+comandos = "comandos"
+conter = "conter"
+conveniente = "conveniente"
+correspondente = "correspondente"
+erro = "erro"
+exata = "exata"
+expressivos = "expressivos"
+frase = "frase"
+independente = "independente"
+inicial = "inicial"
+leve = "leve"
+limite = "limite"
+momento = "momento"
+problemas = "problemas"
+relevante = "relevante"
+saem = "saem"
+sequencial = "sequencial"
+ser = "ser"
+sinal = "sinal"
+tema = "tema"
+termo = "termo"
+variantes = "variantes"
+
+# typos splits on digits, so `flate2` crate name becomes `flate` + `2`
+flate = "flate"
+
+# test fixture token
+seh = "seh"

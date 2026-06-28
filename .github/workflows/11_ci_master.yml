@@ -1,0 +1,96 @@
+name: try_publish
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  pre_release_check:
+    name: check release needed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.detect.outputs.version }}
+      needs_release: ${{ steps.detect.outputs.needs_release }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+      - name: detect release needed
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "needs_release=false" >> "$GITHUB_OUTPUT"
+            echo "release v$version ja existe; build, distribute e release serao ignorados"
+          else
+            echo "needs_release=true" >> "$GITHUB_OUTPUT"
+            echo "release v$version nao existe; vai buildar, distribuir e liberar"
+          fi
+      - name: fail if the version is already on crates.io
+        if: steps.detect.outputs.needs_release == 'true'
+        env:
+          VERSION: ${{ steps.detect.outputs.version }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -A "geolite-release (github actions)" \
+            "https://crates.io/api/v1/crates/geolite/$VERSION")
+          if [ "$code" = "200" ]; then
+            echo "::error::geolite v$VERSION ja existe no crates.io — suba a versao no Cargo.toml"
+            exit 1
+          fi
+          echo "geolite v$VERSION ainda nao esta no crates.io; seguindo"
+
+  pre_build_quality_check:
+    needs: pre_release_check
+    if: needs.pre_release_check.outputs.needs_release == 'true'
+    uses: ./.github/workflows/1_pre_build_quality_check.yml
+
+  # uma chamada do 2_build por arch (matrix), cada uma no runner nativo. cada
+  # 2_build faz internamente docker build -> build_quality_check -> push.
+  build:
+    needs: [pre_release_check, pre_build_quality_check]
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    uses: ./.github/workflows/2_build.yml
+    with:
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
+      version: ${{ needs.pre_release_check.outputs.version }}
+      push: true
+
+  distribute:
+    needs: [pre_release_check, build]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/7_distribute.yml
+    with:
+      version: ${{ needs.pre_release_check.outputs.version }}
+    secrets: inherit
+
+  release:
+    needs: [pre_release_check, distribute]
+    uses: ./.github/workflows/8_publish_release.yml
+    with:
+      version: ${{ needs.pre_release_check.outputs.version }}
+    secrets: inherit

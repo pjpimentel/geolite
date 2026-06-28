@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoLite</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root {
+    --bg:        oklch(0.985 0.004 230);
+    --bg-2:      oklch(0.975 0.006 230);
+    --panel:     oklch(0.995 0.003 230);
+    --ink:       oklch(0.18 0.012 255);
+    --ink-2:     oklch(0.38 0.010 255);
+    --mute:      oklch(0.62 0.012 255);
+    --line:      oklch(0.88 0.010 250);
+    --line-2:    oklch(0.92 0.008 250);
+    --hair:      oklch(0.82 0.010 250);
+    --cyan:      oklch(0.68 0.14 220);
+    --cyan-soft: oklch(0.94 0.035 220);
+    --cyan-ink:  oklch(0.42 0.14 230);
+    --ok:        oklch(0.72 0.12 160);
+    --shadow:    0 1px 0 oklch(0.90 0.01 250), 0 10px 30px -18px oklch(0.50 0.05 240 / 0.25);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  .page-outer {
+    min-height: 100vh;
+    display: grid;
+    place-items: start center;
+    padding: 0;
+  }
+  .page {
+    width: 100%;
+    max-width: 780px;
+    background: #ffffff;
+    border: 1px solid var(--line);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    overflow: hidden;
+    margin: 0 16px 24px;
+    box-shadow:
+      0 30px 80px -30px oklch(0.4 0.05 240 / 0.20),
+      0 10px 30px -20px oklch(0.4 0.05 240 / 0.12);
+  }
+  body.dark .page { background: oklch(0.22 0.013 252); }
+
+  /* top bar */
+  .topbar {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 24px;
+    padding: 0 16px;
+    height: 48px;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+    position: relative;
+  }
+  .topbar::after {
+    content: '';
+    position: absolute; left: 16px; right: 16px; bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan) 40%, var(--cyan) 60%, transparent);
+    opacity: .45;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .name {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.26em;
+  }
+  .iconbtn {
+    width: 28px; height: 28px;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--panel);
+    display: grid; place-items: center;
+    cursor: pointer;
+    color: var(--ink-2);
+    transition: border-color .12s, background .12s;
+  }
+  .iconbtn:hover { border-color: var(--hair); background: var(--bg-2); }
+
+  /* main */
+  .main { padding: 20px 20px 28px; }
+
+  /* search */
+  .search {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 6px 6px 6px 12px;
+    box-shadow: var(--shadow);
+    position: relative;
+  }
+  .search::before {
+    content: '';
+    position: absolute;
+    left: -1px; right: -1px; top: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan) 20%, var(--cyan) 80%, transparent);
+    opacity: .5;
+  }
+  .search .icon { color: var(--mute); flex-shrink: 0; }
+  .search input {
+    flex: 1;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-family: 'IBM Plex Sans', sans-serif;
+    font-size: 14px;
+    color: var(--ink);
+    padding: 10px 0;
+  }
+  .search input::placeholder { color: var(--mute); }
+  .search .btn-clear {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--mute);
+    padding: 0 4px;
+    font-family: 'JetBrains Mono', monospace;
+    display: none;
+    line-height: 1;
+    transition: color .12s;
+  }
+  .search .btn-clear:hover { color: var(--ink); }
+  .search .kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--mute);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 5px;
+    flex-shrink: 0;
+  }
+  .search .go {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    padding: 9px 16px;
+    background: transparent;
+    color: var(--cyan-ink);
+    border: 1px solid var(--cyan);
+    border-radius: 2px;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    flex-shrink: 0;
+    transition: background .12s;
+  }
+  .search .go:hover { background: var(--cyan-soft); }
+  .search .go .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); }
+
+  /* filters */
+  .filters {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 6px 10px;
+  }
+  .filter > label, .filter > .filter-name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mute);
+    flex-shrink: 0;
+  }
+  .filter input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11.5px;
+    color: var(--ink);
+    padding: 2px 0;
+  }
+  .filter input[type="text"]::placeholder { color: var(--mute); opacity: .7; }
+  .filter .levels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .filter .level {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--ink-2);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 3px 7px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+    user-select: none;
+  }
+  .filter .level:hover { border-color: var(--hair); background: var(--bg-2); }
+  .filter .level input { accent-color: var(--cyan-ink); margin: 0; cursor: pointer; }
+  .filter .level:has(input:checked) {
+    border-color: var(--cyan);
+    background: var(--cyan-soft);
+    color: var(--cyan-ink);
+  }
+
+  /* map */
+  .map-wrap {
+    margin-top: 18px;
+    position: relative;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-2);
+    box-shadow: var(--shadow);
+  }
+  .map-frame { height: 340px; position: relative; }
+  #map { position: absolute; inset: 0; background: var(--bg-2); }
+
+  .corner {
+    position: absolute;
+    width: 14px; height: 14px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .corner.tl { top: 0; left: 0;    border-top: 1px solid var(--cyan); border-left: 1px solid var(--cyan); }
+  .corner.tr { top: 0; right: 0;   border-top: 1px solid var(--cyan); border-right: 1px solid var(--cyan); }
+  .corner.bl { bottom: 0; left: 0; border-bottom: 1px solid var(--cyan); border-left: 1px solid var(--cyan); }
+  .corner.br { bottom: 0; right: 0; border-bottom: 1px solid var(--cyan); border-right: 1px solid var(--cyan); }
+
+  .crosshair {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 450;
+  }
+  .crosshair::before, .crosshair::after {
+    content: '';
+    position: absolute;
+    background: oklch(0.3 0.03 240 / 0.18);
+  }
+  .crosshair::before { left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-0.5px); }
+  .crosshair::after  { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-0.5px); }
+
+  .grid-overlay {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    z-index: 420;
+    background-image:
+      linear-gradient(to right, oklch(0.82 0.01 240 / 0.2) 1px, transparent 1px),
+      linear-gradient(to bottom, oklch(0.82 0.01 240 / 0.2) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mix-blend-mode: multiply;
+    opacity: .55;
+  }
+
+  .zoom-ctrl {
+    position: absolute;
+    left: 12px; top: 12px;
+    z-index: 550;
+    background: oklch(0.99 0.003 240 / 0.95);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .zoom-ctrl button {
+    display: block;
+    width: 28px; height: 28px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .zoom-ctrl button + button { border-top: 1px solid var(--line); }
+  .zoom-ctrl button:hover { background: var(--bg-2); color: var(--ink); }
+  .zoom-ctrl .level {
+    border-top: 1px solid var(--line);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    color: var(--mute);
+    padding: 3px 0;
+    text-align: center;
+    text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .map-hud {
+    position: absolute;
+    right: 12px; top: 12px;
+    z-index: 550;
+    display: flex; flex-direction: column; gap: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+  }
+  .hud-chip {
+    background: oklch(0.99 0.003 240 / 0.92);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 4px 8px;
+    color: var(--ink-2);
+    letter-spacing: 0.08em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .hud-chip .k { color: var(--mute); text-transform: uppercase; font-size: 9px; letter-spacing: 0.14em; }
+  .hud-chip .v { color: var(--ink); }
+
+  .scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 1px;
+    background: var(--cyan);
+    box-shadow: 0 0 16px 2px var(--cyan-soft);
+    z-index: 440;
+    animation: scan 2.2s ease-in-out;
+    pointer-events: none;
+    opacity: 0;
+    top: 0;
+  }
+  @keyframes scan {
+    0%   { top: 0;    opacity: 0; }
+    10%  { opacity: .6; }
+    90%  { opacity: .6; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  .map-hint {
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--mute);
+    margin-top: 8px;
+  }
+
+  .leaflet-control-zoom { display: none; }
+  .leaflet-container {
+    background: var(--bg-2) !important;
+    font-family: 'IBM Plex Sans', sans-serif;
+  }
+  .leaflet-control-attribution {
+    background: oklch(0.99 0.005 240 / 0.7) !important;
+    color: var(--mute) !important;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px !important;
+    letter-spacing: 0.05em;
+    border: 0 !important;
+    padding: 2px 6px !important;
+  }
+  .leaflet-control-attribution a { color: var(--cyan-ink) !important; }
+  .leaflet-tooltip {
+    background: oklch(0.99 0.003 240 / 0.95);
+    border: 1px solid var(--line);
+    color: var(--ink-2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    box-shadow: var(--shadow);
+    padding: 2px 7px;
+  }
+  .leaflet-tooltip-top::before { border-top-color: var(--line); }
+  body.dark .leaflet-tooltip { background: oklch(0.22 0.01 252 / 0.95); }
+
+  /* results */
+  .table-wrap {
+    margin-top: 20px;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    background: var(--panel);
+    overflow: hidden;
+    display: none;
+  }
+  .result {
+    display: grid;
+    grid-template-columns: 42px 1fr 90px 48px;
+    gap: 14px;
+    padding: 8px 14px;
+    align-items: center;
+    border-bottom: 1px solid var(--line-2);
+    cursor: pointer;
+    transition: background .12s;
+    position: relative;
+  }
+  .result:hover { background: var(--bg-2); }
+  .result.active {
+    background: linear-gradient(90deg, var(--cyan-soft), oklch(0.98 0.01 220 / 0.3));
+  }
+  .result.active::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 2px; background: var(--cyan-ink);
+  }
+  .result:last-child { border-bottom: 0; }
+
+  .rank {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--mute);
+    letter-spacing: 0.14em;
+    line-height: 1.2;
+    display: flex; align-items: baseline; gap: 3px;
+  }
+  .rank .n { color: var(--ink); font-size: 14px; }
+
+  .addr { line-height: 1.3; }
+  .addr .primary { color: var(--ink); font-weight: 500; }
+  .addr .secondary {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--mute);
+    margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .score { display: flex; align-items: center; justify-content: flex-end; }
+  .score .pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    text-align: right;
+  }
+
+  .row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+  .row-actions button {
+    width: 28px; height: 28px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    color: var(--ink-2);
+    border-radius: 2px;
+    cursor: pointer;
+    display: grid; place-items: center;
+    transition: all .12s;
+  }
+  .row-actions button:hover {
+    border-color: var(--cyan);
+    color: var(--cyan-ink);
+    background: var(--cyan-soft);
+  }
+
+  /* pins */
+  .pin {
+    width: 14px; height: 14px;
+    position: relative;
+    transform: translate(-50%, -50%);
+  }
+  .pin .ring {
+    position: absolute; inset: 0;
+    border: 1px solid var(--cyan);
+    border-radius: 50%;
+    background: oklch(0.99 0.01 240 / 0.85);
+    box-shadow: 0 0 0 3px oklch(0.94 0.03 220 / 0.7);
+  }
+  .pin .core {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--cyan);
+  }
+  .pin.primary .ring {
+    border-color: var(--cyan-ink);
+    box-shadow: 0 0 0 3px oklch(0.92 0.05 220 / 0.9), 0 0 18px oklch(0.8 0.12 220 / 0.35);
+  }
+  .pin.primary .core { background: var(--cyan-ink); }
+  .pin.primary::before {
+    content: '';
+    position: absolute; inset: -7px;
+    border: 1px solid var(--cyan);
+    border-radius: 50%;
+    opacity: 0;
+    animation: ping 2.4s ease-out infinite;
+  }
+  @keyframes ping {
+    0%   { opacity: 0.7; transform: scale(0.5); }
+    70%  { opacity: 0;   transform: scale(1.4); }
+    100% { opacity: 0;   transform: scale(1.4); }
+  }
+  .pin.input .ring {
+    border-color: oklch(0.58 0.15 50);
+    box-shadow: 0 0 0 3px oklch(0.96 0.05 50 / 0.8);
+  }
+  .pin.input .core { background: oklch(0.58 0.15 50); }
+
+  /* dark mode */
+  body.dark {
+    --bg:        oklch(0.18 0.012 255);
+    --bg-2:      oklch(0.22 0.014 250);
+    --panel:     oklch(0.20 0.013 252);
+    --ink:       oklch(0.95 0.006 230);
+    --ink-2:     oklch(0.78 0.008 240);
+    --mute:      oklch(0.55 0.012 245);
+    --line:      oklch(0.30 0.014 248);
+    --line-2:    oklch(0.26 0.012 250);
+    --hair:      oklch(0.36 0.014 248);
+    --cyan-soft: oklch(0.28 0.05 220);
+    background: var(--bg);
+  }
+  body.dark .leaflet-container { background: var(--bg-2) !important; }
+  body.dark .leaflet-control-attribution { background: oklch(0.22 0.01 240 / 0.7) !important; }
+  body.dark .zoom-ctrl { background: oklch(0.22 0.01 252 / 0.95); }
+  body.dark .hud-chip   { background: oklch(0.22 0.01 252 / 0.92); }
+  body.dark .grid-overlay { mix-blend-mode: screen; opacity: .2; }
+</style>
+</head>
+<body>
+<div class="page-outer">
+<div class="page">
+
+  <div class="topbar">
+    <div class="brand">
+      <h1 class="name">Geolite</h1>
+    </div>
+    <div></div>
+    <div>
+      <button class="iconbtn" id="btn_theme" title="toggle theme">
+        <svg class="icon-sun" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.5 1.5M11.5 11.5L13 13M3 13l1.5-1.5M11.5 4.5L13 3"/></svg>
+        <svg class="icon-moon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" style="display:none"><path d="M13 9.5A6 6 0 016.5 3a5.5 5.5 0 000 11A6 6 0 0013 9.5z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="search">
+      <svg class="icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+        <circle cx="7" cy="7" r="5"/><path d="M11 11l3 3"/>
+      </svg>
+      <input id="search" placeholder="address or lat,lon…" autocomplete="off">
+      <button id="btn_clear" class="btn-clear">&#10005;</button>
+      <button class="go" id="btn_search"><span class="dot"></span>Resolve</button>
+    </div>
+
+    <div class="filters">
+      <div class="filter">
+        <label for="filter_bounding_wkt">bounding_wkt</label>
+        <input id="filter_bounding_wkt" type="text" placeholder="POLYGON((lon lat, lon lat, …))" autocomplete="off">
+      </div>
+      <div class="filter">
+        <span class="filter-name">last_admin_levels</span>
+        <div class="levels" id="filter_last_admin_levels">
+          <label class="level"><input type="checkbox" value="1">1 continent</label>
+          <label class="level"><input type="checkbox" value="2">2 country</label>
+          <label class="level"><input type="checkbox" value="3">3 region</label>
+          <label class="level"><input type="checkbox" value="4">4 state</label>
+          <label class="level"><input type="checkbox" value="5">5 district</label>
+          <label class="level"><input type="checkbox" value="6">6 county</label>
+          <label class="level"><input type="checkbox" value="7">7 municipality</label>
+          <label class="level"><input type="checkbox" value="8">8 city</label>
+          <label class="level"><input type="checkbox" value="9">9 locality</label>
+          <label class="level"><input type="checkbox" value="10">10 neighborhood</label>
+          <label class="level"><input type="checkbox" value="12">12 street</label>
+          <label class="level"><input type="checkbox" value="14">14 address</label>
+          <label class="level"><input type="checkbox" value="30">30 house_numbers</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="map-wrap">
+      <div class="map-frame">
+        <div id="map"></div>
+        <div class="grid-overlay"></div>
+        <div class="crosshair"></div>
+        <div class="scan-line" id="scan_line"></div>
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+        <div class="zoom-ctrl">
+          <button id="btn_zin">+</button>
+          <button id="btn_zout">−</button>
+          <div class="level" id="zoom_level">Z2</div>
+        </div>
+        <div class="map-hud">
+          <div class="hud-chip"><span class="k">BBOX</span><span class="v tnum mono" id="hud_bbox">—</span></div>
+          <div class="hud-chip"><span class="k">SCALE</span><span class="v tnum mono" id="hud_scale">—</span></div>
+          <div class="hud-chip"><span class="k">LAT</span><span class="v tnum mono" id="hud_lat">—</span></div>
+          <div class="hud-chip"><span class="k">LNG</span><span class="v tnum mono" id="hud_lng">—</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="map-hint">double-click the map to search</div>
+
+    <div class="table-wrap" id="results">
+      <div id="results_body"></div>
+    </div>
+  </div>
+
+
+</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+  const default_view = { center: [20, 0], zoom: 2 };
+
+  const map = L.map('map', {
+    zoomControl: false,
+    attributionControl: true,
+    worldCopyJump: false,
+    maxBounds: [[-90, -180], [90, 180]],
+    maxBoundsViscosity: 1.0,
+    doubleClickZoom: false,
+  }).setView(default_view.center, default_view.zoom);
+
+  const tile_light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    maxZoom: 19, noWrap: true,
+  });
+  const tile_light_labels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19, subdomains: 'abcd', opacity: 0.85,
+  });
+  const tile_dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    maxZoom: 19, noWrap: true,
+  });
+
+  const input_el        = document.getElementById('search');
+  const bounding_wkt_el      = document.getElementById('filter_bounding_wkt');
+  const last_admin_levels_el = document.getElementById('filter_last_admin_levels');
+  const level_checkboxes = Array.from(last_admin_levels_el.querySelectorAll('input[type="checkbox"]'));
+  const btn_clear       = document.getElementById('btn_clear');
+
+  function selected_admin_levels() {
+    return level_checkboxes
+      .filter(function (c) { return c.checked; })
+      .map(function (c) { return c.value; })
+      .join(',');
+  }
+  const results_el      = document.getElementById('results');
+  const results_body_el = document.getElementById('results_body');
+  const scan_el         = document.getElementById('scan_line');
+  const zoom_el         = document.getElementById('zoom_level');
+  const hud_lat         = document.getElementById('hud_lat');
+  const hud_lng         = document.getElementById('hud_lng');
+  const hud_bbox        = document.getElementById('hud_bbox');
+  const hud_scale       = document.getElementById('hud_scale');
+
+  let current_results = [];
+  let markers         = [];
+  let input_marker    = null;
+  let input_coords    = null;
+  let selection_line  = null;
+  let selection_geoms = [];
+  let selected_index  = null;
+
+  function is_coords(q) {
+    const parts = q.split(',').map(Number);
+    return parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]);
+  }
+
+  function fmt_coords(lat, lon) {
+    return lat.toFixed(5) + ', ' + lon.toFixed(5);
+  }
+
+  function update_hud_bbox_scale() {
+    const z = map.getZoom();
+    const b = map.getBounds();
+    const lat_span = Math.abs(b.getNorth() - b.getSouth());
+    const lng_span = Math.abs(b.getEast() - b.getWest());
+    const km2 = (lat_span * 111.32) * (lng_span * 111.32 * Math.cos(map.getCenter().lat * Math.PI / 180));
+    if (km2 >= 1000) {
+      hud_bbox.textContent = (km2 / 1000).toFixed(0) + ' Mm²';
+    } else if (km2 >= 1) {
+      hud_bbox.textContent = km2.toFixed(0) + ' km²';
+    } else {
+      hud_bbox.textContent = (km2 * 1000000).toFixed(0) + ' m²';
+    }
+    const scale_denom = Math.round(591657550.5 / Math.pow(2, z) / 96 * 2.54 / 100 * 1000) * 1000;
+    hud_scale.textContent = '1:' + scale_denom.toLocaleString('en-US');
+  }
+
+  function trigger_scan() {
+    scan_el.style.animation = 'none';
+    scan_el.offsetHeight;
+    scan_el.style.animation = '';
+  }
+
+  function clear_selection_line() {
+    if (selection_line) { map.removeLayer(selection_line); selection_line = null; }
+  }
+
+  function clear_selection_geoms() {
+    selection_geoms.forEach(function (l) { map.removeLayer(l); });
+    selection_geoms = [];
+  }
+
+  function clear_markers() {
+    markers.forEach(function (m) { map.removeLayer(m); });
+    markers = [];
+    if (input_marker) { map.removeLayer(input_marker); input_marker = null; }
+    clear_selection_line();
+    clear_selection_geoms();
+    input_coords = null;
+  }
+
+  function clear_all() {
+    input_el.value = '';
+    bounding_wkt_el.value = '';
+    level_checkboxes.forEach(function (c) { c.checked = false; });
+    btn_clear.style.display = 'none';
+    results_el.style.display = 'none';
+    results_body_el.innerHTML = '';
+    current_results = [];
+    selected_index = null;
+    clear_markers();
+    map.setView(default_view.center, default_view.zoom);
+    input_el.focus();
+  }
+
+  function pin_icon(primary) {
+    return L.divIcon({
+      className: '',
+      html: '<div class="pin ' + (primary ? 'primary' : '') + '"><div class="ring"></div><div class="core"></div></div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+    });
+  }
+
+  function input_pin_icon() {
+    return L.divIcon({
+      className: '',
+      html: '<div class="pin input"><div class="ring"></div><div class="core"></div></div>',
+      iconSize: [20, 20],
+      iconAnchor: [10, 10],
+    });
+  }
+
+  function add_result_markers(rows) {
+    rows.forEach(function (row, i) {
+      const m = L.marker([row.latitude, row.longitude], { icon: pin_icon(i === 0) }).addTo(map);
+      markers.push(m);
+    });
+  }
+
+  function update_markers(sel_i) {
+    markers.forEach(function (m, i) {
+      m.setIcon(pin_icon(i === sel_i));
+    });
+  }
+
+  function split_top(s) {
+    const out = [];
+    let depth = 0, start = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (c === '(') depth++;
+      else if (c === ')') depth--;
+      else if (c === ',' && depth === 0) { out.push(s.slice(start, i)); start = i + 1; }
+    }
+    out.push(s.slice(start));
+    return out;
+  }
+
+  function strip_parens(s) {
+    s = s.trim();
+    if (s[0] === '(') s = s.slice(1);
+    if (s[s.length - 1] === ')') s = s.slice(0, -1);
+    return s;
+  }
+
+  // wkt uses "x y" order = "lon lat", which is exactly geojson coordinate order
+  function wkt_coords(s) {
+    return split_top(s).map(function (pair) {
+      const xy = pair.trim().split(/\s+/).map(Number);
+      return [xy[0], xy[1]];
+    });
+  }
+
+  function wkt_rings(s) {
+    return split_top(s).map(function (r) { return wkt_coords(strip_parens(r)); });
+  }
+
+  function wkt_polys(s) {
+    return split_top(s).map(function (p) { return wkt_rings(strip_parens(p)); });
+  }
+
+  function parse_wkt(wkt) {
+    if (!wkt) return null;
+    const m = /^\s*([A-Za-z]+)\s*(.*)$/s.exec(wkt);
+    if (!m) return null;
+    const type = m[1].toUpperCase();
+    const body = m[2].trim();
+    if (body === '' || body.toUpperCase().indexOf('EMPTY') === 0) return null;
+    const inner = strip_parens(body);
+    switch (type) {
+      case 'POINT': {
+        const xy = inner.trim().split(/\s+/).map(Number);
+        return { type: 'Point', coordinates: [xy[0], xy[1]] };
+      }
+      case 'LINESTRING': return { type: 'LineString', coordinates: wkt_coords(inner) };
+      case 'MULTILINESTRING': return { type: 'MultiLineString', coordinates: wkt_rings(inner) };
+      case 'POLYGON': return { type: 'Polygon', coordinates: wkt_rings(inner) };
+      case 'MULTIPOLYGON': return { type: 'MultiPolygon', coordinates: wkt_polys(inner) };
+      default: return null;
+    }
+  }
+
+  function geom_style(geom, i, n, is_leaf) {
+    const is_area = geom.type === 'Polygon' || geom.type === 'MultiPolygon';
+    if (is_leaf) {
+      return is_area
+        ? { color: 'oklch(0.45 0.15 250)', weight: 2.5, opacity: 0.95, fillColor: 'oklch(0.55 0.15 240)', fillOpacity: 0.12, smoothFactor: 1.5 }
+        : { color: 'oklch(0.45 0.15 250)', weight: 4, opacity: 0.95, smoothFactor: 1.5 };
+    }
+    const t = n > 1 ? i / (n - 1) : 0;
+    return {
+      color: 'oklch(0.62 0.10 250)',
+      weight: 1 + t * 0.75,
+      opacity: 0.4 + t * 0.25,
+      fillColor: 'oklch(0.60 0.12 240)',
+      fillOpacity: is_area ? (0.03 + t * 0.05) : 0,
+      dashArray: '4 5',
+      smoothFactor: 2,
+    };
+  }
+
+  function draw_selection_geoms(row) {
+    clear_selection_geoms();
+    const levels = (row.admin_levels || []).filter(function (l) { return l.wkt; });
+    let leaf_layer = null;
+    levels.forEach(function (lvl, i) {
+      const geom = parse_wkt(lvl.wkt);
+      if (!geom) return;
+      const is_leaf = i === levels.length - 1;
+      const layer = L.geoJSON(geom, { style: geom_style(geom, i, levels.length, is_leaf) });
+      layer.bindTooltip(lvl.level + ' · ' + lvl.name, { sticky: true, direction: 'top' });
+      layer.addTo(map);
+      selection_geoms.push(layer);
+      if (is_leaf) leaf_layer = layer;
+    });
+    return leaf_layer;
+  }
+
+  function select_result(idx) {
+    const row = current_results[idx];
+    if (!row) return;
+    results_body_el.querySelectorAll('.result').forEach(function (x) { x.classList.remove('active'); });
+    const el = results_body_el.querySelector('.result[data-idx="' + idx + '"]');
+    selected_index = idx;
+    if (el) {
+      el.classList.add('active');
+      el.scrollIntoView({ block: 'nearest' });
+    }
+    update_markers(idx);
+    clear_selection_line();
+    if (input_coords) {
+      selection_line = L.polyline([input_coords, [row.latitude, row.longitude]], {
+        color: 'oklch(0.58 0.15 50)',
+        weight: 1.5,
+        dashArray: '5, 6',
+        opacity: 0.8,
+      }).addTo(map);
+    }
+    const leaf_layer = draw_selection_geoms(row);
+    if (leaf_layer) {
+      try { map.fitBounds(leaf_layer.getBounds(), { padding: [60, 60], maxZoom: 16 }); }
+      catch (_) { map.flyTo([row.latitude, row.longitude], 15, { duration: 0.6 }); }
+    } else {
+      map.flyTo([row.latitude, row.longitude], 15, { duration: 0.6 });
+    }
+  }
+
+  function deselect_result() {
+    selected_index = null;
+    results_body_el.querySelectorAll('.result').forEach(function (x) { x.classList.remove('active'); });
+    update_markers(null);
+    clear_selection_line();
+    clear_selection_geoms();
+    map.setView(default_view.center, default_view.zoom);
+  }
+
+  function render_results(rows, coords_mode) {
+    selected_index = null;
+    current_results = rows;
+
+    results_body_el.innerHTML = rows.map(function (row, i) {
+      const metric = coords_mode
+        ? (row.distance_km != null ? row.distance_km.toFixed(0) + ' m' : '—')
+        : (row.similarity != null ? (row.similarity * 100).toFixed(1) + '%' : '—');
+      return '<div class="result" data-idx="' + i + '">'
+        + '<div class="rank">#<span class="n">' + String(i + 1).padStart(2, '0') + '</span></div>'
+        + '<div class="addr">'
+        +   '<div class="primary">' + row.address + '</div>'
+        +   '<div class="secondary">' + fmt_coords(row.latitude, row.longitude) + '</div>'
+        + '</div>'
+        + '<div class="score"><div class="pct">' + metric + '</div></div>'
+        + '<div class="row-actions">'
+        +   '<button title="copy" data-copy="' + row.address + '">'
+        +     '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="8" height="10" rx="1"/><path d="M5 3V2a1 1 0 011-1h6a1 1 0 011 1v9"/></svg>'
+        +   '</button>'
+        + '</div>'
+        + '</div>';
+    }).join('');
+
+    results_body_el.querySelectorAll('.result').forEach(function (el) {
+      el.addEventListener('click', function () {
+        const idx = +el.dataset.idx;
+        if (selected_index === idx) {
+          deselect_result();
+        } else {
+          select_result(idx);
+        }
+      });
+
+      const copy_btn = el.querySelector('[data-copy]');
+      if (copy_btn) {
+        copy_btn.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(copy_btn.dataset.copy).catch(function () {});
+          }
+        });
+      }
+    });
+
+    results_el.style.display = rows.length > 0 ? 'block' : 'none';
+  }
+
+  function map_match(match) {
+    return {
+      address: match.friendly_name,
+      latitude: match.latitude,
+      longitude: match.longitude,
+      distance_km: match.coordinates_distance_in_meters ?? null,
+      similarity: match.similarity,
+      admin_levels: match.admin_levels || [],
+    };
+  }
+
+  async function do_query(q) {
+    trigger_scan();
+    const coords_mode = is_coords(q);
+    input_el.disabled = true;
+    btn_clear.style.display = 'none';
+
+    try {
+      let url = '/geocode?query=' + encodeURIComponent(q);
+      const bounding_wkt = bounding_wkt_el.value.trim();
+      const last_admin_levels = selected_admin_levels();
+      if (bounding_wkt) { url += '&bounding_wkt=' + encodeURIComponent(bounding_wkt); }
+      if (last_admin_levels) { url += '&last_admin_levels=' + encodeURIComponent(last_admin_levels); }
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok) { return; }
+      const rows = (data?.matches ?? []).map(map_match);
+
+      clear_markers();
+
+      if (coords_mode) {
+        const parts = q.split(',').map(Number);
+        input_coords = [parts[0], parts[1]];
+        input_marker = L.marker(input_coords, { icon: input_pin_icon() }).addTo(map);
+      }
+
+      add_result_markers(rows);
+      render_results(rows, coords_mode);
+
+      if (rows.length > 0) {
+        select_result(0);
+      }
+    } catch (_) {
+    } finally {
+      input_el.disabled = false;
+      btn_clear.style.display = '';
+      input_el.focus();
+    }
+  }
+
+  function get_params() { return new URLSearchParams(window.location.search); }
+
+  function set_param(key, value) {
+    const params = get_params();
+    value ? params.set(key, value) : params.delete(key);
+    const qs = params.toString();
+    history.replaceState(null, '', qs ? '?' + qs : window.location.pathname);
+  }
+
+  function set_filter_params() {
+    set_param('bounding_wkt', bounding_wkt_el.value.trim());
+    set_param('last_admin_levels', selected_admin_levels());
+  }
+
+  const btn_theme = document.getElementById('btn_theme');
+  const icon_sun  = btn_theme.querySelector('.icon-sun');
+  const icon_moon = btn_theme.querySelector('.icon-moon');
+
+  function apply_theme(theme) {
+    const dark = theme === 'dark';
+    document.body.classList.toggle('dark', dark);
+    icon_sun.style.display  = dark ? 'none' : '';
+    icon_moon.style.display = dark ? '' : 'none';
+    if (dark) {
+      tile_light.remove();
+      tile_light_labels.remove();
+      tile_dark.addTo(map);
+    } else {
+      tile_dark.remove();
+      tile_light.addTo(map);
+      tile_light_labels.addTo(map);
+    }
+  }
+
+  const initial_theme = get_params().get('theme') ?? 'light';
+  apply_theme(initial_theme);
+  set_param('theme', initial_theme);
+
+  btn_theme.addEventListener('click', function () {
+    const next = document.body.classList.contains('dark') ? 'light' : 'dark';
+    apply_theme(next);
+    set_param('theme', next);
+  });
+
+  document.getElementById('btn_zin').addEventListener('click', function () { map.zoomIn(); });
+  document.getElementById('btn_zout').addEventListener('click', function () { map.zoomOut(); });
+
+  map.on('zoomend moveend', function () {
+    zoom_el.textContent = 'Z' + map.getZoom();
+    update_hud_bbox_scale();
+  });
+  zoom_el.textContent = 'Z' + map.getZoom();
+  update_hud_bbox_scale();
+
+  map.on('mousemove', function (e) {
+    hud_lat.textContent = e.latlng.lat.toFixed(5);
+    hud_lng.textContent = e.latlng.lng.toFixed(5);
+  });
+
+  btn_clear.addEventListener('click', function () {
+    set_param('q', null);
+    set_param('bounding_wkt', null);
+    set_param('last_admin_levels', null);
+    clear_all();
+  });
+
+  input_el.addEventListener('input', function () {
+    btn_clear.style.display = input_el.value ? '' : 'none';
+  });
+
+  input_el.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    const q = input_el.value.trim();
+    if (!q) return;
+    set_param('q', q);
+    set_filter_params();
+    do_query(q);
+  });
+
+  document.getElementById('btn_search').addEventListener('click', function () {
+    const q = input_el.value.trim();
+    if (!q) return;
+    set_param('q', q);
+    set_filter_params();
+    do_query(q);
+  });
+
+  map.on('dblclick', function (e) {
+    e.originalEvent.preventDefault();
+    const q = e.latlng.lat.toFixed(6) + ',' + e.latlng.lng.toFixed(6);
+    input_el.value = q;
+    btn_clear.style.display = '';
+    set_param('q', q);
+    set_filter_params();
+    do_query(q);
+  });
+
+  window.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      input_el.focus();
+      input_el.select();
+    }
+  });
+
+  const initial_bounding_wkt = get_params().get('bounding_wkt');
+  if (initial_bounding_wkt) { bounding_wkt_el.value = initial_bounding_wkt; }
+  const initial_last_admin_levels = get_params().get('last_admin_levels');
+  if (initial_last_admin_levels) {
+    const initial_levels = initial_last_admin_levels.split(',').map(function (s) { return s.trim(); });
+    level_checkboxes.forEach(function (c) {
+      c.checked = initial_levels.indexOf(c.value) !== -1;
+    });
+  }
+
+  const initial_q = get_params().get('q');
+  if (initial_q) {
+    input_el.value = initial_q;
+    btn_clear.style.display = '';
+    do_query(initial_q);
+  }
+})();
+</script>
+</body>
+</html>
