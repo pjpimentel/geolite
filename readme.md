@@ -39,11 +39,11 @@ $ geolite --version
     1. [index](src/index/readme.md)
     1. [optimize](src/optimize/readme.md)
     1. [query](src/query/readme.md)
-    1. [cli](src/cli/readme.md)
+    1. [cli](src/cli/)
     1. [http](src/http/readme.md)
 1. [docker images](#docker-images)
     1. [base image](#base-image)
-    1. [pre-built images](#pre-built-images)
+    1. [pre-built images](#pre-built-images-soon)
 1. [cookbook](#cookbook)
     1. [execute all necessary steps](#execute-all-necessary-steps)
     1. [extract each data from a pbf file](#extract-each-data-from-a-pbf-file)
@@ -51,7 +51,7 @@ $ geolite --version
     1. [optimize data](#optimize-data)
     1. [query](#query)
     1. [explore](#explore)
-    1. [attach distinct databases](#attach-distinct-databases)
+    1. [merge separately-built databases](#merge-separately-built-databases)
 
 ---
 
@@ -64,7 +64,7 @@ $ docker run pjpimentel/geolite:0.0.1 -- --version
 $ docker run -t -v ./data:/data pjpimentel/geolite:0.0.1 build brazil
 ```
 
-### pre-built images
+### pre-built images _(soon)_
 
 _size matters: once a country's data grows too large for a docker image, its pre-built image stops being updated and may be dropped._
 
@@ -78,19 +78,6 @@ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil-YYYYMMDDHHMM
 
 1. [brazil](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-brazil)
 1. [portugal](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-portugal)
-<!-- 1. [argentina](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-argentina)
-1. [chile](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-chile)
-1. [uruguay](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-uruguay)
-1. [paraguay](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-paraguay)
-1. [bolivia](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-bolivia)
-1. [peru](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-peru)
-1. [ecuador](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-ecuador)
-1. [colombia](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-colombia)
-1. [venezuela](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-venezuela)
-1. [guyana](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-guyana)
-1. [suriname](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-suriname)
-1. [french guiana](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-french-guiana) -->
-
 
 ---
 

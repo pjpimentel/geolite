@@ -23,9 +23,9 @@ parse a `.osm.pbf` file and populate the database layer by layer
 
 ## admin_levels
 
-1. queries relations from `osm_relations` filtered by `boundary=administrative` and a given `admin_level`
-2. assembles way segments into closed rings and builds the polygon geometry
-3. inserts each boundary into `admin_levels` with its spatialite geometry blob and bbox
+1. selects candidate ids per level: relations from `osm_relations` by `admin_level` tag (levels 1–9, and 10), or ways from `osm_ways` by `place`/name (levels 10 and 12) — all requiring a non-null `name`
+2. assembles the member way segments into rings, building a polygon when the ring closes, otherwise a line (streets at level 12 are always lines)
+3. inserts each feature into `admin_levels` (name, country/post codes, and a spatialite WKB geometry blob)
 
 ## house_numbers
 

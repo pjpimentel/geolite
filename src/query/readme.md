@@ -4,8 +4,8 @@
 ## coordinates
 
 1. parses `lat,lon` from the input string
-2. queries `admin_levels_rtree` with a coarse bbox, then filters by haversine distance
-3. returns the closest street(s) within `match_max_distance_in_meters`
+2. queries `admin_levels_rtree` with a coarse bbox, then ranks candidates by haversine distance to the closest point on each street
+3. returns the matching streets sorted by distance (closest first); there is no fixed distance cap on streets — only the optional `--min-quality` / `--bounding-wkt` filters remove candidates (contrast the 50 m cap on house numbers in step 4)
 4. enriches each match with the nearest house number (if within 50 m)
 
 ## address
@@ -17,7 +17,7 @@
    `01310100`) are never treated as house numbers. resolution happens per candidate in step 5.
 1. tokenises the input (lowercase + ascii-fold)
 2. searches the tantivy index `admin_levels_hierarchy_tantivy` with a two-stage strategy:
-   - **Q1 strict**: every query token must match exactly in `name` or `hier` (`Must` per token). returns only docs that cover 100% of the query exactly. if non-empty, this is the result.
+   - **Q1 strict**: every query token must match exactly in `name` or `hier` (`Must` per token). returns only docs that cover 100% of the query exactly. if non-empty, this is the result. on top of that backbone, Q1 adds `Should` boosts — a phrase-order bonus and case/diacritic-sensitive matches against the `*_strict` / `*_lower` field variants — that only re-rank the matching set, never widen it.
    - **Q2 loose** (only if Q1 is empty): per-token `Should` clauses with exact + fuzzy on both fields. handles typos, extra words, or partial coverage.
 3. loads geometry, hierarchy and metadata for each hit
 4. orders by BM25 `score` (primary), breaking ties by `similarity` — so two segments of the same street (same score) are ordered by similarity, which the house-number nudge in step 5 feeds. returns up to 10 matches with two relevance signals:
@@ -42,8 +42,18 @@
 ## house_number
 
 enriches an existing set of street matches with the closest house number node.
-the stored house number can have one of three origins:
+every stored house number comes from an osm node; the `strategy` column records how it was linked to its street:
 
-- **from_osm_data** exists in osm raw data
-- **inferred_by_osm_data** based on other house numbers on the same street
-- **inferred** derived from source code constants
+- **by_proximity** snapped to the nearest street geometry
+- **by_name** its `addr:street` tag matched the street's name
+
+## filters
+
+every result set ends with a shared pass (both the coordinate and address paths):
+
+- `--min-quality` drops matches below a quality threshold (distance-derived for coordinates, token-coverage for text)
+- `--bounding-wkt` keeps only matches whose final point falls inside the polygon
+- `--last-admin-levels` keeps only matches whose leaf admin level is in the set
+- `--include-wkt` attaches each level's WKT geometry to the output (off → omitted)
+
+results are then truncated to `MAX_RESULTS` (10).

@@ -17,4 +17,6 @@
 
 ## user_friendly_name
 
-1. builds (or rebuilds) the FTS5 index over `admin_levels_hierarchy.user_friendly_name`
+1. builds (or rebuilds) the tantivy full-text index (`admin_levels_hierarchy_tantivy`) at the index path (e.g. `database.tantivy`), one document per `admin_levels_hierarchy` row
+2. indexes each row's own name (plus post code, both original and digits-only) and its concatenated ancestor names (`hier`), each in folded / strict / lower field variants used for ranking
+3. expands abbreviations bidirectionally (e.g. `rua` ↔ `r.`) so a query matches either form
