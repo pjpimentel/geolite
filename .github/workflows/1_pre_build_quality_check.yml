@@ -3,6 +3,9 @@ name: pre-build-quality-check
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
   pre_build_quality_check:
     name: pre-build-quality-check
