@@ -11,6 +11,15 @@
 
 ## getting started
 
+### with cargo
+
+```bash
+$ cargo install geolite
+$ geolite --version
+$ geolite build brazil # needs +/- 45gb while building then +/- 3gb when finished
+$ geolite http-server # open http://localhost:8080
+```
+
 ### with docker
 
 ```bash
@@ -19,13 +28,6 @@ $ docker run pjpimentel/geolite:0.0.1 -- --version
 # pre-built countries geocodes
 $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
 # open http://localhost:8080
-```
-
-### with cargo
-
-```bash
-$ cargo install geolite
-$ geolite --version
 ```
 
 ---
