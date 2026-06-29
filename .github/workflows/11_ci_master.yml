@@ -55,6 +55,7 @@ jobs:
     needs: pre_release_check
     if: needs.pre_release_check.outputs.needs_release == 'true'
     uses: ./.github/workflows/1_pre_build_quality_check.yml
+    secrets: inherit
 
   build:
     needs: [pre_release_check, pre_build_quality_check]
