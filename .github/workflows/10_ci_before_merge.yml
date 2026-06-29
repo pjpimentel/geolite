@@ -1,0 +1,22 @@
+name: ci_before_merge
+
+on:
+  pull_request:
+    branches:
+      - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-before-merge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre_build_quality_check:
+    uses: ./.github/workflows/1_pre_build_quality_check.yml
+    secrets: inherit

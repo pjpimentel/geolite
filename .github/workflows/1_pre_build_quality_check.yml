@@ -3,20 +3,10 @@ name: pre-build-quality-check
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 jobs:
-  ##############################################################################
-  # TODO(sonarcloud): quando o repo virar publico, reativar a analise do
-  # sonarcloud. passos a restaurar:
-  #   1. acrescentar `secrets: { SONAR_TOKEN: { required: true } }` no
-  #      `workflow_call` acima e voltar `secrets: inherit` nos orquestradores.
-  #   2. trocar `cargo test` pelo `cargo llvm-cov --workspace --lcov
-  #      --output-path lcov.info` (precisa do component `llvm-tools-preview`
-  #      no toolchain e do `taiki-e/install-action@cargo-llvm-cov`).
-  #   3. acrescentar step `SonarSource/sonarqube-scan-action@v4` com
-  #      `SONAR_TOKEN` e `SONAR_HOST_URL=https://sonarcloud.io` no env.
-  #   4. voltar `fetch-depth: 0` no checkout (sonar usa git blame).
-  #   o arquivo `sonar-project.properties` na raiz ja esta configurado.
-  ##############################################################################
   pre_build_quality_check:
     name: pre-build-quality-check
     runs-on: ubuntu-latest
@@ -46,3 +36,18 @@ jobs:
 
       - name: cargo test
         run: cargo test --all-targets
+
+  sonarqube:
+    name: sonarqube
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v8.1.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: -Dsonar.qualitygate.wait=true

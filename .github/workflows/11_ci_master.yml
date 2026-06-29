@@ -55,9 +55,8 @@ jobs:
     needs: pre_release_check
     if: needs.pre_release_check.outputs.needs_release == 'true'
     uses: ./.github/workflows/1_pre_build_quality_check.yml
+    secrets: inherit
 
-  # uma chamada do 2_build por arch (matrix), cada uma no runner nativo. cada
-  # 2_build faz internamente docker build -> build_quality_check -> push.
   build:
     needs: [pre_release_check, pre_build_quality_check]
     permissions:
