@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: typos check
         uses: crate-ci/typos@master
@@ -20,10 +22,13 @@ jobs:
       - name: setup rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
 
       - name: install cargo-audit
         uses: taiki-e/install-action@cargo-audit
+
+      - name: install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: cargo fmt check
         run: cargo fmt --all -- --check
@@ -34,17 +39,9 @@ jobs:
       - name: cargo audit
         run: cargo audit
 
-      - name: cargo test
-        run: cargo test --all-targets
+      - name: cargo test with coverage
+        run: cargo llvm-cov --all-targets --lcov --output-path lcov.info
 
-  sonarqube:
-    name: sonarqube
-    runs-on: ubuntu-latest
-    steps:
-      - name: checkout
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v8.1.0
         env:
