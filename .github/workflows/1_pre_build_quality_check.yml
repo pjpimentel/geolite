@@ -28,7 +28,7 @@ jobs:
         uses: taiki-e/install-action@5626e41434f03ab3022d9685405c0645c879f441
 
       - name: install cargo-llvm-cov
-        uses: taiki-e/install-action@e2ba4a39dc7bf116c8a572366d98fadc69b818f5
+        uses: taiki-e/install-action@5626e41434f03ab3022d9685405c0645c879f441
 
       - name: cargo fmt check
         run: cargo fmt --all -- --check
