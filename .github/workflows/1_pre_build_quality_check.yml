@@ -17,15 +17,15 @@ jobs:
           fetch-depth: 0
 
       - name: typos check
-        uses: crate-ci/typos@master
+        uses: crate-ci/typos@bc212b92c93b7d2c8acb5fcb114250694513595b
 
       - name: setup rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           components: rustfmt, clippy, llvm-tools-preview
 
       - name: install cargo-audit
-        uses: taiki-e/install-action@cargo-audit
+        uses: taiki-e/install-action@5626e41434f03ab3022d9685405c0645c879f441
 
       - name: install cargo-llvm-cov
         uses: taiki-e/install-action@e2ba4a39dc7bf116c8a572366d98fadc69b818f5
