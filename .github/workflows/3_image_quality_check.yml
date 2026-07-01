@@ -47,6 +47,11 @@ jobs:
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     permissions:
       contents: read
+    # inputs vao pro env do job (nunca interpolados direto num `run:`) pra evitar
+    # script injection; todos os steps abaixo referenciam "$IMAGE"/"$VERSION".
+    env:
+      IMAGE: ${{ inputs.image }}
+      VERSION: ${{ inputs.version }}
     steps:
       - name: download image artifact
         if: inputs.artifact != ''
@@ -59,28 +64,27 @@ jobs:
         run: docker load -i image/image.tar
       - name: pull image
         if: inputs.artifact == ''
-        run: docker pull ${{ inputs.image }}
+        run: docker pull "$IMAGE"
 
       - name: 0, validate --version matches release version
         if: inputs.version != ''
         run: |
-          expected="${{ inputs.version }}"
-          actual=$(docker run --rm ${{ inputs.image }} --version | awk '{print $NF}')
-          echo "expected=$expected actual=$actual"
-          if [ "$expected" != "$actual" ]; then
-            echo "::error::version mismatch (release=$expected, image=$actual)"
+          actual=$(docker run --rm "$IMAGE" --version | awk '{print $NF}')
+          echo "expected=$VERSION actual=$actual"
+          if [ "$VERSION" != "$actual" ]; then
+            echo "::error::version mismatch (release=$VERSION, image=$actual)"
             exit 1
           fi
 
       - name: 1, ensure image under 20mb
         run: |
           limit=$((20 * 1024 * 1024))
-          size=$(docker image inspect ${{ inputs.image }} --format '{{.Size}}')
+          size=$(docker image inspect "$IMAGE" --format '{{.Size}}')
           echo "image size: $((size / 1024 / 1024)) MiB ($size bytes), limit: $((limit / 1024 / 1024)) MiB"
           if [ "$size" -ge "$limit" ]; then
-            echo "::error::image ${{ inputs.image }} is $((size / 1024 / 1024)) MiB, exceeds 20 MiB limit"
+            echo "::error::image $IMAGE is $((size / 1024 / 1024)) MiB, exceeds 20 MiB limit"
             exit 1
           fi
 
       - name: 2, validate build maldives
-        run: docker run --rm ${{ inputs.image }} build maldives
+        run: docker run --rm "$IMAGE" build maldives
