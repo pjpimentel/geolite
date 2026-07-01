@@ -19,7 +19,7 @@ jobs:
       # hub) e `cargo install` (crates.io). roda por ultimo, depois do push da
       # imagem e do cargo publish, entao as notas apontam pra algo que ja existe.
       - name: github release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           tag_name: v${{ inputs.version }}
           name: v${{ inputs.version }}

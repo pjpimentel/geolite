@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   pre_release_check:
@@ -91,6 +91,8 @@ jobs:
 
   release:
     needs: [pre_release_check, distribute]
+    permissions:
+      contents: write
     uses: ./.github/workflows/8_publish_release.yml
     with:
       version: ${{ needs.pre_release_check.outputs.version }}
