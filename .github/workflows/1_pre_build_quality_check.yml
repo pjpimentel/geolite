@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -28,7 +28,7 @@ jobs:
         uses: taiki-e/install-action@5626e41434f03ab3022d9685405c0645c879f441
 
       - name: install cargo-llvm-cov
-        uses: taiki-e/install-action@e2ba4a39dc7bf116c8a572366d98fadc69b818f5
+        uses: taiki-e/install-action@5626e41434f03ab3022d9685405c0645c879f441
 
       - name: cargo fmt check
         run: cargo fmt --all -- --check
@@ -43,7 +43,7 @@ jobs:
         run: cargo llvm-cov --all-targets --lcov --output-path lcov.info
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v8.1.0
+        uses: SonarSource/sonarqube-scan-action@v8.2.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
