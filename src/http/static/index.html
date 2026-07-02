@@ -560,7 +560,7 @@
       <svg class="icon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
         <circle cx="7" cy="7" r="5"/><path d="M11 11l3 3"/>
       </svg>
-      <input id="search" placeholder="address or lat,lon…" autocomplete="off">
+      <input id="search" aria-label="address or lat,lon" placeholder="address or lat,lon…" autocomplete="off">
       <button id="btn_clear" class="btn-clear">&#10005;</button>
       <button class="go" id="btn_search"><span class="dot"></span>Resolve</button>
     </div>
@@ -681,7 +681,7 @@
 
   function is_coords(q) {
     const parts = q.split(',').map(Number);
-    return parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1]);
+    return parts.length === 2 && !Number.isNaN(parts[0]) && !Number.isNaN(parts[1]);
   }
 
   function fmt_coords(lat, lon) {
@@ -707,7 +707,7 @@
 
   function trigger_scan() {
     scan_el.style.animation = 'none';
-    scan_el.offsetHeight;
+    scan_el.getBoundingClientRect(); // force reflow so the animation restarts
     scan_el.style.animation = '';
   }
 
@@ -812,7 +812,7 @@
 
   function parse_wkt(wkt) {
     if (!wkt) return null;
-    const m = /^\s*([A-Za-z]+)\s*(.*)$/s.exec(wkt);
+    const m = /^\s*([A-Za-z]+)([\s\S]*)$/.exec(wkt);
     if (!m) return null;
     const type = m[1].toUpperCase();
     const body = m[2].trim();
