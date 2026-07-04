@@ -76,10 +76,21 @@ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil-YYYYMMDDHHMM
 # open http://localhost:8080
 ```
 
-#### available country list
+#### available country list     
 
-1. [brazil](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-brazil)
-1. [portugal](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-portugal)
+1. [brazil](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-brazil) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil`
+1. [portugal](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-portugal) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-portugal`
+1. [argentina](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-argentina) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-argentina`
+1. [bolivia](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-bolivia) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-bolivia`
+1. [chile](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-chile) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-chile`
+1. [colombia](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-colombia) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-colombia`
+1. [ecuador](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-ecuador) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-ecuador`
+1. [guyana](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-guyana) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-guyana`
+1. [paraguay](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-paraguay) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-paraguay`
+1. [peru](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-peru) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-peru`
+1. [suriname](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-suriname) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-suriname`
+1. [uruguay](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-uruguay) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-uruguay`
+1. [venezuela](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-venezuela) - `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-venezuela`
 
 ---
 

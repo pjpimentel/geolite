@@ -15,6 +15,17 @@ on:
         options:
           - brazil
           - portugal
+          - argentina
+          - bolivia
+          - chile
+          - colombia
+          - ecuador
+          - guyana
+          - paraguay
+          - peru
+          - suriname
+          - uruguay
+          - venezuela
   schedule:
     - cron: '0 6 * * 5' # toda sexta-feira 06:00 UTC
   push:
@@ -34,8 +45,9 @@ jobs:
       version: ${{ steps.matrix.outputs.version }}
     steps:
 
-      # tem input de pais? usa ele. senao, builda os dois. (independe do trigger:
-      # schedule/push nao tem inputs, entao COUNTRY vem vazio e cai no default.)
+      # tem input de pais? usa ele. senao, builda todos (portugal + america do sul).
+      # (independe do trigger: schedule/push nao tem inputs, entao COUNTRY vem
+      # vazio e cai no default.)
       - name: resolve countries and version
         id: matrix
         env:
@@ -45,7 +57,7 @@ jobs:
           if [ -n "$COUNTRY" ]; then
             echo "countries=[\"$COUNTRY\"]" >> "$GITHUB_OUTPUT"
           else
-            echo 'countries=["brazil","portugal"]' >> "$GITHUB_OUTPUT"
+            echo 'countries=["brazil","portugal","argentina","bolivia","chile","colombia","ecuador","guyana","paraguay","peru","suriname","uruguay","venezuela"]' >> "$GITHUB_OUTPUT"
           fi
           echo "version=${VERSION:-latest}" >> "$GITHUB_OUTPUT"
 
