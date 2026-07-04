@@ -812,10 +812,11 @@
 
   function parse_wkt(wkt) {
     if (!wkt) return null;
-    const m = /^\s*([A-Za-z]+)([\s\S]*)$/.exec(wkt);
+    const s = wkt.trim();
+    const m = /^[A-Za-z]+/.exec(s);
     if (!m) return null;
-    const type = m[1].toUpperCase();
-    const body = m[2].trim();
+    const type = m[0].toUpperCase();
+    const body = s.slice(m[0].length).trim();
     if (body === '' || body.toUpperCase().indexOf('EMPTY') === 0) return null;
     const inner = strip_parens(body);
     switch (type) {
