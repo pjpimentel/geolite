@@ -34,17 +34,18 @@ jobs:
       version: ${{ steps.matrix.outputs.version }}
     steps:
 
+      # tem input de pais? usa ele. senao, builda os dois. (independe do trigger:
+      # schedule/push nao tem inputs, entao COUNTRY vem vazio e cai no default.)
       - name: resolve countries and version
         id: matrix
         env:
-          EVENT: ${{ github.event_name }}
           COUNTRY: ${{ inputs.country }}
           VERSION: ${{ inputs.version }}
         run: |
-          if [ "$EVENT" = "schedule" ]; then
-            echo 'countries=["brazil","portugal"]' >> "$GITHUB_OUTPUT"
-          else
+          if [ -n "$COUNTRY" ]; then
             echo "countries=[\"$COUNTRY\"]" >> "$GITHUB_OUTPUT"
+          else
+            echo 'countries=["brazil","portugal"]' >> "$GITHUB_OUTPUT"
           fi
           echo "version=${VERSION:-latest}" >> "$GITHUB_OUTPUT"
 
@@ -82,7 +83,9 @@ jobs:
           password: ${{ secrets.DOCKER_TOKEN }}
 
       - name: inject country into dockerfile
-        run: sed "s/__COUNTRY__/$COUNTRY/" Dockerfile.prebuilt > Dockerfile.prebuilt.generated
+        run: |
+          test -n "$COUNTRY" || { echo "::error::COUNTRY is empty"; exit 1; }
+          sed "s/__COUNTRY__/$COUNTRY/" Dockerfile.prebuilt > Dockerfile.prebuilt.generated
 
       - name: buildx multi-arch build and push
         run: |

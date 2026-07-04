@@ -2,7 +2,8 @@ ARG VERSION=latest
 
 FROM --platform=$BUILDPLATFORM pjpimentel/geolite:${VERSION} AS data
 
-USER root
+# numeric uid 0: the scratch base can't resolve the name "root" in /etc/passwd
+USER 0
 RUN ["/geolite", "--data-path", "/data", "build", "__COUNTRY__"]
 
 FROM pjpimentel/geolite:${VERSION}
