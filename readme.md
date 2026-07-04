@@ -45,7 +45,7 @@ $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
     1. [http](src/http/readme.md)
 1. [docker images](#docker-images)
     1. [base image](#base-image)
-    1. [pre-built images](#pre-built-images-soon)
+    1. [pre-built images](#pre-built-images)
 1. [cookbook](#cookbook)
     1. [execute all necessary steps](#execute-all-necessary-steps)
     1. [extract each data from a pbf file](#extract-each-data-from-a-pbf-file)
@@ -66,7 +66,7 @@ $ docker run pjpimentel/geolite:0.0.1 -- --version
 $ docker run -t -v ./data:/data pjpimentel/geolite:0.0.1 build brazil
 ```
 
-### pre-built images _(soon)_
+### pre-built images
 
 _size matters: once a country's data grows too large for a docker image, its pre-built image stops being updated and may be dropped._
 

@@ -2,6 +2,7 @@ data
 test_data
 migrations
 node_modules
+Dockerfile.prebuilt.generated
 
 
 # Added by cargo

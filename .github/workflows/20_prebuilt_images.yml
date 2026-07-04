@@ -1,0 +1,96 @@
+name: prebuilt images
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: tag da imagem-binario base (pjpimentel/geolite:<version>)
+        required: false
+        default: latest
+        type: string
+      country:
+        description: pais a buildar
+        required: true
+        type: choice
+        options:
+          - brazil
+          - portugal
+  schedule:
+    - cron: '0 6 * * 5' # toda sexta-feira 06:00 UTC
+  push:
+    branches: [sonar_fix_and_prebuilt_images]
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: resolve matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      countries: ${{ steps.matrix.outputs.countries }}
+      version: ${{ steps.matrix.outputs.version }}
+    steps:
+
+      - name: resolve countries and version
+        id: matrix
+        env:
+          EVENT: ${{ github.event_name }}
+          COUNTRY: ${{ inputs.country }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT" = "schedule" ]; then
+            echo 'countries=["brazil","portugal"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "countries=[\"$COUNTRY\"]" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${VERSION:-latest}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: prebuilt ${{ matrix.country }}
+    needs: setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # serializa por pais: evita que um cron e um dispatch do mesmo pais colidam.
+    concurrency:
+      group: prebuilt-${{ matrix.country }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        country: ${{ fromJSON(needs.setup.outputs.countries) }}
+    env:
+      VERSION: ${{ needs.setup.outputs.version }}
+      COUNTRY: ${{ matrix.country }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: free disk space
+        uses: jlumbroso/free-disk-space@main
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: login to docker hub
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          username: pjpimentel
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: inject country into dockerfile
+        run: sed "s/__COUNTRY__/$COUNTRY/" Dockerfile.prebuilt > Dockerfile.prebuilt.generated
+
+      - name: buildx multi-arch build and push
+        run: |
+          TS=$(date -u +%Y%m%d%H%M)
+          docker buildx build \
+            --file Dockerfile.prebuilt.generated \
+            --build-arg VERSION="$VERSION" \
+            --platform linux/amd64,linux/arm64 \
+            --tag "pjpimentel/geolite:prebuilt-$COUNTRY" \
+            --tag "pjpimentel/geolite:prebuilt-$COUNTRY-$TS" \
+            --push .
