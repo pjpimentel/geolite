@@ -5,7 +5,7 @@
 [![actions](https://github.com/pjpimentel/geolite/actions/workflows/11_ci_master.yml/badge.svg?branch=master)](https://github.com/pjpimentel/geolite/actions/workflows/11_ci_master.yml)
 [![quality](https://sonarcloud.io/api/project_badges/measure?branch=master&project=geolite&metric=alert_status)](https://sonarcloud.io/dashboard?branch=master&id=geolite)
 [![coverage](https://sonarcloud.io/api/project_badges/measure?branch=master&project=geolite&metric=coverage)](https://sonarcloud.io/dashboard?branch=master&id=geolite)
-[![security](https://sonarcloud.io/api/project_badges/measure?branch=master&project=geolite&metric=security_rating)](https://sonarcloud.io/dashboard?branch=master&id=geolite)
+[![crates downloads](https://img.shields.io/crates/d/geolite)](https://crates.io/crates/geolite)
 
 ---
 
@@ -45,7 +45,7 @@ $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
     1. [http](src/http/readme.md)
 1. [docker images](#docker-images)
     1. [base image](#base-image)
-    1. [pre-built images](#pre-built-images-soon)
+    1. [pre-built images](#pre-built-images)
 1. [cookbook](#cookbook)
     1. [execute all necessary steps](#execute-all-necessary-steps)
     1. [extract each data from a pbf file](#extract-each-data-from-a-pbf-file)
@@ -66,7 +66,7 @@ $ docker run pjpimentel/geolite:0.0.1 -- --version
 $ docker run -t -v ./data:/data pjpimentel/geolite:0.0.1 build brazil
 ```
 
-### pre-built images _(soon)_
+### pre-built images
 
 _size matters: once a country's data grows too large for a docker image, its pre-built image stops being updated and may be dropped._
 
@@ -78,8 +78,23 @@ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil-YYYYMMDDHHMM
 
 #### available country list
 
-1. [brazil](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-brazil)
-1. [portugal](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-portugal)
+| # | country | docker cmd |
+|---|---------|------------|
+| 1 | [brazil](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-brazil) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil` |
+| 2 | [portugal](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-portugal) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-portugal` |
+| 3 | [argentina](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-argentina) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-argentina` |
+| 4 | [bolivia](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-bolivia) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-bolivia` |
+| 5 | [chile](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-chile) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-chile` |
+| 6 | [colombia](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-colombia) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-colombia` |
+| 7 | [ecuador](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-ecuador) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-ecuador` |
+| 8 | [guyana](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-guyana) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-guyana` |
+| 9 | [paraguay](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-paraguay) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-paraguay` |
+| 10 | [peru](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-peru) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-peru` |
+| 11 | [suriname](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-suriname) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-suriname` |
+| 12 | [uruguay](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-uruguay) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-uruguay` |
+| 13 | [venezuela](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-venezuela) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-venezuela` |
+| 14 | [netherlands](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-netherlands) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-netherlands` |
+| 15 | [switzerland](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-switzerland) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-switzerland` |
 
 ---
 

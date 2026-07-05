@@ -1,0 +1,123 @@
+name: prebuilt images
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: tag da imagem-binario base (pjpimentel/geolite:<version>)
+        required: false
+        default: latest
+        type: string
+      country:
+        description: pais a buildar
+        required: true
+        type: choice
+        options:
+          - brazil
+          - portugal
+          - argentina
+          - bolivia
+          - chile
+          - colombia
+          - ecuador
+          - guyana
+          - paraguay
+          - peru
+          - suriname
+          - uruguay
+          - venezuela
+          - netherlands
+          - switzerland
+  schedule:
+    - cron: '0 6 * * 5' # toda sexta-feira 06:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: resolve matrix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      countries: ${{ steps.matrix.outputs.countries }}
+      version: ${{ steps.matrix.outputs.version }}
+    steps:
+
+      # tem input de pais? usa ele. senao, builda todos (portugal + america do sul).
+      # (independe do trigger: schedule/push nao tem inputs, entao COUNTRY vem
+      # vazio e cai no default.)
+      - name: resolve countries and version
+        id: matrix
+        env:
+          COUNTRY: ${{ inputs.country }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ -n "$COUNTRY" ]; then
+            echo "countries=[\"$COUNTRY\"]" >> "$GITHUB_OUTPUT"
+          else
+            echo 'countries=["brazil","portugal","argentina","bolivia","chile","colombia","ecuador","guyana","paraguay","peru","suriname","uruguay","venezuela","netherlands","switzerland"]' >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${VERSION:-latest}" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: prebuilt ${{ matrix.country }}
+    needs: setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # serializa por pais: evita que um cron e um dispatch do mesmo pais colidam.
+    concurrency:
+      group: prebuilt-${{ matrix.country }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      # no maximo 3 paises buildando em paralelo
+      max-parallel: 3
+      matrix:
+        country: ${{ fromJSON(needs.setup.outputs.countries) }}
+    env:
+      VERSION: ${{ needs.setup.outputs.version }}
+      COUNTRY: ${{ matrix.country }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+
+      - name: increase swap space
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /mnt/swapfile /swapfile || true
+          sudo fallocate -l 30G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+          free -h
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: login to docker hub
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          username: pjpimentel
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: inject country into dockerfile
+        run: |
+          test -n "$COUNTRY" || { echo "::error::COUNTRY is empty"; exit 1; }
+          sed "s/__COUNTRY__/$COUNTRY/" Dockerfile.prebuilt > Dockerfile.prebuilt.generated
+
+      - name: buildx multi-arch build and push
+        run: |
+          TS=$(date -u +%Y%m%d%H%M)
+          docker buildx build \
+            --file Dockerfile.prebuilt.generated \
+            --build-arg VERSION="$VERSION" \
+            --platform linux/amd64,linux/arm64 \
+            --tag "pjpimentel/geolite:prebuilt-$COUNTRY" \
+            --tag "pjpimentel/geolite:prebuilt-$COUNTRY-$TS" \
+            --push .
