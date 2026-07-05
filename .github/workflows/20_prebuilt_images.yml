@@ -26,10 +26,10 @@ on:
           - suriname
           - uruguay
           - venezuela
+          - netherlands
+          - switzerland
   schedule:
     - cron: '0 6 * * 5' # toda sexta-feira 06:00 UTC
-  push:
-    branches: [sonar_fix_and_prebuilt_images]
 
 permissions:
   contents: read
@@ -57,7 +57,7 @@ jobs:
           if [ -n "$COUNTRY" ]; then
             echo "countries=[\"$COUNTRY\"]" >> "$GITHUB_OUTPUT"
           else
-            echo 'countries=["brazil","portugal","argentina","bolivia","chile","colombia","ecuador","guyana","paraguay","peru","suriname","uruguay","venezuela"]' >> "$GITHUB_OUTPUT"
+            echo 'countries=["brazil","portugal","argentina","bolivia","chile","colombia","ecuador","guyana","paraguay","peru","suriname","uruguay","venezuela","netherlands","switzerland"]' >> "$GITHUB_OUTPUT"
           fi
           echo "version=${VERSION:-latest}" >> "$GITHUB_OUTPUT"
 
@@ -73,6 +73,8 @@ jobs:
       cancel-in-progress: true
     strategy:
       fail-fast: false
+      # no maximo 3 paises buildando em paralelo
+      max-parallel: 3
       matrix:
         country: ${{ fromJSON(needs.setup.outputs.countries) }}
     env:
@@ -80,10 +82,10 @@ jobs:
       COUNTRY: ${{ matrix.country }}
     steps:
       - name: checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: free disk space
-        uses: jlumbroso/free-disk-space@main
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
 
       - name: increase swap space
         run: |
