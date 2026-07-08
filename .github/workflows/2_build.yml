@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: setup buildx
-        uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       # build nativo da arch, carregado no daemon e salvo como artifact pro
       # build_quality_check e pro push (mesma imagem QC'd, sem rebuild).
@@ -96,7 +96,7 @@ jobs:
         run: docker load -i image/image.tar
 
       - name: login to ghcr
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
