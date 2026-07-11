@@ -19,7 +19,7 @@ COPY src ./src
 
 RUN cargo build --release --locked
 
-RUN adduser -D -H -u 10001 geolite
+RUN adduser -D -H -u 10001 geolite && mkdir /seed
 
 FROM scratch
 
@@ -31,6 +31,9 @@ COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder /etc/group /etc/group
 
 COPY --from=builder /build/target/release/geolite /geolite
+
+COPY --from=builder --chown=10001:10001 /seed /.geolite
+ENV HOME=/
 
 USER geolite
 
