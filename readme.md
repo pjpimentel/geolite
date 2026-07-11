@@ -158,5 +158,14 @@ $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sql
 $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/brazil.sqlite3 http-server
 ```
 
+## question and answers
+
+### a) why geolite?
+
+"**geo**" comes from "**geo**code" and "**lite**" comes from "sq**lite**", no special meaning.
+
+### b) where does the data come from?
+
+the data comes from any `.osm.pbf` file (openstreetmap's protobuffer format). this project uses [geofabrik](https://download.geofabrik.de) as the initial source, which extracts its data from [openstreetmap](https://www.openstreetmap.org).
 
 ## license: [GNU AGPLv3](LICENSE)

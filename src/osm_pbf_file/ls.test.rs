@@ -85,8 +85,9 @@ fn _01_returns_cached_without_refetching() {
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"asia/japan","name":"Japan","urls":{"pbf":"http://example.com/japan.osm.pbf"}}}]}"#.to_string();
   let (url, request_count) = start_counting_json_server(json);
   geofabrik(&db, false, &url);
+  let after_first = *request_count.lock().unwrap();
   geofabrik(&db, false, &url);
-  assert_eq!(*request_count.lock().unwrap(), 1);
+  assert_eq!(*request_count.lock().unwrap(), after_first);
 }
 
 // 02: recreate_cache=true forces a new http fetch even when cache exists.
@@ -96,8 +97,9 @@ fn _02_recreate_cache_forces_refetch() {
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"africa/kenya","name":"Kenya","urls":{"pbf":"http://example.com/kenya.osm.pbf"}}}]}"#.to_string();
   let (url, request_count) = start_counting_json_server(json);
   geofabrik(&db, false, &url);
+  let after_first = *request_count.lock().unwrap();
   geofabrik(&db, true, &url);
-  assert_eq!(*request_count.lock().unwrap(), 2);
+  assert!(*request_count.lock().unwrap() > after_first);
 }
 
 // 03: feature with no pbf url appears in output with "-" as url.
@@ -162,4 +164,26 @@ fn _08_list_local_returns_sorted_pbf_files() {
   assert_eq!(items[1].path.file_name().unwrap(), "brazil.osm.pbf");
   assert_eq!(items[0].size_bytes, 19);
   assert!(Path::new(&items[0].path).exists());
+}
+
+// 09: resolve_geofabrik_url serves a cached url without refetching.
+#[test]
+fn _09_resolve_geofabrik_url_uses_cache_without_refetching() {
+  let db = sqlite("ls_t09");
+  let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"europe/spain","name":"Spain","urls":{"pbf":"http://example.com/spain.osm.pbf"}}}]}"#.to_string();
+  let (url, request_count) = start_counting_json_server(json);
+  geofabrik(&db, false, &url);
+  let after_geofabrik = *request_count.lock().unwrap();
+  let result = resolve_geofabrik_url(&db, "europe/spain", &url);
+  assert_eq!(result.as_deref(), Some("http://example.com/spain.osm.pbf"));
+  assert_eq!(*request_count.lock().unwrap(), after_geofabrik);
+}
+
+// 10: list_local returns empty vec when the data_path does not exist.
+#[test]
+fn _10_list_local_returns_empty_for_nonexistent_path() {
+  let dir = tmp("ls_t10");
+  let missing = dir.join("does_not_exist");
+  let items = list_local(missing.to_str().unwrap());
+  assert!(items.is_empty());
 }

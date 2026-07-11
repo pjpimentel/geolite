@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
 use crate::index::admin_levels_hierarchy_tantivy::tantivy_index;
@@ -9,6 +10,21 @@ mod openapi;
 mod status;
 
 const INDEX_HTML: &str = include_str!("static/index.html");
+
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+// SIGINT (ctrl-c) and SIGTERM (`docker stop`); these posix values are stable across linux/macos.
+const SIGINT: std::os::raw::c_int = 2;
+const SIGTERM: std::os::raw::c_int = 15;
+
+// libc's signal(2), declared directly so no extra crate is pulled in for a one-flag handler.
+unsafe extern "C" {
+  fn signal(signum: std::os::raw::c_int, handler: extern "C" fn(std::os::raw::c_int)) -> usize;
+}
+
+extern "C" fn on_shutdown_signal(_signum: std::os::raw::c_int) {
+  SHUTDOWN.store(true, Ordering::Relaxed);
+}
 
 pub fn serve(
   sqlite_path: &str,
@@ -40,6 +56,12 @@ pub fn serve(
       .to_string(),
   );
 
+  // SAFETY: on_shutdown_signal only performs an atomic store, which is async-signal-safe.
+  unsafe {
+    signal(SIGINT, on_shutdown_signal);
+    signal(SIGTERM, on_shutdown_signal);
+  }
+
   println!("\x1b[1;32mlistening\x1b[0m on {addr}  sqlite: {sqlite_path}  index: {index_path}");
 
   let handles: Vec<_> = (0..threads)
@@ -50,8 +72,14 @@ pub fn serve(
       let db_file = db_file.clone();
       std::thread::spawn(move || {
         let conn = crate::database::open_readonly(&sqlite_path);
-        for request in server.incoming_requests() {
-          handle(request, &conn, index.as_deref(), &db_file);
+        // recv_timeout instead of the blocking incoming_requests() so each worker rechecks the
+        // shutdown flag every poll interval (tiny_http's unblock() only wakes one thread).
+        while !SHUTDOWN.load(Ordering::Relaxed) {
+          match server.recv_timeout(Duration::from_millis(250)) {
+            Ok(Some(request)) => handle(request, &conn, index.as_deref(), &db_file),
+            Ok(None) => {}
+            Err(_) => break,
+          }
         }
       })
     })
@@ -60,6 +88,7 @@ pub fn serve(
   for h in handles {
     h.join().ok();
   }
+  println!("\x1b[1;33mshutdown\x1b[0m: http server stopped");
 }
 
 fn handle(
