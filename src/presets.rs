@@ -85,9 +85,6 @@ pub const PORTUGAL: preset = preset {
   name: "portugal",
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:pt", "name"],
-    // distrito (level 4) is intentionally omitted: in district capitals it duplicates the
-    // concelho name (concelho "Lisboa" inside distrito "Lisboa" -> "Lisboa, Lisboa"). the
-    // concelho (level 6) is the addressing unit in portugal, so level 4 is redundant here.
     admin_levels: &[2, 6, 8, 10, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
@@ -117,6 +114,34 @@ pub const PORTUGAL: preset = preset {
   },
 };
 
+pub const ARGENTINA: preset = preset {
+  name: "argentina",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:es", "name"],
+    admin_levels: &[2, 4, 5, 8, 10, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: extract_house_numbers_preset {
+    drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    ..DEFAULT.extract_house_numbers
+  },
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("av.", "avenida"),
+    ("avda.", "avenida"),
+    ("pje.", "pasaje"),
+    ("diag.", "diagonal"),
+    ("bv.", "boulevard"),
+    ("blvd.", "boulevard"),
+    ("gral.", "general"),
+    ("pte.", "presidente"),
+    ("cnel.", "coronel"),
+    ("dr.", "doctor"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
 const ID_PRESET: &[(&str, &preset)] = &[
   ("brazil", &BRAZIL),
   ("centro-oeste", &BRAZIL),
@@ -125,11 +150,13 @@ const ID_PRESET: &[(&str, &preset)] = &[
   ("sudeste", &BRAZIL),
   ("sul", &BRAZIL),
   ("portugal", &PORTUGAL),
+  ("argentina", &ARGENTINA),
 ];
 
 const INCLUDES_PRESET: &[(&str, &preset)] = &[
   ("brazil", &BRAZIL),
   ("portugal", &PORTUGAL),
+  ("argentina", &ARGENTINA),
 ];
 
 fn lookup_exact(map: &[(&str, &preset)], key: &str) -> Option<preset> {
