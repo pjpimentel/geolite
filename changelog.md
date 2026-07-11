@@ -6,9 +6,10 @@
 
 ## **2026-07-11** - 0.0.2
 
-1. ADDED new tests to osm_pbf_file mod to improve coverage.
 1. REMOVED .test files from sonar analysis to reduce noise.
-1. MODIFIED files to fix sonar security issues.
+1. MODIFIED http-server files to fix sonar security issues.
+1. MODIFIED cargo.lock to fix audit report.
+1. ADDED new tests to osm_pbf_file mod to improve coverage.
 1. ADDED initial presets for portugal, argentina and bolivia.
 1. ADDED signal handler for shutdown (ctrl + c).
 
