@@ -142,6 +142,33 @@ pub const ARGENTINA: preset = preset {
   },
 };
 
+pub const BOLIVIA: preset = preset {
+  name: "bolivia",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:es", "name"],
+    admin_levels: &[2, 4, 8, 10, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: extract_house_numbers_preset {
+    drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    ..DEFAULT.extract_house_numbers
+  },
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("av.", "avenida"),
+    ("avda.", "avenida"),
+    ("pje.", "pasaje"),
+    ("pza.", "plaza"),
+    ("gral.", "general"),
+    ("cnel.", "coronel"),
+    ("mcal.", "mariscal"),
+    ("tte.", "teniente"),
+    ("dr.", "doctor"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
 const ID_PRESET: &[(&str, &preset)] = &[
   ("brazil", &BRAZIL),
   ("centro-oeste", &BRAZIL),
@@ -151,12 +178,14 @@ const ID_PRESET: &[(&str, &preset)] = &[
   ("sul", &BRAZIL),
   ("portugal", &PORTUGAL),
   ("argentina", &ARGENTINA),
+  ("bolivia", &BOLIVIA),
 ];
 
 const INCLUDES_PRESET: &[(&str, &preset)] = &[
   ("brazil", &BRAZIL),
   ("portugal", &PORTUGAL),
   ("argentina", &ARGENTINA),
+  ("bolivia", &BOLIVIA),
 ];
 
 fn lookup_exact(map: &[(&str, &preset)], key: &str) -> Option<preset> {
