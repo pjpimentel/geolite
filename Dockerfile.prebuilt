@@ -2,8 +2,8 @@ ARG VERSION=latest
 
 FROM --platform=$BUILDPLATFORM pjpimentel/geolite:${VERSION} AS data
 
-RUN ["/geolite", "--data-path", "/data", "build", "__COUNTRY__"]
+RUN ["/geolite", "build", "__COUNTRY__"]
 
 FROM pjpimentel/geolite:${VERSION}
-COPY --from=data --chown=10001:10001 /data /.geolite
-CMD ["--data-path", "/.geolite", "http-server"]
+COPY --from=data --chown=10001:10001 /.geolite /.geolite
+CMD ["http-server"]
