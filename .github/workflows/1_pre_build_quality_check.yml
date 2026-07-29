@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
 
       - name: typos check
-        uses: crate-ci/typos@bc212b92c93b7d2c8acb5fcb114250694513595b
+        uses: crate-ci/typos@3bc303c295c081add5df4a4d52a1e117f2fb2dce
 
       - name: setup rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
@@ -45,7 +45,7 @@ jobs:
         run: cargo llvm-cov --all-targets --lcov --output-path lcov.info
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e # v8.2.0
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
