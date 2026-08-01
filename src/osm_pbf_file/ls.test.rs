@@ -8,42 +8,36 @@ use std::{
 use super::{geofabrik, list_local, resolve_geofabrik_url};
 
 fn start_json_server(body: String) -> String {
+  start_recording_json_server(body).0
+}
+
+// serves the json index and records the raw text of every request received, so
+// scenarios can assert on request count and on request headers.
+fn start_recording_json_server(body: String) -> (String, Arc<Mutex<Vec<String>>>) {
   let listener = TcpListener::bind("127.0.0.1:0").unwrap();
   let port = listener.local_addr().unwrap().port();
   let url = format!("http://127.0.0.1:{port}/index.json");
   let body = Arc::new(body);
+  let requests: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+  let requests_srv = requests.clone();
   std::thread::spawn(move || {
     for stream in listener.incoming().flatten() {
       let body = Arc::clone(&body);
-      std::thread::spawn(move || serve_json(stream, &body));
+      let requests = Arc::clone(&requests_srv);
+      std::thread::spawn(move || serve_json(stream, &body, &requests));
     }
   });
-  url
+  (url, requests)
 }
 
-fn start_counting_json_server(body: String) -> (String, Arc<Mutex<u32>>) {
-  let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-  let port = listener.local_addr().unwrap().port();
-  let url = format!("http://127.0.0.1:{port}/index.json");
-  let body = Arc::new(body);
-  let count: Arc<Mutex<u32>> = Arc::new(Mutex::new(0));
-  let count_srv = count.clone();
-  std::thread::spawn(move || {
-    for stream in listener.incoming().flatten() {
-      let body = Arc::clone(&body);
-      let count = Arc::clone(&count_srv);
-      std::thread::spawn(move || {
-        *count.lock().unwrap() += 1;
-        serve_json(stream, &body);
-      });
-    }
-  });
-  (url, count)
-}
-
-fn serve_json(mut stream: TcpStream, body: &str) {
+fn serve_json(mut stream: TcpStream, body: &str, requests: &Mutex<Vec<String>>) {
   let mut buf = [0u8; 4096];
-  let _ = stream.read(&mut buf);
+  let n = stream.read(&mut buf).unwrap_or(0);
+  // records before responding, so a returned call always sees its own request.
+  requests
+    .lock()
+    .unwrap()
+    .push(String::from_utf8_lossy(&buf[..n]).to_string());
   let response = format!(
     "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
     body.len(),
@@ -83,11 +77,11 @@ fn _00_fetches_and_caches_when_no_cache_exists() {
 fn _01_returns_cached_without_refetching() {
   let db = sqlite("ls_t01");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"asia/japan","name":"Japan","urls":{"pbf":"http://example.com/japan.osm.pbf"}}}]}"#.to_string();
-  let (url, request_count) = start_counting_json_server(json);
+  let (url, requests) = start_recording_json_server(json);
   geofabrik(&db, false, &url);
-  let after_first = *request_count.lock().unwrap();
+  let after_first = requests.lock().unwrap().len();
   geofabrik(&db, false, &url);
-  assert_eq!(*request_count.lock().unwrap(), after_first);
+  assert_eq!(requests.lock().unwrap().len(), after_first);
 }
 
 // 02: recreate_cache=true forces a new http fetch even when cache exists.
@@ -95,11 +89,11 @@ fn _01_returns_cached_without_refetching() {
 fn _02_recreate_cache_forces_refetch() {
   let db = sqlite("ls_t02");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"africa/kenya","name":"Kenya","urls":{"pbf":"http://example.com/kenya.osm.pbf"}}}]}"#.to_string();
-  let (url, request_count) = start_counting_json_server(json);
+  let (url, requests) = start_recording_json_server(json);
   geofabrik(&db, false, &url);
-  let after_first = *request_count.lock().unwrap();
+  let after_first = requests.lock().unwrap().len();
   geofabrik(&db, true, &url);
-  assert!(*request_count.lock().unwrap() > after_first);
+  assert!(requests.lock().unwrap().len() > after_first);
 }
 
 // 03: feature with no pbf url appears in output with "-" as url.
@@ -171,12 +165,12 @@ fn _08_list_local_returns_sorted_pbf_files() {
 fn _09_resolve_geofabrik_url_uses_cache_without_refetching() {
   let db = sqlite("ls_t09");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"europe/spain","name":"Spain","urls":{"pbf":"http://example.com/spain.osm.pbf"}}}]}"#.to_string();
-  let (url, request_count) = start_counting_json_server(json);
+  let (url, requests) = start_recording_json_server(json);
   geofabrik(&db, false, &url);
-  let after_geofabrik = *request_count.lock().unwrap();
+  let after_geofabrik = requests.lock().unwrap().len();
   let result = resolve_geofabrik_url(&db, "europe/spain", &url);
   assert_eq!(result.as_deref(), Some("http://example.com/spain.osm.pbf"));
-  assert_eq!(*request_count.lock().unwrap(), after_geofabrik);
+  assert_eq!(requests.lock().unwrap().len(), after_geofabrik);
 }
 
 // 10: list_local returns empty vec when the data_path does not exist.
@@ -186,4 +180,23 @@ fn _10_list_local_returns_empty_for_nonexistent_path() {
   let missing = dir.join("does_not_exist");
   let items = list_local(missing.to_str().unwrap());
   assert!(items.is_empty());
+}
+
+// 11: outgoing requests carry the custom user-agent with the binary version.
+#[test]
+fn _11_sends_custom_user_agent_header() {
+  let db = sqlite("ls_t11");
+  let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"europe/spain","name":"Spain","urls":{"pbf":"http://example.com/spain.osm.pbf"}}}]}"#.to_string();
+  let (url, requests) = start_recording_json_server(json);
+  geofabrik(&db, false, &url);
+  let requests = requests.lock().unwrap();
+  let user_agent = requests[0]
+    .lines()
+    .find(|l| l.to_lowercase().starts_with("user-agent:"))
+    .and_then(|l| l.split_once(':').map(|x| x.1))
+    .map(|v| v.trim().to_string());
+  assert_eq!(
+    user_agent,
+    Some(format!("geolite/{}", env!("CARGO_PKG_VERSION")))
+  );
 }
