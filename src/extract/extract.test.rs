@@ -19,7 +19,7 @@ fn _00_00_returns_raw_bytes_when_blob_is_uncompressed() {
 // 00.01: blob zlib e inflado de volta ao payload original
 #[test]
 fn _00_01_inflates_zlib_blob_payload() {
-  // payload repetitivo para garantir que o zlib de fato comprime
+  // repeating payload so that zlib actually compresses it
   let payload = b"osm".repeat(500);
   let bytes = make_blob(&payload, blob_compression::zlib);
   let blob = decode(&bytes);

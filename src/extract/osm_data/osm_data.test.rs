@@ -335,14 +335,14 @@ fn _00_09_decodes_uncompressed_data_blob() {
   assert_eq!(out.payload("osm_nodes", 1)["tags"]["name"], "Cru");
 }
 
-// 00.10: o agregador de progresso soma decodificacao e flush, e atribui os chunks
-// aos workers
+// 00.10: the progress aggregator sums decode and flush, and assigns the chunks
+// to the workers
 #[test]
 fn _00_10_reports_progress_for_decode_and_flush() {
   let out = tiny_scene("od_00_10");
   let last = out.last_progress();
 
-  assert!(!out.progress.is_empty(), "deve haver eventos de progresso");
+  assert!(!out.progress.is_empty());
   assert_eq!(last.chunks_done, 4, "3 blobs de dados + 1 header");
   assert_eq!(last.worker_chunks, 4);
   assert_eq!(last.nodes_written, 1);
@@ -351,7 +351,7 @@ fn _00_10_reports_progress_for_decode_and_flush() {
   assert!(last.flushes_done >= 1);
 }
 
-// 00.11: com varios decoders o resultado continua exato
+// 00.11: with several decoders the result stays exact
 #[test]
 fn _00_11_processes_every_chunk_with_multiple_decoder_threads() {
   let mut chunks = vec![header_chunk()];
@@ -371,7 +371,7 @@ fn _00_11_processes_every_chunk_with_multiple_decoder_threads() {
   assert_eq!(out.row_count("osm_nodes"), 24);
 }
 
-// 00.12: buffer pequeno obriga o writer a fazer varios flushes
+// 00.12: a small buffer forces the writer into several flushes
 #[test]
 fn _00_12_flushes_repeatedly_with_a_small_buffer() {
   let mut chunks = Vec::new();
@@ -693,7 +693,7 @@ fn _01_04_writer_waits_until_decoders_signal_completion() {
   let (tx, rx) = std::sync::mpsc::channel::<prog_event>();
   let handle = writer_thread(conn, buffer.clone(), tx);
 
-  // buffer vazio e decoders_done falso: o writer estaciona no has_work
+  // empty buffer and decoders_done still false: the writer parks on has_work
   std::thread::sleep(std::time::Duration::from_millis(50));
   buffer.inner.lock().expect("buffer mutex").decoders_done = true;
   buffer.has_work.notify_all();
@@ -861,7 +861,7 @@ fn _02_04_decode_blob_uses_an_empty_string_table_when_absent() {
   assert!(out.nodes[0].tags.is_empty());
 }
 
-// 02.05: strings invalidas em utf-8 viram "" em vez de derrubar o decode
+// 02.05: invalid utf-8 strings become "" instead of breaking the decode
 #[test]
 fn _02_05_decode_blob_tolerates_invalid_utf8_in_string_table() {
   use prost::Message;

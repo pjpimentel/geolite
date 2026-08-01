@@ -170,8 +170,8 @@ fn _01_01_extracts_named_way_as_a_street() {
   assert_eq!(seen.last().expect("evento final"), &(Some(1), 1));
 }
 
-// 01.02: o nivel 12 usa filtros de EXCLUDE — ways de bairro, parque, predio e
-// curso d'agua ficam de fora mesmo tendo nome
+// 01.02: level 12 uses EXCLUDE filters — neighbourhood, park, building and
+// waterway ways stay out even when they have a name
 #[test]
 fn _01_02_applies_the_default_exclude_filters() {
   let conn = pbf_fixtures::memory_db();

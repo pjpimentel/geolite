@@ -110,7 +110,7 @@ fn _00_05_rejects_geometry_whose_lines_are_all_empty() {
 // 01 — closest_point_on_geometry
 /////////////////////////////////////////////////////////////////////////////////
 
-// 01.00: projeta o ponto no segmento mais proximo entre varios
+// 01.00: projects the point onto the closest segment among several
 #[test]
 fn _01_00_returns_the_closest_point_across_segments() {
   let geom = MultiLineString(vec![
@@ -189,7 +189,7 @@ fn _03_01_matches_by_proximity_when_addr_street_is_absent() {
   let out = process_tile(tile_data {
     streets: vec![
       make_street(1, "Rua Perto", &[(0.0, 0.0), (1.0, 0.0)]),
-      make_street(2, "Rua Longe", &[(0.0, 0.1), (1.0, 0.1)]),
+      make_street(2, "Rua Distante", &[(0.0, 0.1), (1.0, 0.1)]),
     ],
     candidates: vec![candidate(10, "100", None, 0.5, 0.001)],
   });
@@ -218,7 +218,7 @@ fn _03_02_prefers_the_street_named_in_addr_street() {
   assert_eq!(out[0].strategy, STRATEGY_BY_NAME);
 }
 
-// 03.03: o casamento por nome ignora diferenca de caixa
+// 03.03: name matching disregards case differences
 #[test]
 fn _03_03_matches_addr_street_case_insensitively() {
   let out = process_tile(tile_data {
@@ -263,7 +263,7 @@ fn _03_05_falls_back_to_proximity_when_addr_street_matches_nothing() {
 #[test]
 fn _03_06_drops_candidates_beyond_max_match_deg() {
   let out = process_tile(tile_data {
-    streets: vec![make_street(1, "Rua Longe", &[(0.0, 0.0), (1.0, 0.0)])],
+    streets: vec![make_street(1, "Rua Distante", &[(0.0, 0.0), (1.0, 0.0)])],
     // 0.5 grau acima da rua, bem alem do corte de 0.15
     candidates: vec![candidate(10, "100", None, 0.5, 0.5)],
   });
@@ -427,7 +427,7 @@ fn _04_03_considers_streets_from_neighbouring_tiles() {
   assert_eq!(rows[0].1, stored(&conn)[0].1);
 }
 
-// 04.04: candidatos espalhados por varios tiles sao todos processados
+// 04.04: candidates spread across several tiles are all processed
 #[test]
 fn _04_04_processes_candidates_spread_across_tiles() {
   let conn = setup_db();

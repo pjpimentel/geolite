@@ -99,7 +99,7 @@ fn _01_00_maps_every_valid_level_value() {
     let parsed = osm_admin_level::try_from(level)
       .map(|l| l as u8)
       .unwrap_or_else(|_| panic!("level {level} deveria ser valido"));
-    assert_eq!(parsed, level, "level {level} deve preservar o discriminante");
+    assert_eq!(parsed, level);
   }
 }
 
@@ -164,7 +164,7 @@ fn _03_02_joins_ways_head_to_tail() {
     ls(&[(1.0, 0.0), (1.0, 1.0)]),
   ]);
   assert_eq!(rings.len(), 1);
-  assert_eq!(rings[0].0.len(), 3, "o ponto compartilhado nao se repete");
+  assert_eq!(rings[0].0.len(), 3);
   assert!(approx_eq(rings[0].0[2], Coord { x: 1.0, y: 1.0 }));
 }
 
@@ -420,7 +420,7 @@ fn _05_03_ignores_relation_members_that_are_not_ways() {
   );
 }
 
-// 05.04: varias relations sao processadas e o progresso acumula
+// 05.04: several relations are processed and progress accumulates
 #[test]
 fn _05_04_processes_several_relations_and_accumulates_progress() {
   let conn = pbf_fixtures::memory_db();

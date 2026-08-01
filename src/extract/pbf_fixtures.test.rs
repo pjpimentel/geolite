@@ -436,8 +436,8 @@ impl Default for block_spec {
 }
 
 impl block_spec {
-  // converte graus para o inteiro bruto do formato, considerando granularity e offset:
-  //   graus = (offset + granularity * bruto) * 1e-9
+  // turns degrees into the format's raw integer, honouring granularity and offset:
+  //   degrees = (offset + granularity * raw) * 1e-9
   fn to_raw(&self, degrees: f64, offset: i64) -> i64 {
     ((degrees * 1e9 - offset as f64) / self.granularity as f64).round() as i64
   }
@@ -811,7 +811,7 @@ pub(crate) fn insert_closed_way(
     (x, y + size),
     (x, y),
   ];
-  // o ultimo ponto repete o primeiro node, fechando o anel
+  // the last point reuses the first node, closing the ring
   for (i, &(cx, cy)) in corners[..4].iter().enumerate() {
     insert_node(conn, first_node_id + i as u64, cx, cy, &[]);
   }
