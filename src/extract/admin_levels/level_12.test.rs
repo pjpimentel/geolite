@@ -94,7 +94,8 @@ fn _01_00_returns_early_when_no_candidate_matches() {
   // way sem tag name e ignorado pela query de candidatos
   pbf_fixtures::insert_way_at(&conn, 10, 1, &[(0.0, 0.0)], &[("highway", "residential")]);
 
-  assert_eq!(pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p)), vec![(Some(0), 0)]);
+  let seen = pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p));
+  assert_eq!(seen, vec![(Some(0), 0)]);
   assert!(stored_admin_levels(&conn).is_empty());
 }
 
@@ -155,7 +156,8 @@ fn _01_02_applies_the_default_exclude_filters() {
 #[test]
 fn _01_03_keeps_closed_streets_as_linestring() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, &[("name", "Praca do Comercio"), ("highway", "residential")]);
+  let tags = &[("name", "Praca do Comercio"), ("highway", "residential")];
+  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, tags);
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
@@ -211,5 +213,6 @@ fn _01_06_skips_ways_already_indexed_at_this_level() {
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
-  assert_eq!(pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p)), vec![(Some(0), 0)]);
+  let seen = pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p));
+  assert_eq!(seen, vec![(Some(0), 0)]);
 }

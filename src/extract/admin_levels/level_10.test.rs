@@ -89,6 +89,8 @@ fn _00_04_row_is_identified_by_way_id() {
 
 use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, stored_admin_levels, stored_geometry};
 
+const ALVALADE: &[(&str, &str)] = &[("name", "Alvalade"), ("place", "neighbourhood")];
+
 // 01.00: sem way candidato o estagio encerra cedo
 #[test]
 fn _01_00_returns_early_when_no_candidate_matches() {
@@ -96,7 +98,8 @@ fn _01_00_returns_early_when_no_candidate_matches() {
   // way com nome, mas sem tag place — nao casa com nenhum filtro de include
   pbf_fixtures::insert_way_at(&conn, 10, 1, &[(0.0, 0.0)], &[("name", "Sem place")]);
 
-  assert_eq!(pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p)), vec![(Some(0), 0)]);
+  let seen = pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p));
+  assert_eq!(seen, vec![(Some(0), 0)]);
   assert!(stored_admin_levels(&conn).is_empty());
 }
 
@@ -104,7 +107,7 @@ fn _01_00_returns_early_when_no_candidate_matches() {
 #[test]
 fn _01_01_extracts_closed_neighbourhood_way_as_polygon() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, &[("name", "Alvalade"), ("place", "neighbourhood")]);
+  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, ALVALADE);
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
@@ -156,7 +159,7 @@ fn _01_04_deduplicates_ways_matching_more_than_one_include_filter() {
     crate::database::osm_ways::filters::include_place_neighbourhood,
   ];
   let rules = pbf_fixtures::level_rules(10, BOTH, &[]);
-  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, &[("name", "Alvalade"), ("place", "neighbourhood")]);
+  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, ALVALADE);
 
   run(&conn, &rules, NAME_PRIORITY, |_| {});
 
@@ -199,7 +202,7 @@ fn _01_05_load_chunk_groups_coordinates_by_way_in_order() {
 #[test]
 fn _01_06_skips_ways_already_indexed_at_this_level() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, &[("name", "Alvalade"), ("place", "neighbourhood")]);
+  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, ALVALADE);
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
