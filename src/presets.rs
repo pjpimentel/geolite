@@ -169,6 +169,40 @@ pub const BOLIVIA: preset = preset {
   },
 };
 
+pub const CHILE: preset = preset {
+  name: "chile",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:es", "name"],
+    admin_levels: &[2, 4, 8, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: extract_house_numbers_preset {
+    drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    ..DEFAULT.extract_house_numbers
+  },
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("av.", "avenida"),
+    ("avda.", "avenida"),
+    ("pje.", "pasaje"),
+    ("psje.", "pasaje"),
+    ("cjon.", "callejón"),
+    ("cno.", "camino"),
+    ("pza.", "plaza"),
+    ("pob.", "población"),
+    ("gral.", "general"),
+    ("cnel.", "coronel"),
+    ("tte.", "teniente"),
+    ("almte.", "almirante"),
+    ("pdte.", "presidente"),
+    ("dr.", "doctor"),
+    ("sta.", "santa"),
+    ("sto.", "santo"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
 const ID_PRESET: &[(&str, &preset)] = &[
   ("brazil", &BRAZIL),
   ("centro-oeste", &BRAZIL),
@@ -179,6 +213,7 @@ const ID_PRESET: &[(&str, &preset)] = &[
   ("portugal", &PORTUGAL),
   ("argentina", &ARGENTINA),
   ("bolivia", &BOLIVIA),
+  ("chile", &CHILE),
 ];
 
 const INCLUDES_PRESET: &[(&str, &preset)] = &[
@@ -186,6 +221,7 @@ const INCLUDES_PRESET: &[(&str, &preset)] = &[
   ("portugal", &PORTUGAL),
   ("argentina", &ARGENTINA),
   ("bolivia", &BOLIVIA),
+  ("chile", &CHILE),
 ];
 
 fn lookup_exact(map: &[(&str, &preset)], key: &str) -> Option<preset> {
