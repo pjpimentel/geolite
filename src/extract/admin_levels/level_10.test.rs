@@ -80,77 +80,39 @@ fn _00_03_closed_ring_with_too_few_points_is_not_a_polygon() {
 fn _00_04_row_is_identified_by_way_id() {
   let row = process_one_way(work(99, &[(0.0, 0.0), (1.0, 1.0)])).expect("deve produzir uma linha");
 
-  assert_eq!(row.way_id, Some(99));
-  assert_eq!(row.relation_id, None);
-  assert_eq!(row.admin_level, 10);
-  assert_eq!(row.name, "Alvalade");
-  assert_eq!(row.post_code.as_deref(), Some("1700-001"));
-  assert_eq!(
-    row.country_iso_code, None,
-    "nivel 10 nunca carrega codigo de pais"
-  );
+  pbf_fixtures::assert_admin_row(&row, 99, 10, "Alvalade", Some("1700-001"));
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 // 01 — run e load_chunk ponta a ponta
 /////////////////////////////////////////////////////////////////////////////////
 
-use crate::extract::pbf_fixtures;
-
-const NAME_PRIORITY: &[&str] = &["name"];
-
-fn stored(conn: &Connection) -> Vec<(Option<u64>, u8, String)> {
-  let mut stmt = conn
-    .prepare("SELECT way_id, admin_level, name FROM admin_levels ORDER BY way_id")
-    .expect("failed to prepare");
-  stmt
-    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-    .expect("failed to query")
-    .map(|r| r.expect("failed to read row"))
-    .collect()
-}
+use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, stored_admin_levels, stored_geometry};
 
 // 01.00: sem way candidato o estagio encerra cedo
 #[test]
 fn _01_00_returns_early_when_no_candidate_matches() {
   let conn = pbf_fixtures::memory_db();
   // way com nome, mas sem tag place — nao casa com nenhum filtro de include
-  pbf_fixtures::insert_node(&conn, 1, 0.0, 0.0, &[]);
-  pbf_fixtures::insert_way(&conn, 10, &[1], &[("name", "Sem place")]);
+  pbf_fixtures::insert_way_at(&conn, 10, 1, &[(0.0, 0.0)], &[("name", "Sem place")]);
 
-  let seen = std::cell::RefCell::new(Vec::new());
-  run(&conn, &[], NAME_PRIORITY, |p| {
-    seen.borrow_mut().push((p.total, p.processed));
-  });
-
-  assert_eq!(seen.into_inner(), vec![(Some(0), 0)]);
-  assert!(stored(&conn).is_empty());
+  assert_eq!(pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p)), vec![(Some(0), 0)]);
+  assert!(stored_admin_levels(&conn).is_empty());
 }
 
 // 01.01: way fechado com place=neighbourhood vira poligono no nivel 10
 #[test]
 fn _01_01_extracts_closed_neighbourhood_way_as_polygon() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_closed_way(
-    &conn,
-    10,
-    1,
-    (0.0, 0.0),
-    1.0,
-    &[("name", "Alvalade"), ("place", "neighbourhood")],
-  );
+  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, &[("name", "Alvalade"), ("place", "neighbourhood")]);
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
-  let rows = stored(&conn);
+  let rows = stored_admin_levels(&conn);
   assert_eq!(rows.len(), 1);
   assert_eq!(rows[0], (Some(10), 10, "Alvalade".to_string()));
 
-  let wkb: crate::database::admin_levels::admin_geometry = conn
-    .query_row("SELECT wkb FROM admin_levels WHERE way_id = 10", [], |r| {
-      r.get(0)
-    })
-    .expect("failed to read geometry");
+  let wkb = stored_geometry(&conn, 10);
   assert!(matches!(wkb.geometry(), Geometry::MultiPolygon(_)));
 }
 
@@ -158,41 +120,28 @@ fn _01_01_extracts_closed_neighbourhood_way_as_polygon() {
 #[test]
 fn _01_02_extracts_suburb_ways_as_well() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_closed_way(
-    &conn,
-    11,
-    1,
-    (0.0, 0.0),
-    1.0,
-    &[("name", "Benfica"), ("place", "suburb")],
-  );
+  pbf_fixtures::insert_unit_square_way(&conn, 11, 1, &[("name", "Benfica"), ("place", "suburb")]);
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
-  assert_eq!(stored(&conn).len(), 1);
+  assert_eq!(stored_admin_levels(&conn).len(), 1);
 }
 
 // 01.03: way aberto com place=neighbourhood vira linha, nao poligono
 #[test]
 fn _01_03_extracts_open_neighbourhood_way_as_linestring() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_node(&conn, 1, 0.0, 0.0, &[]);
-  pbf_fixtures::insert_node(&conn, 2, 1.0, 0.0, &[]);
-  pbf_fixtures::insert_node(&conn, 3, 2.0, 1.0, &[]);
-  pbf_fixtures::insert_way(
+  pbf_fixtures::insert_way_at(
     &conn,
     10,
-    &[1, 2, 3],
+    1,
+    &[(0.0, 0.0), (1.0, 0.0), (2.0, 1.0)],
     &[("name", "Faixa"), ("place", "neighbourhood")],
   );
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
-  let wkb: crate::database::admin_levels::admin_geometry = conn
-    .query_row("SELECT wkb FROM admin_levels WHERE way_id = 10", [], |r| {
-      r.get(0)
-    })
-    .expect("failed to read geometry");
+  let wkb = stored_geometry(&conn, 10);
   assert!(matches!(wkb.geometry(), Geometry::LineString(_)));
 }
 
@@ -206,40 +155,24 @@ fn _01_04_deduplicates_ways_matching_more_than_one_include_filter() {
     crate::database::osm_ways::filters::include_place_neighbourhood,
     crate::database::osm_ways::filters::include_place_neighbourhood,
   ];
-  let rules = [super::super::extraction_rules {
-    level: 10,
-    include: BOTH,
-    exclude: &[],
-  }];
-  pbf_fixtures::insert_closed_way(
-    &conn,
-    10,
-    1,
-    (0.0, 0.0),
-    1.0,
-    &[("name", "Alvalade"), ("place", "neighbourhood")],
-  );
+  let rules = pbf_fixtures::level_rules(10, BOTH, &[]);
+  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, &[("name", "Alvalade"), ("place", "neighbourhood")]);
 
   run(&conn, &rules, NAME_PRIORITY, |_| {});
 
-  assert_eq!(
-    stored(&conn).len(),
-    1,
-    "o mesmo way nao pode ser inserido duas vezes"
-  );
+  let rows = stored_admin_levels(&conn);
+  assert_eq!(rows.len(), 1, "o mesmo way nao pode ser inserido duas vezes");
 }
 
 // 01.05: load_chunk agrupa as coordenadas por way, preservando a ordem dos refs
 #[test]
 fn _01_05_load_chunk_groups_coordinates_by_way_in_order() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_node(&conn, 1, 0.0, 0.0, &[]);
-  pbf_fixtures::insert_node(&conn, 2, 5.0, 0.0, &[]);
-  pbf_fixtures::insert_node(&conn, 3, 5.0, 5.0, &[]);
-  pbf_fixtures::insert_way(
+  pbf_fixtures::insert_way_at(
     &conn,
     10,
-    &[1, 2, 3],
+    1,
+    &[(0.0, 0.0), (5.0, 0.0), (5.0, 5.0)],
     &[
       ("name", "Alvalade"),
       ("place", "neighbourhood"),
@@ -266,24 +199,13 @@ fn _01_05_load_chunk_groups_coordinates_by_way_in_order() {
 #[test]
 fn _01_06_skips_ways_already_indexed_at_this_level() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_closed_way(
-    &conn,
-    10,
-    1,
-    (0.0, 0.0),
-    1.0,
-    &[("name", "Alvalade"), ("place", "neighbourhood")],
-  );
+  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, &[("name", "Alvalade"), ("place", "neighbourhood")]);
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
-  let seen = std::cell::RefCell::new(Vec::new());
-  run(&conn, &[], NAME_PRIORITY, |p| {
-    seen.borrow_mut().push(p.total);
-  });
 
   assert_eq!(
-    seen.into_inner(),
-    vec![Some(0)],
+    pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p)),
+    vec![(Some(0), 0)],
     "na segunda passada nao deve sobrar candidato"
   );
 }

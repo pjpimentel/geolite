@@ -65,15 +65,7 @@ fn _00_03_row_is_identified_by_way_id_at_level_12() {
   )
   .expect("deve produzir uma linha");
 
-  assert_eq!(row.way_id, Some(77));
-  assert_eq!(row.relation_id, None);
-  assert_eq!(row.admin_level, 12);
-  assert_eq!(row.name, "Rua do Ouro");
-  assert_eq!(row.post_code.as_deref(), Some("1100-060"));
-  assert_eq!(
-    row.country_iso_code, None,
-    "nivel 12 nunca carrega codigo de pais"
-  );
+  pbf_fixtures::assert_admin_row(&row, 77, 12, "Rua do Ouro", Some("1100-060"));
 }
 
 // 00.04: post_code ausente e propagado como None
@@ -89,30 +81,10 @@ fn _00_04_missing_post_code_stays_none() {
 // 01 — run e load_chunk ponta a ponta
 /////////////////////////////////////////////////////////////////////////////////
 
-use crate::extract::pbf_fixtures;
-
-const NAME_PRIORITY: &[&str] = &["name"];
-
-fn stored(conn: &Connection) -> Vec<(Option<u64>, u8, String)> {
-  let mut stmt = conn
-    .prepare("SELECT way_id, admin_level, name FROM admin_levels ORDER BY way_id")
-    .expect("failed to prepare");
-  stmt
-    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-    .expect("failed to query")
-    .map(|r| r.expect("failed to read row"))
-    .collect()
-}
+use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, stored_admin_levels, stored_geometry};
 
 fn insert_street(conn: &Connection, way_id: u64, first_node: u64, tags: &[(&str, &str)]) {
-  pbf_fixtures::insert_node(conn, first_node, 0.0, 0.0, &[]);
-  pbf_fixtures::insert_node(conn, first_node + 1, 1.0, 0.0, &[]);
-  pbf_fixtures::insert_way(
-    conn,
-    way_id,
-    &[first_node as i64, first_node as i64 + 1],
-    tags,
-  );
+  pbf_fixtures::insert_way_at(conn, way_id, first_node, &[(0.0, 0.0), (1.0, 0.0)], tags);
 }
 
 // 01.00: sem way com nome nao ha candidato a rua
@@ -120,16 +92,10 @@ fn insert_street(conn: &Connection, way_id: u64, first_node: u64, tags: &[(&str,
 fn _01_00_returns_early_when_no_candidate_matches() {
   let conn = pbf_fixtures::memory_db();
   // way sem tag name e ignorado pela query de candidatos
-  pbf_fixtures::insert_node(&conn, 1, 0.0, 0.0, &[]);
-  pbf_fixtures::insert_way(&conn, 10, &[1], &[("highway", "residential")]);
+  pbf_fixtures::insert_way_at(&conn, 10, 1, &[(0.0, 0.0)], &[("highway", "residential")]);
 
-  let seen = std::cell::RefCell::new(Vec::new());
-  run(&conn, &[], NAME_PRIORITY, |p| {
-    seen.borrow_mut().push((p.total, p.processed));
-  });
-
-  assert_eq!(seen.into_inner(), vec![(Some(0), 0)]);
-  assert!(stored(&conn).is_empty());
+  assert_eq!(pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p)), vec![(Some(0), 0)]);
+  assert!(stored_admin_levels(&conn).is_empty());
 }
 
 // 01.01: way nomeado vira rua no nivel 12
@@ -147,12 +113,9 @@ fn _01_01_extracts_named_way_as_a_street() {
     ],
   );
 
-  let seen = std::cell::RefCell::new(Vec::new());
-  run(&conn, &[], NAME_PRIORITY, |p| {
-    seen.borrow_mut().push((p.total, p.processed));
-  });
+  let seen = pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p));
 
-  let rows = stored(&conn);
+  let rows = stored_admin_levels(&conn);
   assert_eq!(rows.len(), 1);
   assert_eq!(rows[0], (Some(10), 12, "Rua Augusta".to_string()));
 
@@ -165,7 +128,6 @@ fn _01_01_extracts_named_way_as_a_street() {
     .expect("failed to read row");
   assert_eq!(post.as_deref(), Some("1100-053"));
 
-  let seen = seen.into_inner();
   assert_eq!(seen.first().expect("evento inicial"), &(Some(1), 0));
   assert_eq!(seen.last().expect("evento final"), &(Some(1), 1));
 }
@@ -184,7 +146,7 @@ fn _01_02_applies_the_default_exclude_filters() {
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
-  let rows = stored(&conn);
+  let rows = stored_admin_levels(&conn);
   assert_eq!(rows.len(), 1, "so a rua deve sobrar");
   assert_eq!(rows[0].0, Some(10));
 }
@@ -193,22 +155,11 @@ fn _01_02_applies_the_default_exclude_filters() {
 #[test]
 fn _01_03_keeps_closed_streets_as_linestring() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_closed_way(
-    &conn,
-    10,
-    1,
-    (0.0, 0.0),
-    1.0,
-    &[("name", "Praca do Comercio"), ("highway", "residential")],
-  );
+  pbf_fixtures::insert_unit_square_way(&conn, 10, 1, &[("name", "Praca do Comercio"), ("highway", "residential")]);
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
 
-  let wkb: crate::database::admin_levels::admin_geometry = conn
-    .query_row("SELECT wkb FROM admin_levels WHERE way_id = 10", [], |r| {
-      r.get(0)
-    })
-    .expect("failed to read geometry");
+  let wkb = stored_geometry(&conn, 10);
   assert!(
     matches!(wkb.geometry(), Geometry::LineString(_)),
     "rua fechada nao pode virar poligono nem passando pelo run"
@@ -222,30 +173,24 @@ fn _01_04_rules_override_replaces_the_default_excludes() {
   insert_street(&conn, 11, 3, &[("name", "Bairro"), ("place", "neighbourhood")]);
 
   // sem filtro de exclusao nenhum, o way de bairro passa a ser aceito
-  let rules = [super::super::extraction_rules {
-    level: 12,
-    include: &[],
-    exclude: &[],
-  }];
+  let rules = pbf_fixtures::level_rules(12, &[], &[]);
   run(&conn, &rules, NAME_PRIORITY, |_| {});
 
-  assert_eq!(
-    stored(&conn).len(),
-    1,
-    "sem excludes o way de bairro deve entrar"
-  );
+  assert_eq!(stored_admin_levels(&conn).len(), 1, "sem excludes o way de bairro deve entrar");
 }
 
 // 01.05: load_chunk agrupa coordenadas por way preservando a ordem dos refs
 #[test]
 fn _01_05_load_chunk_groups_coordinates_by_way_in_order() {
   let conn = pbf_fixtures::memory_db();
-  pbf_fixtures::insert_node(&conn, 1, 0.0, 0.0, &[]);
-  pbf_fixtures::insert_node(&conn, 2, 3.0, 0.0, &[]);
-  pbf_fixtures::insert_node(&conn, 3, 3.0, 4.0, &[]);
-  pbf_fixtures::insert_way(&conn, 10, &[1, 2, 3], &[("name", "Rua Augusta")]);
-  pbf_fixtures::insert_node(&conn, 4, 9.0, 9.0, &[]);
-  pbf_fixtures::insert_way(&conn, 11, &[4], &[("name", "Travessa")]);
+  pbf_fixtures::insert_way_at(
+    &conn,
+    10,
+    1,
+    &[(0.0, 0.0), (3.0, 0.0), (3.0, 4.0)],
+    &[("name", "Rua Augusta")],
+  );
+  pbf_fixtures::insert_way_at(&conn, 11, 4, &[(9.0, 9.0)], &[("name", "Travessa")]);
 
   let works = load_chunk(&conn, &[10, 11], NAME_PRIORITY);
 
@@ -265,10 +210,6 @@ fn _01_06_skips_ways_already_indexed_at_this_level() {
   insert_street(&conn, 10, 1, &[("name", "Rua Augusta")]);
 
   run(&conn, &[], NAME_PRIORITY, |_| {});
-  let seen = std::cell::RefCell::new(Vec::new());
-  run(&conn, &[], NAME_PRIORITY, |p| {
-    seen.borrow_mut().push(p.total);
-  });
 
-  assert_eq!(seen.into_inner(), vec![Some(0)]);
+  assert_eq!(pbf_fixtures::progress_events(|p| run(&conn, &[], NAME_PRIORITY, p)), vec![(Some(0), 0)]);
 }

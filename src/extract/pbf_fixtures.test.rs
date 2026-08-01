@@ -822,6 +822,116 @@ pub(crate) fn insert_closed_way(
   insert_way(conn, way_id, &refs, tags);
 }
 
+// cria um node por ponto, a partir de first_node_id, e amarra todos em um way
+pub(crate) fn insert_way_at(
+  conn: &rusqlite::Connection,
+  way_id: u64,
+  first_node_id: u64,
+  points: &[(f64, f64)],
+  tags: &[(&str, &str)],
+) {
+  let refs: Vec<i64> = points
+    .iter()
+    .enumerate()
+    .map(|(i, &(x, y))| {
+      let node_id = first_node_id + i as u64;
+      insert_node(conn, node_id, x, y, &[]);
+      node_id as i64
+    })
+    .collect();
+  insert_way(conn, way_id, &refs, tags);
+}
+
+// quadrado unitario na origem — a forma fechada usada pelos testes de nivel
+pub(crate) fn insert_unit_square_way(
+  conn: &rusqlite::Connection,
+  way_id: u64,
+  first_node_id: u64,
+  tags: &[(&str, &str)],
+) {
+  insert_closed_way(conn, way_id, first_node_id, (0.0, 0.0), 1.0, tags);
+}
+
+// prioridade de nome usada pelos estagios de admin_levels nos testes
+pub(crate) const NAME_PRIORITY: &[&str] = &["name"];
+
+// override de regras de um nivel so, no formato que o run dos estagios aceita
+pub(crate) fn level_rules(
+  level: u8,
+  include: &'static [crate::database::osm_ways::filters],
+  exclude: &'static [crate::database::osm_ways::filters],
+) -> [super::admin_levels::extraction_rules; 1] {
+  [super::admin_levels::extraction_rules {
+    level,
+    include,
+    exclude,
+  }]
+}
+
+// runs a level stage and returns the progress events it emitted
+pub(crate) fn progress_events(
+  stage: impl FnOnce(&dyn Fn(super::admin_levels::progress_report)),
+) -> Vec<(Option<u64>, u64)> {
+  let seen = std::cell::RefCell::new(Vec::new());
+  stage(&|p| seen.borrow_mut().push((p.total, p.processed)));
+  seen.into_inner()
+}
+
+// os campos que os testes de nivel checam em uma linha recem-montada
+pub(crate) fn assert_admin_row(
+  row: &crate::database::admin_levels::admin_levels,
+  way_id: u64,
+  admin_level: u8,
+  name: &str,
+  post_code: Option<&str>,
+) {
+  assert_eq!(row.way_id, Some(way_id));
+  assert_eq!(row.relation_id, None);
+  assert_eq!(row.admin_level, admin_level);
+  assert_eq!(row.name, name);
+  assert_eq!(row.post_code.as_deref(), post_code);
+  assert_eq!(
+    row.country_iso_code, None,
+    "way nunca carrega codigo de pais"
+  );
+}
+
+const SQL_SELECT_STORED_ADMIN_LEVELS: &str = "
+  SELECT
+    way_id,
+    admin_level,
+    name
+  FROM admin_levels
+  ORDER BY way_id
+";
+
+const SQL_SELECT_ADMIN_LEVEL_GEOMETRY: &str = "
+  SELECT wkb
+  FROM admin_levels
+  WHERE way_id = ?1
+";
+
+// as linhas gravadas por um estagio de nivel, reduzidas ao que os testes comparam
+pub(crate) fn stored_admin_levels(conn: &rusqlite::Connection) -> Vec<(Option<u64>, u8, String)> {
+  let mut stmt = conn
+    .prepare(SQL_SELECT_STORED_ADMIN_LEVELS)
+    .expect("failed to prepare");
+  stmt
+    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read row"))
+    .collect()
+}
+
+pub(crate) fn stored_geometry(
+  conn: &rusqlite::Connection,
+  way_id: u64,
+) -> crate::database::admin_levels::admin_geometry {
+  conn
+    .query_row(SQL_SELECT_ADMIN_LEVEL_GEOMETRY, [way_id], |r| r.get(0))
+    .expect("failed to read geometry")
+}
+
 // escreve o pbf, indexa os blob chunks e devolve a cena pronta para os testes
 pub(crate) fn indexed_scene(tag: &str, chunks: &[Vec<u8>]) -> (temp_scene, u32) {
   let scene = temp_scene(tag);

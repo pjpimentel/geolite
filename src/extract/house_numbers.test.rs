@@ -37,6 +37,23 @@ fn candidate(
   }
 }
 
+// duas ruas paralelas — a primeira em y=0, a segunda em y=second_y — e um unico
+// candidato em (0.5, candidate_y)
+fn two_parallel_streets(
+  names: (&str, &str),
+  second_y: f64,
+  addr_street: Option<&str>,
+  candidate_y: f64,
+) -> Vec<crate::database::house_numbers::house_numbers> {
+  process_tile(tile_data {
+    streets: vec![
+      make_street(1, names.0, &[(0.0, 0.0), (1.0, 0.0)]),
+      make_street(2, names.1, &[(0.0, second_y), (1.0, second_y)]),
+    ],
+    candidates: vec![candidate(10, "100", addr_street, 0.5, candidate_y)],
+  })
+}
+
 /////////////////////////////////////////////////////////////////////////////////
 // 00 — geometry_to_multilinestring
 /////////////////////////////////////////////////////////////////////////////////
@@ -186,13 +203,7 @@ fn _03_00_produces_nothing_when_the_tile_has_no_streets() {
 // 03.01: sem addr:street o casamento e por proximidade
 #[test]
 fn _03_01_matches_by_proximity_when_addr_street_is_absent() {
-  let out = process_tile(tile_data {
-    streets: vec![
-      make_street(1, "Rua Perto", &[(0.0, 0.0), (1.0, 0.0)]),
-      make_street(2, "Rua Distante", &[(0.0, 0.1), (1.0, 0.1)]),
-    ],
-    candidates: vec![candidate(10, "100", None, 0.5, 0.001)],
-  });
+  let out = two_parallel_streets(("Rua Perto", "Rua Distante"), 0.1, None, 0.001);
 
   assert_eq!(out.len(), 1);
   assert_eq!(out[0].admin_level_id, 1, "deve casar com a rua mais proxima");
@@ -204,14 +215,13 @@ fn _03_01_matches_by_proximity_when_addr_street_is_absent() {
 // 03.02: addr:street batendo com o nome da rua tem precedencia sobre a proximidade
 #[test]
 fn _03_02_prefers_the_street_named_in_addr_street() {
-  let out = process_tile(tile_data {
-    streets: vec![
-      make_street(1, "Rua Perto", &[(0.0, 0.0), (1.0, 0.0)]),
-      make_street(2, "Rua Nomeada", &[(0.0, 0.1), (1.0, 0.1)]),
-    ],
-    // fisicamente mais perto da rua 1, mas o endereco cita a rua 2
-    candidates: vec![candidate(10, "100", Some("Rua Nomeada"), 0.5, 0.001)],
-  });
+  // o candidato fica fisicamente mais perto da rua 1, mas cita a rua 2
+  let out = two_parallel_streets(
+    ("Rua Perto", "Rua Nomeada"),
+    0.1,
+    Some("Rua Nomeada"),
+    0.001,
+  );
 
   assert_eq!(out.len(), 1);
   assert_eq!(out[0].admin_level_id, 2);
@@ -233,13 +243,7 @@ fn _03_03_matches_addr_street_case_insensitively() {
 // 03.04: entre varias ruas de mesmo nome vence a mais proxima
 #[test]
 fn _03_04_picks_the_nearest_among_streets_sharing_a_name() {
-  let out = process_tile(tile_data {
-    streets: vec![
-      make_street(1, "Rua Igual", &[(0.0, 0.0), (1.0, 0.0)]),
-      make_street(2, "Rua Igual", &[(0.0, 0.05), (1.0, 0.05)]),
-    ],
-    candidates: vec![candidate(10, "100", Some("Rua Igual"), 0.5, 0.049)],
-  });
+  let out = two_parallel_streets(("Rua Igual", "Rua Igual"), 0.05, Some("Rua Igual"), 0.049);
 
   assert_eq!(out.len(), 1);
   assert_eq!(out[0].admin_level_id, 2);
