@@ -21,3 +21,11 @@ fn decompress_blob(blob: &osm_data::blob_msg) -> Vec<u8> {
   }
   panic!("unsupported blob compression");
 }
+
+#[cfg(test)]
+#[path = "pbf_fixtures.test.rs"]
+pub(crate) mod pbf_fixtures;
+
+#[cfg(test)]
+#[path = "extract.test.rs"]
+mod tests;

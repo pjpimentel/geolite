@@ -107,3 +107,7 @@ fn process_one_way(
     wkb: Geometry::LineString(ls).into(),
   })
 }
+
+#[cfg(test)]
+#[path = "level_12.test.rs"]
+mod tests;

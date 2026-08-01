@@ -133,3 +133,8 @@ fn process_one_way(w: way_work) -> Option<crate::database::admin_levels::admin_l
     wkb: geom.into(),
   })
 }
+
+
+#[cfg(test)]
+#[path = "level_10.test.rs"]
+mod tests;

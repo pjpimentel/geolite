@@ -185,3 +185,7 @@ fn member_type_str(t: &super::osm_relations::osm_member_type) -> &'static str {
     osm_member_type::relation => "r",
   }
 }
+
+#[cfg(test)]
+#[path = "jsonb_encode.test.rs"]
+mod tests;
