@@ -218,9 +218,12 @@ pub fn run(
       let Some(mls) = geometry_to_multilinestring(r.wkb.geometry()) else {
         continue;
       };
-      let Some(bbox) = mls.bounding_rect() else {
-        continue;
-      };
+      // geometry_to_multilinestring so devolve Some quando ao menos uma linha tem
+      // coordenada, e nesse caso a bbox sempre existe. descartar a rua em silencio
+      // aqui esconderia um bug de dados, entao o invariante e explicito
+      let bbox = mls
+        .bounding_rect()
+        .expect("multilinestring nao vazia sempre tem bounding rect");
       let envelope =
         AABB::from_corners([bbox.min().x, bbox.min().y], [bbox.max().x, bbox.max().y]);
       let name = meta_map[&r.id].0.clone();
@@ -285,3 +288,7 @@ pub fn run(
     progress(progress_report { total, processed });
   }
 }
+
+#[cfg(test)]
+#[path = "house_numbers.test.rs"]
+mod tests;

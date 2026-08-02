@@ -311,3 +311,7 @@ fn assemble_rings(ways: &[LineString<f64>]) -> Vec<LineString<f64>> {
   }
   rings
 }
+
+#[cfg(test)]
+#[path = "admin_levels.test.rs"]
+mod tests;

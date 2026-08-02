@@ -118,3 +118,7 @@ pub fn run(pbf: &str, conn: &rusqlite::Connection, file_id: u32) -> header_outpu
     replication_timestamp: h.osmosis_replication_timestamp,
   }
 }
+
+#[cfg(test)]
+#[path = "header.test.rs"]
+mod tests;

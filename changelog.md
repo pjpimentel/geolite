@@ -1,8 +1,14 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.3
+## **2026-XX-XX** - 0.0.4
+
+1. ADDED initial presets for guyana, paraguay and peru.
+
+## **2026-08-02** - 0.0.3
 
 1. ADDED initial presets for chile, colombia and ecuador.
+1. ADDED user-agent to http requests.
+1. ADDED more tests to extract mod.
 
 ## **2026-07-11** - 0.0.2
 

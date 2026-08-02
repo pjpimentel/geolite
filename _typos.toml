@@ -35,6 +35,10 @@ tema = "tema"
 termo = "termo"
 variantes = "variantes"
 
+# spanish street nomenclature carried by the colombia preset abbreviations
+calle = "calle"
+cll = "cll"
+
 # typos splits on digits, so `flate2` crate name becomes `flate` + `2`
 flate = "flate"
 
