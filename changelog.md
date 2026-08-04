@@ -2,7 +2,10 @@
 
 ## **2026-XX-XX** - 0.0.4
 
-1. ADDED initial presets for guyana, paraguay and peru.
+1. REMOVED dead code from the cli download command handler (the download runner never returns without output).
+1. MODIFIED cli progress bars to stay hidden under cargo test, keeping the test output clean.
+1. ADDED initial presets for guyana, paraguay, peru, suriname, uruguay, venezuela, netherlands and switzerland.
+1. ADDED more tests to cli mod to cover all command handlers, clap parsing and exit paths.
 
 ## **2026-08-02** - 0.0.3
 
