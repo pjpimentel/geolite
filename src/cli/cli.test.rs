@@ -70,6 +70,29 @@ pub(crate) fn stderr_of(out: &std::process::Output) -> String {
   String::from_utf8_lossy(&out.stderr).into_owned()
 }
 
+// a level-12 street row at a slight lon offset — the shared fixture for the index, optimize and
+// query cli tests, which only need "some indexed streets on disk".
+pub(crate) fn street_row(
+  name: &str,
+  way_id: u64,
+  lon_offset: f64,
+) -> crate::database::admin_levels::admin_levels {
+  use geo::{Coord, Geometry, LineString};
+  crate::database::admin_levels::admin_levels {
+    relation_id: None,
+    way_id: Some(way_id),
+    admin_level: 12,
+    wkb: Geometry::LineString(LineString(vec![
+      Coord { x: -46.3198 + lon_offset, y: -23.9724 },
+      Coord { x: -46.3197 + lon_offset, y: -23.9724 },
+    ]))
+    .into(),
+    name: name.to_string(),
+    country_iso_code: None,
+    post_code: None,
+  }
+}
+
 #[test]
 fn _00_00_parse_min_quality_accepts_boundaries_and_midpoint() {
   assert_eq!(parse_min_quality("0.0"), Ok(0.0));

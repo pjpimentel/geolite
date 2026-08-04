@@ -6,6 +6,10 @@ use ureq::tls::{TlsConfig, TlsProvider};
 pub mod download;
 pub mod ls;
 
+#[cfg(test)]
+#[path = "http_stubs.test.rs"]
+pub(crate) mod http_stubs;
+
 const USER_AGENT: &str = concat!("geolite/", env!("CARGO_PKG_VERSION"));
 
 static AGENT: OnceLock<Agent> = OnceLock::new();

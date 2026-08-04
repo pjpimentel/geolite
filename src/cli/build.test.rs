@@ -1,11 +1,12 @@
 use crate::cli::index::command_handler_index;
 use crate::cli::optimize::command_handler_optimize;
+use crate::cli::tests::street_row;
 use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
 use crate::database::{open_write, osm_data_path};
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
+use crate::osm_pbf_file::http_stubs::start_json_server;
 use crate::presets::{BRAZIL, DEFAULT};
 use crate::query;
-use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
@@ -45,24 +46,6 @@ impl Drop for workspace {
   }
 }
 
-// a synthetic level-12 street with a tiny geometry at a distinct location (lon_offset keeps streets
-// spatially separate so the hierarchy/rtree treat them as different rows).
-fn make_street(name: &str, way_id: u64, lon_offset: f64) -> admin_levels_row {
-  admin_levels_row {
-    relation_id: None,
-    way_id: Some(way_id),
-    admin_level: 12,
-    wkb: Geometry::LineString(LineString(vec![
-      Coord { x: -46.3198 + lon_offset, y: -23.9724 },
-      Coord { x: -46.3197 + lon_offset, y: -23.9724 },
-    ]))
-    .into(),
-    name: name.to_string(),
-    country_iso_code: None,
-    post_code: None,
-  }
-}
-
 // builds an in-memory db holding `streets` (level 12) and a tantivy index folded with
 // `abbreviations`. brazil and default share the same boosts — only the abbreviation table differs.
 fn synthetic_index(
@@ -74,7 +57,7 @@ fn synthetic_index(
   let rows: Vec<admin_levels_row> = streets
     .iter()
     .enumerate()
-    .map(|(i, name)| make_street(name, (i + 1) as u64, i as f64 * 0.0005))
+    .map(|(i, name)| street_row(name, (i + 1) as u64, i as f64 * 0.0005))
     .collect();
   batch_upsert(&conn, &rows);
   crate::index::coordinates::run(&conn, |_| {});
@@ -173,7 +156,7 @@ fn _02_build_creates_then_deletes_osm_data_sibling() {
   // hierarchy (built by command_handler_index below) satisfy the optimize preconditions.
   {
     let conn = open_write(&work.sqlite_path);
-    batch_upsert(&conn, &[make_street("way_1", 1, 0.0), make_street("way_2", 2, 0.0005)]);
+    batch_upsert(&conn, &[street_row("way_1", 1, 0.0), street_row("way_2", 2, 0.0005)]);
   }
 
   let sibling = osm_data_path(&work.sqlite_path);
@@ -189,25 +172,6 @@ fn _02_build_creates_then_deletes_osm_data_sibling() {
     !Path::new(&sibling).exists(),
     "osm_data sibling must be deleted after optimize"
   );
-}
-
-// serves a fixed json body on every request — the geofabrik index stub for build scenarios.
-fn start_json_server(body: &'static str) -> String {
-  use std::io::{Read, Write};
-  let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("failed to bind stub server");
-  let port = listener.local_addr().expect("stub server addr").port();
-  std::thread::spawn(move || {
-    for mut stream in listener.incoming().flatten() {
-      let mut buf = [0u8; 4096];
-      let _ = stream.read(&mut buf);
-      let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-      );
-      let _ = stream.write_all(response.as_bytes());
-    }
-  });
-  format!("http://127.0.0.1:{port}/index.json")
 }
 
 // a fixture pbf with two street nodes, one house-number node and the street way itself: the
@@ -251,7 +215,7 @@ fn _03_full_pipeline_from_local_pbf_fixture_runs_every_stage() {
   let work = workspace::new("full_pipeline");
   let pbf_path = work.base.join("fixture.osm.pbf").to_string_lossy().into_owned();
   write_street_fixture(&pbf_path);
-  let ls_endpoint = start_json_server(r#"{"features":[]}"#);
+  let ls_endpoint = start_json_server(r#"{"features":[]}"#.to_string());
 
   super::command_handler_build(
     &work.base.to_string_lossy(),
@@ -306,7 +270,7 @@ fn _04_build_missing_source_file_exits_one() {
 #[ignore] // executed only as a child of _05
 fn _90_build_unresolvable_source() {
   let work = workspace::new("unresolvable_source");
-  let ls_endpoint = start_json_server(r#"{"features":[]}"#);
+  let ls_endpoint = start_json_server(r#"{"features":[]}"#.to_string());
   super::command_handler_build(
     &work.base.to_string_lossy(),
     &1,

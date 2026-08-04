@@ -1,25 +1,7 @@
 use super::command_handler_osm_pbf_file_ls;
 use crate::cli::osm_pbf_file::osm_pbf_file_ls_source;
 use crate::extract::pbf_fixtures::tempdir_guard;
-use std::io::{Read, Write};
-
-// serves a fixed json body on every request — the geofabrik index stub.
-fn start_json_server(body: &'static str) -> String {
-  let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("failed to bind stub server");
-  let port = listener.local_addr().expect("stub server addr").port();
-  std::thread::spawn(move || {
-    for mut stream in listener.incoming().flatten() {
-      let mut buf = [0u8; 4096];
-      let _ = stream.read(&mut buf);
-      let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-      );
-      let _ = stream.write_all(response.as_bytes());
-    }
-  });
-  format!("http://127.0.0.1:{port}/index.json")
-}
+use crate::osm_pbf_file::http_stubs::start_json_server;
 
 const TWO_FEATURES: &str = r#"{"features":[
   {"properties":{"id":"alpha","name":"Alpha","urls":{"pbf":"https://example.invalid/alpha.osm.pbf"}}},
@@ -30,7 +12,7 @@ const TWO_FEATURES: &str = r#"{"features":[
 fn _00_00_prints_the_geofabrik_table_from_the_stub_index() {
   let guard = tempdir_guard::new("cli_ls_geofabrik");
   let db = guard.path.join("db.sqlite3").to_string_lossy().into_owned();
-  let endpoint = start_json_server(TWO_FEATURES);
+  let endpoint = start_json_server(TWO_FEATURES.to_string());
   command_handler_osm_pbf_file_ls(
     &guard.path.to_string_lossy(),
     &db,
@@ -44,7 +26,7 @@ fn _00_00_prints_the_geofabrik_table_from_the_stub_index() {
 fn _00_01_prints_the_header_only_for_an_empty_index() {
   let guard = tempdir_guard::new("cli_ls_geofabrik_empty");
   let db = guard.path.join("db.sqlite3").to_string_lossy().into_owned();
-  let endpoint = start_json_server(r#"{"features":[]}"#);
+  let endpoint = start_json_server(r#"{"features":[]}"#.to_string());
   command_handler_osm_pbf_file_ls(
     &guard.path.to_string_lossy(),
     &db,

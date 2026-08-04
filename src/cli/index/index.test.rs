@@ -1,25 +1,9 @@
 use super::*;
-use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
+use crate::cli::tests::street_row;
+use crate::database::admin_levels::batch_upsert;
 use crate::database::open_write;
 use crate::extract::pbf_fixtures::tempdir_guard;
 use crate::presets::DEFAULT;
-use geo::{Coord, Geometry, LineString};
-
-fn street_row(name: &str, way_id: u64, lon_offset: f64) -> admin_levels_row {
-  admin_levels_row {
-    relation_id: None,
-    way_id: Some(way_id),
-    admin_level: 12,
-    wkb: Geometry::LineString(LineString(vec![
-      Coord { x: -46.3198 + lon_offset, y: -23.9724 },
-      Coord { x: -46.3197 + lon_offset, y: -23.9724 },
-    ]))
-    .into(),
-    name: name.to_string(),
-    country_iso_code: None,
-    post_code: None,
-  }
-}
 
 // a scene with two streets in admin_levels — enough for every index stage to have work.
 fn street_scene(tag: &str) -> (tempdir_guard, String, String) {

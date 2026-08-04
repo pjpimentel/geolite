@@ -43,9 +43,11 @@ fn _01_01_extract_stage_reports_the_extracted_total() {
   assert!(elapsed > 0.0, "a stage with work must report elapsed time");
 }
 
-#[test]
-fn _02_00_generic_level_extracts_a_relation() {
-  let scene = temp_scene("cli_levels_generic");
+// inserts a closed-way relation tagged at `level`, runs the handler for that level only and
+// returns the stored rows — the shared scene for the per-level scenarios below.
+fn extract_relation_at_level(tag: &str, level: u8, name: &str) -> Vec<(Option<u64>, u8, String)> {
+  let scene = temp_scene(tag);
+  let level_value = level.to_string();
   {
     let conn = crate::database::open_write(&scene.db_path);
     insert_closed_way(&conn, 300, 1, (0.0, 0.0), 1.0, &[]);
@@ -53,13 +55,18 @@ fn _02_00_generic_level_extracts_a_relation() {
       &conn,
       700,
       &[(1, 300, "outer")],
-      &[("name", "Cidade"), ("admin_level", "8"), ("boundary", "administrative")],
+      &[("name", name), ("admin_level", level_value.as_str()), ("boundary", "administrative")],
     );
   }
-  command_handler_extract_osm_admin_levels(&scene.db_path, &[8], &1, false, &["name"], &[]);
+  command_handler_extract_osm_admin_levels(&scene.db_path, &[level], &1, false, &["name"], &[]);
 
   let conn = crate::database::open_write(&scene.db_path);
-  let stored = stored_admin_levels(&conn);
+  stored_admin_levels(&conn)
+}
+
+#[test]
+fn _02_00_generic_level_extracts_a_relation() {
+  let stored = extract_relation_at_level("cli_levels_generic", 8, "Cidade");
   assert!(
     stored.iter().any(|(_, level, name)| *level == 8 && name == "Cidade"),
     "the level-8 relation must be stored, got {stored:?}"
@@ -68,21 +75,7 @@ fn _02_00_generic_level_extracts_a_relation() {
 
 #[test]
 fn _02_01_level_10_runs_both_relation_and_way_stages() {
-  let scene = temp_scene("cli_levels_ten");
-  {
-    let conn = crate::database::open_write(&scene.db_path);
-    insert_closed_way(&conn, 310, 11, (0.0, 0.0), 0.5, &[]);
-    insert_relation(
-      &conn,
-      710,
-      &[(1, 310, "outer")],
-      &[("name", "Bairro"), ("admin_level", "10"), ("boundary", "administrative")],
-    );
-  }
-  command_handler_extract_osm_admin_levels(&scene.db_path, &[10], &1, false, &["name"], &[]);
-
-  let conn = crate::database::open_write(&scene.db_path);
-  let stored = stored_admin_levels(&conn);
+  let stored = extract_relation_at_level("cli_levels_ten", 10, "Bairro");
   assert!(
     stored.iter().any(|(_, level, name)| *level == 10 && name == "Bairro"),
     "the level-10 relation must be stored, got {stored:?}"
