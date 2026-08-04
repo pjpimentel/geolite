@@ -9,3 +9,7 @@ pub fn command_handler_http_server(
   crate::cli::require_sqlite(sqlite_path);
   crate::http::serve(sqlite_path, index_path, host, port, threads, boosts);
 }
+
+#[cfg(test)]
+#[path = "http_server.test.rs"]
+mod tests;

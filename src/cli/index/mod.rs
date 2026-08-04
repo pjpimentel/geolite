@@ -50,3 +50,7 @@ pub fn command_handler_index(
     }
   }
 }
+
+#[cfg(test)]
+#[path = "index.test.rs"]
+mod tests;

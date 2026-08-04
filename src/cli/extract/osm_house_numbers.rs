@@ -40,3 +40,7 @@ pub fn command_handler_extract_osm_house_numbers(
 
   crate::database::osm_pbf_files::update_house_numbers_count(&conn);
 }
+
+#[cfg(test)]
+#[path = "osm_house_numbers.test.rs"]
+mod tests;

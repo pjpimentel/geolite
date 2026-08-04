@@ -258,3 +258,128 @@ fn _02_merge_matches_single_combined_build_query_parity() {
   let _ = std::fs::remove_dir_all(&merged_index);
   let _ = std::fs::remove_dir_all(&combined_index);
 }
+
+#[test]
+fn _03_require_compatible_version_returns_on_the_current_schema() {
+  let path = temp_path("version_ok");
+  drop(open_write_main(&path));
+  super::require_compatible_version("base", &path);
+  cleanup(&path);
+}
+
+// merging into an existing compatible base takes the in-place branch (version-checked, not the
+// "creating new base" one) and appends the source rows to the ones already there.
+#[test]
+fn _04_merges_into_an_existing_compatible_base_in_place() {
+  let base = temp_path("inplace_base");
+  let source = temp_path("inplace_source");
+  let index_dir = format!("{}.tantivy", temp_path("inplace_index"));
+
+  build_source(&base, &[make_street_at("Rua Alpha", 1, -46.30, -23.90)], &[]);
+  build_source(&source, &[make_street_at("Rue Gamma", 3, 7.40, 43.70)], &[]);
+
+  super::command_handler_merge(&base, std::slice::from_ref(&source), &index_dir, &DEFAULT);
+
+  let conn = crate::database::open_readonly(&base);
+  assert_eq!(
+    count(&conn, "SELECT COUNT(*) FROM admin_levels"),
+    2,
+    "the existing base must keep its street and gain the merged one"
+  );
+  drop(conn);
+
+  cleanup_build(&base);
+  cleanup_build(&source);
+  let _ = std::fs::remove_dir_all(&index_dir);
+}
+
+// ---- process::exit paths, asserted from a respawned child ----
+
+fn assert_merge_child_exits_one(helper: &str, expected_stderr: &str) {
+  let out = crate::cli::tests::respawn(helper, &[], &[]);
+  assert_eq!(out.status.code(), Some(1), "stderr: {}", crate::cli::tests::stderr_of(&out));
+  assert!(
+    crate::cli::tests::stderr_of(&out).contains(expected_stderr),
+    "stderr must contain '{expected_stderr}', got: {}",
+    crate::cli::tests::stderr_of(&out)
+  );
+}
+
+#[test]
+#[ignore] // executed only as a child of _05
+fn _90_merge_with_no_databases() {
+  let base = temp_path("exit_no_databases");
+  super::command_handler_merge(&base, &[], &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _05_merge_without_databases_exits_one() {
+  assert_merge_child_exits_one("cli::merge::tests::_90_merge_with_no_databases", "no databases to merge");
+}
+
+#[test]
+#[ignore] // executed only as a child of _06
+fn _90_merge_with_missing_database() {
+  let base = temp_path("exit_missing_db_base");
+  let ghost = temp_path("exit_missing_db_ghost");
+  super::command_handler_merge(&base, std::slice::from_ref(&ghost), &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _06_merge_with_a_missing_database_exits_one() {
+  assert_merge_child_exits_one("cli::merge::tests::_90_merge_with_missing_database", "database not found");
+}
+
+#[test]
+#[ignore] // executed only as a child of _07
+fn _90_merge_with_incompatible_base() {
+  let base = temp_path("exit_bad_base");
+  let source = temp_path("exit_bad_base_source");
+  // an empty file is a valid sqlite db at user_version 0, which never matches SCHEMA_VERSION.
+  std::fs::write(&base, b"").expect("failed to create empty base");
+  std::fs::write(&source, b"").expect("failed to create empty source");
+  super::command_handler_merge(&base, std::slice::from_ref(&source), &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _07_merge_with_an_incompatible_base_exits_one() {
+  assert_merge_child_exits_one(
+    "cli::merge::tests::_90_merge_with_incompatible_base",
+    "incompatible schema version on base",
+  );
+}
+
+#[test]
+#[ignore] // executed only as a child of _08
+fn _90_merge_with_incompatible_source() {
+  let base = temp_path("exit_bad_source_base");
+  let source = temp_path("exit_bad_source");
+  std::fs::write(&source, b"").expect("failed to create empty source");
+  super::command_handler_merge(&base, std::slice::from_ref(&source), &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _08_merge_with_an_incompatible_source_exits_one() {
+  assert_merge_child_exits_one(
+    "cli::merge::tests::_90_merge_with_incompatible_source",
+    "incompatible schema version on source",
+  );
+}
+
+#[test]
+#[ignore] // executed only as a child of _09
+fn _90_merge_with_nothing_to_merge() {
+  let base = temp_path("exit_empty_base");
+  let source = temp_path("exit_empty_source");
+  // stamped at the current schema but holding zero admin_levels rows.
+  build_source(&source, &[], &[]);
+  super::command_handler_merge(&base, std::slice::from_ref(&source), &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _09_merge_that_stays_empty_exits_one() {
+  assert_merge_child_exits_one(
+    "cli::merge::tests::_90_merge_with_nothing_to_merge",
+    "admin_levels is empty after merge",
+  );
+}

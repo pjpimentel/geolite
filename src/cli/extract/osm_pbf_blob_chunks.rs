@@ -83,3 +83,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
 
   crate::database::osm_pbf_blob_chunks::create_indexes(&conn);
 }
+
+#[cfg(test)]
+#[path = "osm_pbf_blob_chunks.test.rs"]
+mod tests;
