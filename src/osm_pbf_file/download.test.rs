@@ -1,108 +1,14 @@
-use std::{
-  fs,
-  io::{Read, Write},
-  net::{TcpListener, TcpStream},
-  path::PathBuf,
-  sync::Arc,
-};
+use std::{fs, path::PathBuf, sync::Arc};
+
+use crate::osm_pbf_file::http_stubs::{md5_reply, start_file_server};
 
 use super::{download_event, md5_status, run};
-
-enum md5_reply {
-  not_found,
-  // 200 with "{hash}  file.osm.pbf\n"
-  hash(String),
-  // 200 with verbatim body bytes
-  raw(Vec<u8>),
-}
 
 fn tmp(name: &str) -> PathBuf {
   let p = std::env::temp_dir().join(name);
   let _ = fs::remove_dir_all(&p);
   fs::create_dir_all(&p).unwrap();
   p
-}
-
-fn start_file_server(content: Vec<u8>, md5: md5_reply) -> String {
-  let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-  let port = listener.local_addr().unwrap().port();
-  let url = format!("http://127.0.0.1:{port}/file.osm.pbf");
-  let content = Arc::new(content);
-  let md5 = Arc::new(md5);
-  std::thread::spawn(move || {
-    for stream in listener.incoming().flatten() {
-      let content = Arc::clone(&content);
-      let md5 = Arc::clone(&md5);
-      std::thread::spawn(move || handle_connection(stream, &content, &md5));
-    }
-  });
-  url
-}
-
-fn handle_connection(mut stream: TcpStream, content: &[u8], md5: &md5_reply) {
-  let mut buf = [0u8; 4096];
-  let n = stream.read(&mut buf).unwrap_or(0);
-  let request = String::from_utf8_lossy(&buf[..n]);
-  let first_line = request.lines().next().unwrap_or("");
-  let mut parts = first_line.split_whitespace();
-  let method = parts.next().unwrap_or("");
-  let path = parts.next().unwrap_or("");
-  let range = request
-    .lines()
-    .find(|l| l.to_lowercase().starts_with("range:"))
-    .and_then(|l| l.split_once(':').map(|x| x.1))
-    .map(|v| v.trim().to_string());
-  if path.ends_with(".md5") {
-    match md5 {
-      md5_reply::not_found => {
-        stream
-          .write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-          .ok();
-      }
-      md5_reply::hash(hash) => {
-        let body = format!("{hash}  file.osm.pbf\n");
-        let response = format!(
-          "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-          body.len()
-        );
-        stream.write_all(response.as_bytes()).ok();
-      }
-      md5_reply::raw(bytes) => {
-        let header = format!(
-          "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-          bytes.len()
-        );
-        stream.write_all(header.as_bytes()).ok();
-        stream.write_all(bytes).ok();
-      }
-    }
-    return;
-  }
-  if method == "HEAD" {
-    let response = format!(
-      "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nAccept-Ranges: bytes\r\nConnection: close\r\n\r\n",
-      content.len()
-    );
-    stream.write_all(response.as_bytes()).ok();
-  } else if method == "GET" {
-    let range_str = range.unwrap_or_default();
-    let range_str = range_str.trim_start_matches("bytes=");
-    let mut iter = range_str.splitn(2, '-');
-    let start: usize = iter.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let end: usize = iter
-      .next()
-      .and_then(|s| s.parse().ok())
-      .unwrap_or(content.len() - 1)
-      .min(content.len() - 1);
-    let chunk = &content[start..=end];
-    let response = format!(
-      "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {start}-{end}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-      content.len(),
-      chunk.len()
-    );
-    stream.write_all(response.as_bytes()).ok();
-    stream.write_all(chunk).ok();
-  }
 }
 
 // 00: downloads file from url and saves to data_path root.

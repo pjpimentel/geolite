@@ -269,6 +269,218 @@ pub const ECUADOR: preset = preset {
   },
 };
 
+pub const GUYANA: preset = preset {
+  name: "guyana",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:en", "name"],
+    admin_levels: &[2, 4, 6, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: DEFAULT.extract_house_numbers,
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("rd.", "road"),
+    ("st.", "street"),
+    ("ave.", "avenue"),
+    ("hwy.", "highway"),
+    ("cres.", "crescent"),
+    ("sq.", "square"),
+    ("gdns.", "gardens"),
+    ("pk.", "park"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
+pub const PARAGUAY: preset = preset {
+  name: "paraguay",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:es", "name"],
+    admin_levels: &[2, 4, 8, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: extract_house_numbers_preset {
+    drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    ..DEFAULT.extract_house_numbers
+  },
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("av.", "avenida"),
+    ("avda.", "avenida"),
+    ("pje.", "pasaje"),
+    ("mcal.", "mariscal"),
+    ("tte.", "teniente"),
+    ("cnel.", "coronel"),
+    ("gral.", "general"),
+    ("pdte.", "presidente"),
+    ("dr.", "doctor"),
+    ("sta.", "santa"),
+    ("sto.", "santo"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
+pub const PERU: preset = preset {
+  name: "peru",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:es", "name"],
+    admin_levels: &[2, 4, 8, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: extract_house_numbers_preset {
+    drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    ..DEFAULT.extract_house_numbers
+  },
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("jr.", "jirón"),
+    ("ca.", "calle"),
+    ("av.", "avenida"),
+    ("avda.", "avenida"),
+    ("psje.", "pasaje"),
+    ("pje.", "pasaje"),
+    ("prol.", "prolongación"),
+    ("urb.", "urbanización"),
+    ("carr.", "carretera"),
+    ("gral.", "general"),
+    ("mcal.", "mariscal"),
+    ("dr.", "doctor"),
+    ("sta.", "santa"),
+    ("sto.", "santo"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
+pub const SURINAME: preset = preset {
+  name: "suriname",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:nl", "name"],
+    admin_levels: &[2, 4, 6, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: DEFAULT.extract_house_numbers,
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("str.", "straat"),
+    ("ln.", "laan"),
+    ("pl.", "plein"),
+    ("st.", "sint"),
+    ("dr.", "dokter"),
+    ("mr.", "meester"),
+    ("burg.", "burgemeester"),
+    ("prof.", "professor"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
+pub const URUGUAY: preset = preset {
+  name: "uruguay",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:es", "name"],
+    admin_levels: &[2, 8, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: extract_house_numbers_preset {
+    drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    ..DEFAULT.extract_house_numbers
+  },
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("av.", "avenida"),
+    ("avda.", "avenida"),
+    ("bvar.", "bulevar"),
+    ("cno.", "camino"),
+    ("rbla.", "rambla"),
+    ("pje.", "pasaje"),
+    ("gral.", "general"),
+    ("pdte.", "presidente"),
+    ("dr.", "doctor"),
+    ("sta.", "santa"),
+    ("sto.", "santo"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
+pub const VENEZUELA: preset = preset {
+  name: "venezuela",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:es", "name"],
+    admin_levels: &[2, 4, 6, 8, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: extract_house_numbers_preset {
+    drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    ..DEFAULT.extract_house_numbers
+  },
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("av.", "avenida"),
+    ("avda.", "avenida"),
+    ("urb.", "urbanización"),
+    ("esq.", "esquina"),
+    ("res.", "residencias"),
+    ("ctra.", "carretera"),
+    ("blvd.", "bulevar"),
+    ("gral.", "general"),
+    ("pdte.", "presidente"),
+    ("dr.", "doctor"),
+    ("sta.", "santa"),
+    ("sto.", "santo"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
+pub const NETHERLANDS: preset = preset {
+  name: "netherlands",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    name_priority: &["name:nl", "name"],
+    admin_levels: &[2, 4, 8, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: DEFAULT.extract_house_numbers,
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("str.", "straat"),
+    ("ln.", "laan"),
+    ("pl.", "plein"),
+    ("st.", "sint"),
+    ("burg.", "burgemeester"),
+    ("prof.", "professor"),
+    ("dr.", "doctor"),
+    ("mr.", "meester"),
+    ("kon.", "koningin"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
+pub const SWITZERLAND: preset = preset {
+  name: "switzerland",
+  extract_osm_admin_levels: extract_osm_admin_levels_preset {
+    admin_levels: &[2, 4, 8, 12],
+    ..DEFAULT.extract_osm_admin_levels
+  },
+  extract_house_numbers: DEFAULT.extract_house_numbers,
+  index_user_friendly_name: index_user_friendly_name_preset {
+    abbreviations: &[
+    ("str.", "strasse"),
+    ("av.", "avenue"),
+    ("ch.", "chemin"),
+    ("rte.", "route"),
+    ("pl.", "place"),
+    ("bd.", "boulevard"),
+    ("imp.", "impasse"),
+    ("st.", "sankt"),
+  ],
+    ..DEFAULT.index_user_friendly_name
+  },
+};
+
 const ID_PRESET: &[(&str, &preset)] = &[
   ("brazil", &BRAZIL),
   ("centro-oeste", &BRAZIL),
@@ -282,6 +494,14 @@ const ID_PRESET: &[(&str, &preset)] = &[
   ("chile", &CHILE),
   ("colombia", &COLOMBIA),
   ("ecuador", &ECUADOR),
+  ("guyana", &GUYANA),
+  ("paraguay", &PARAGUAY),
+  ("peru", &PERU),
+  ("suriname", &SURINAME),
+  ("uruguay", &URUGUAY),
+  ("venezuela", &VENEZUELA),
+  ("netherlands", &NETHERLANDS),
+  ("switzerland", &SWITZERLAND),
 ];
 
 const INCLUDES_PRESET: &[(&str, &preset)] = &[
@@ -292,6 +512,14 @@ const INCLUDES_PRESET: &[(&str, &preset)] = &[
   ("chile", &CHILE),
   ("colombia", &COLOMBIA),
   ("ecuador", &ECUADOR),
+  ("guyana", &GUYANA),
+  ("paraguay", &PARAGUAY),
+  ("peru", &PERU),
+  ("suriname", &SURINAME),
+  ("uruguay", &URUGUAY),
+  ("venezuela", &VENEZUELA),
+  ("netherlands", &NETHERLANDS),
+  ("switzerland", &SWITZERLAND),
 ];
 
 fn lookup_exact(map: &[(&str, &preset)], key: &str) -> Option<preset> {

@@ -60,6 +60,7 @@ pub fn command_handler_osm_pbf_file_download(
       download_event::download_start { total, .. } => {
         let _ = start_cb.set(Instant::now());
         let b = ProgressBar::new(total);
+        b.set_draw_target(crate::cli::progress_draw_target());
         b.set_style(
           ProgressStyle::with_template(
             "{prefix:.bold.green} {msg:<40}  [{bar:20.green/white}] {percent:>3}%  {bytes:>10} / {total_bytes:<10}  {binary_bytes_per_sec}",
@@ -97,47 +98,45 @@ pub fn command_handler_osm_pbf_file_download(
       }
     });
 
-    match output {
-      None => {
-        if abort_on_any_error {
-          std::process::exit(1);
-        }
+    // never None: download::run panics on any transport failure before returning.
+    let output = output.expect("download produced no output");
+
+    let fname = output
+      .path
+      .file_name()
+      .unwrap_or_default()
+      .to_string_lossy();
+    match start_time.get() {
+      Some(t) => {
+        let elapsed = t.elapsed().as_secs_f64();
+        println!(" done");
+        println!(
+          "\x1b[1;32msaved\x1b[0m {fname} in {elapsed:.1}s → {}",
+          output.path.display()
+        );
       }
-      Some(output) => {
-        let fname = output
-          .path
-          .file_name()
-          .unwrap_or_default()
-          .to_string_lossy();
-        match start_time.get() {
-          Some(t) => {
-            let elapsed = t.elapsed().as_secs_f64();
-            println!(" done");
-            println!(
-              "\x1b[1;32msaved\x1b[0m {fname} in {elapsed:.1}s → {}",
-              output.path.display()
-            );
-          }
-          None => {
-            println!(
-              "\x1b[1;32mreused\x1b[0m {fname} → {}",
-              output.path.display()
-            );
-          }
-        }
-        if let md5_status::mismatch { expected, actual } = &output.md5 {
-          eprintln!("\x1b[1;33mwarning\x1b[0m: md5 mismatch: expected {expected} got {actual}");
-        }
-        let conn = crate::database::open_write(sqlite_path);
-        crate::database::osm_pbf_files::create_indexes(&conn);
-        crate::database::osm_pbf_files::update_downloaded(
-          &conn,
-          &url,
-          output.path.to_str().unwrap_or(""),
-          output.total_bytes,
-          &output.actual_md5,
+      None => {
+        println!(
+          "\x1b[1;32mreused\x1b[0m {fname} → {}",
+          output.path.display()
         );
       }
     }
+    if let md5_status::mismatch { expected, actual } = &output.md5 {
+      eprintln!("\x1b[1;33mwarning\x1b[0m: md5 mismatch: expected {expected} got {actual}");
+    }
+    let conn = crate::database::open_write(sqlite_path);
+    crate::database::osm_pbf_files::create_indexes(&conn);
+    crate::database::osm_pbf_files::update_downloaded(
+      &conn,
+      &url,
+      output.path.to_str().unwrap_or(""),
+      output.total_bytes,
+      &output.actual_md5,
+    );
   }
 }
+
+#[cfg(test)]
+#[path = "download.test.rs"]
+mod tests;

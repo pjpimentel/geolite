@@ -1,50 +1,8 @@
-use std::{
-  io::{Read, Write},
-  net::{TcpListener, TcpStream},
-  path::Path,
-  sync::{Arc, Mutex},
-};
+use std::path::Path;
+
+use crate::osm_pbf_file::http_stubs::{start_json_server, start_recording_json_server};
 
 use super::{geofabrik, list_local, resolve_geofabrik_url};
-
-fn start_json_server(body: String) -> String {
-  start_recording_json_server(body).0
-}
-
-// serves the json index and records the raw text of every request received, so
-// scenarios can assert on request count and on request headers.
-fn start_recording_json_server(body: String) -> (String, Arc<Mutex<Vec<String>>>) {
-  let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-  let port = listener.local_addr().unwrap().port();
-  let url = format!("http://127.0.0.1:{port}/index.json");
-  let body = Arc::new(body);
-  let requests: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-  let requests_srv = requests.clone();
-  std::thread::spawn(move || {
-    for stream in listener.incoming().flatten() {
-      let body = Arc::clone(&body);
-      let requests = Arc::clone(&requests_srv);
-      std::thread::spawn(move || serve_json(stream, &body, &requests));
-    }
-  });
-  (url, requests)
-}
-
-fn serve_json(mut stream: TcpStream, body: &str, requests: &Mutex<Vec<String>>) {
-  let mut buf = [0u8; 4096];
-  let n = stream.read(&mut buf).unwrap_or(0);
-  // records before responding, so a returned call always sees its own request.
-  requests
-    .lock()
-    .unwrap()
-    .push(String::from_utf8_lossy(&buf[..n]).to_string());
-  let response = format!(
-    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-    body.len(),
-    body
-  );
-  let _ = stream.write_all(response.as_bytes());
-}
 
 fn tmp(name: &str) -> std::path::PathBuf {
   let p = std::env::temp_dir().join(name);

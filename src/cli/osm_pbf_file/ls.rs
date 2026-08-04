@@ -42,3 +42,7 @@ pub fn command_handler_osm_pbf_file_ls(
     }
   }
 }
+
+#[cfg(test)]
+#[path = "ls.test.rs"]
+mod tests;

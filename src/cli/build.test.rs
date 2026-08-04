@@ -1,11 +1,12 @@
 use crate::cli::index::command_handler_index;
 use crate::cli::optimize::command_handler_optimize;
+use crate::cli::tests::street_row;
 use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
 use crate::database::{open_write, osm_data_path};
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
+use crate::osm_pbf_file::http_stubs::start_json_server;
 use crate::presets::{BRAZIL, DEFAULT};
 use crate::query;
-use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
@@ -45,24 +46,6 @@ impl Drop for workspace {
   }
 }
 
-// a synthetic level-12 street with a tiny geometry at a distinct location (lon_offset keeps streets
-// spatially separate so the hierarchy/rtree treat them as different rows).
-fn make_street(name: &str, way_id: u64, lon_offset: f64) -> admin_levels_row {
-  admin_levels_row {
-    relation_id: None,
-    way_id: Some(way_id),
-    admin_level: 12,
-    wkb: Geometry::LineString(LineString(vec![
-      Coord { x: -46.3198 + lon_offset, y: -23.9724 },
-      Coord { x: -46.3197 + lon_offset, y: -23.9724 },
-    ]))
-    .into(),
-    name: name.to_string(),
-    country_iso_code: None,
-    post_code: None,
-  }
-}
-
 // builds an in-memory db holding `streets` (level 12) and a tantivy index folded with
 // `abbreviations`. brazil and default share the same boosts — only the abbreviation table differs.
 fn synthetic_index(
@@ -74,7 +57,7 @@ fn synthetic_index(
   let rows: Vec<admin_levels_row> = streets
     .iter()
     .enumerate()
-    .map(|(i, name)| make_street(name, (i + 1) as u64, i as f64 * 0.0005))
+    .map(|(i, name)| street_row(name, (i + 1) as u64, i as f64 * 0.0005))
     .collect();
   batch_upsert(&conn, &rows);
   crate::index::coordinates::run(&conn, |_| {});
@@ -173,7 +156,7 @@ fn _02_build_creates_then_deletes_osm_data_sibling() {
   // hierarchy (built by command_handler_index below) satisfy the optimize preconditions.
   {
     let conn = open_write(&work.sqlite_path);
-    batch_upsert(&conn, &[make_street("way_1", 1, 0.0), make_street("way_2", 2, 0.0005)]);
+    batch_upsert(&conn, &[street_row("way_1", 1, 0.0), street_row("way_2", 2, 0.0005)]);
   }
 
   let sibling = osm_data_path(&work.sqlite_path);
@@ -188,5 +171,123 @@ fn _02_build_creates_then_deletes_osm_data_sibling() {
   assert!(
     !Path::new(&sibling).exists(),
     "osm_data sibling must be deleted after optimize"
+  );
+}
+
+// a fixture pbf with two street nodes, one house-number node and the street way itself: the
+// smallest input where every build stage (download probe, blob-chunks, header, osm-data,
+// admin-levels, house-numbers, index, optimize) has real work to do.
+fn write_street_fixture(pbf_path: &str) {
+  use crate::extract::pbf_fixtures::{
+    blob_compression, block_spec, data_chunk, header_chunk, node, way, write_pbf,
+  };
+  write_pbf(
+    pbf_path,
+    &[
+      header_chunk(),
+      data_chunk(
+        &block_spec {
+          dense: vec![
+            node(1, -23.9724, -46.3198, &[]),
+            node(2, -23.9724, -46.3197, &[]),
+            node(3, -23.97235, -46.31975, &[("addr:housenumber", "10"), ("addr:street", "Rua Teste")]),
+          ],
+          ..Default::default()
+        },
+        blob_compression::zlib,
+      ),
+      data_chunk(
+        &block_spec {
+          ways: vec![way(100, &[1, 2], &[("highway", "residential"), ("name", "Rua Teste")])],
+          ..Default::default()
+        },
+        blob_compression::zlib,
+      ),
+    ],
+  );
+}
+
+// drives command_handler_build end to end on a local fixture: the source is not a geofabrik id
+// (the stub index is empty, so download only warns), every extract stage runs on real data, and
+// the pipeline ends with a populated admin_levels, a tantivy dir and no osm_data sibling.
+#[test]
+fn _03_full_pipeline_from_local_pbf_fixture_runs_every_stage() {
+  let work = workspace::new("full_pipeline");
+  let pbf_path = work.base.join("fixture.osm.pbf").to_string_lossy().into_owned();
+  write_street_fixture(&pbf_path);
+  let ls_endpoint = start_json_server(r#"{"features":[]}"#.to_string());
+
+  super::command_handler_build(
+    &work.base.to_string_lossy(),
+    &2,
+    &work.sqlite_path,
+    &work.index_path,
+    &pbf_path,
+    &ls_endpoint,
+    false,
+    &DEFAULT,
+  );
+
+  let conn = crate::database::open_readonly(&work.sqlite_path);
+  assert!(
+    crate::database::admin_levels::count_with_geometry(&conn) >= 1,
+    "the street way must land in admin_levels"
+  );
+  assert!(
+    Path::new(&work.index_path).exists(),
+    "the tantivy index dir must be built"
+  );
+  assert!(
+    !Path::new(&osm_data_path(&work.sqlite_path)).exists(),
+    "the osm_data sibling must be deleted by the optimize stage"
+  );
+}
+
+#[test]
+#[ignore] // executed only as a child of _04
+fn _90_build_source_file_not_found() {
+  let work = workspace::new("missing_source");
+  super::command_handler_build(
+    &work.base.to_string_lossy(),
+    &1,
+    &work.sqlite_path,
+    &work.index_path,
+    "./nope/missing.osm.pbf",
+    "http://127.0.0.1:1/index.json",
+    false,
+    &DEFAULT,
+  );
+}
+
+#[test]
+fn _04_build_missing_source_file_exits_one() {
+  let out = crate::cli::tests::respawn("cli::build::tests::_90_build_source_file_not_found", &[], &[]);
+  assert_eq!(out.status.code(), Some(1), "stderr: {}", crate::cli::tests::stderr_of(&out));
+  assert!(crate::cli::tests::stderr_of(&out).contains("source file not found"));
+}
+
+#[test]
+#[ignore] // executed only as a child of _05
+fn _90_build_unresolvable_source() {
+  let work = workspace::new("unresolvable_source");
+  let ls_endpoint = start_json_server(r#"{"features":[]}"#.to_string());
+  super::command_handler_build(
+    &work.base.to_string_lossy(),
+    &1,
+    &work.sqlite_path,
+    &work.index_path,
+    "unknown-id",
+    &ls_endpoint,
+    false,
+    &DEFAULT,
+  );
+}
+
+#[test]
+fn _05_build_unresolvable_source_exits_one_after_download() {
+  let out = crate::cli::tests::respawn("cli::build::tests::_90_build_unresolvable_source", &[], &[]);
+  assert_eq!(out.status.code(), Some(1), "stderr: {}", crate::cli::tests::stderr_of(&out));
+  assert!(
+    crate::cli::tests::stderr_of(&out).contains("could not resolve source after download")
   );
 }

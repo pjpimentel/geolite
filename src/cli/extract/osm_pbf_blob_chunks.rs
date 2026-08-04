@@ -56,6 +56,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
     let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, &osm_pbf_file_path);
 
     let bar = ProgressBar::new_spinner();
+    bar.set_draw_target(crate::cli::progress_draw_target());
     bar.set_style(
       ProgressStyle::with_template(
         "{prefix:.bold.green} {msg:<40}  [{bar:20.green/white}] {percent:>3}%  {bytes:>10} / {total_bytes:<10}  {binary_bytes_per_sec}",
@@ -83,3 +84,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
 
   crate::database::osm_pbf_blob_chunks::create_indexes(&conn);
 }
+
+#[cfg(test)]
+#[path = "osm_pbf_blob_chunks.test.rs"]
+mod tests;
