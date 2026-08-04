@@ -1,5 +1,9 @@
 # decisions
 
+## **2026-08-02**
+
+1. add more unit tests to cover more than 90% before start refactoring some parts.
+
 ## **2026-06-28** (before public release)
 
 1. rewrite from deno/node to rust due limitations on memory control and multi threading.
