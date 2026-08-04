@@ -32,6 +32,7 @@ fn extract_stage(
   let total_cb = total.clone();
 
   let bar = ProgressBar::new_spinner();
+  bar.set_draw_target(crate::cli::progress_draw_target());
   bar.set_style(
     ProgressStyle::with_template(
       "{prefix:.bold.green} {msg:<16}  [{bar:20.green/white}] {percent:>3}%  {pos:>6}/{len:<6}  {per_sec}  eta {eta}",

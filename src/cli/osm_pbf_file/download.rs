@@ -60,6 +60,7 @@ pub fn command_handler_osm_pbf_file_download(
       download_event::download_start { total, .. } => {
         let _ = start_cb.set(Instant::now());
         let b = ProgressBar::new(total);
+        b.set_draw_target(crate::cli::progress_draw_target());
         b.set_style(
           ProgressStyle::with_template(
             "{prefix:.bold.green} {msg:<40}  [{bar:20.green/white}] {percent:>3}%  {bytes:>10} / {total_bytes:<10}  {binary_bytes_per_sec}",

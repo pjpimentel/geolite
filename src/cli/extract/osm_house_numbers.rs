@@ -12,6 +12,7 @@ pub fn command_handler_extract_osm_house_numbers(
   let conn = crate::database::open_write(sqlite_path);
 
   let bar = ProgressBar::new_spinner();
+  bar.set_draw_target(crate::cli::progress_draw_target());
   bar.set_style(
     ProgressStyle::with_template(
       "{prefix:.bold.green} {msg:<40}  [{bar:20.green/white}] {percent:>3}%  {pos:>6}/{len:<6}  {per_sec}  eta {eta}",

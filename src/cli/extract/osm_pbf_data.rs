@@ -126,7 +126,7 @@ pub fn command_handler_extract_osm_pbf_data(
     let chunks = crate::database::osm_pbf_blob_chunks::get_data_chunks(&conn, file_id);
 
     let decoder_threads = threads.saturating_sub(1).max(1);
-    let multi = MultiProgress::new();
+    let multi = MultiProgress::with_draw_target(crate::cli::progress_draw_target());
     let decoder_bar = multi.add(ProgressBar::new_spinner());
     decoder_bar.set_style(
       ProgressStyle::with_template(
@@ -229,6 +229,7 @@ pub fn command_handler_extract_osm_pbf_data(
   }
 
   let bar = ProgressBar::new_spinner();
+  bar.set_draw_target(crate::cli::progress_draw_target());
   bar.set_style(ProgressStyle::with_template("{prefix:.bold.green} {msg} {spinner}").unwrap());
   bar.set_prefix("indexing");
 

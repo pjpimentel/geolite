@@ -5,14 +5,10 @@ pub mod user_friendly_name;
 use clap::Subcommand;
 use indicatif::ProgressBar;
 
-// `cargo test` runs with a tty on stderr, where indicatif draws outside libtest's output capture and
-// would pollute the test log. hide the index progress bars under test; the real cli keeps them live.
 fn progress_bar() -> ProgressBar {
-  if cfg!(test) {
-    ProgressBar::hidden()
-  } else {
-    ProgressBar::new_spinner()
-  }
+  let bar = ProgressBar::new_spinner();
+  bar.set_draw_target(crate::cli::progress_draw_target());
+  bar
 }
 
 #[derive(Subcommand)]
