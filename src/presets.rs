@@ -325,7 +325,7 @@ pub const PERU: preset = preset {
   name: "peru",
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
-    admin_levels: &[2, 4, 6, 8, 12],
+    admin_levels: &[2, 4, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
   extract_house_numbers: extract_house_numbers_preset {
@@ -380,7 +380,7 @@ pub const URUGUAY: preset = preset {
   name: "uruguay",
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
-    admin_levels: &[2, 4, 8, 12],
+    admin_levels: &[2, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
   extract_house_numbers: extract_house_numbers_preset {
