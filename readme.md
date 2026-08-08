@@ -1,5 +1,5 @@
 # geolite <a href="https://www.buymeacoffee.com/pjpimentel"><img align=right width=150 src="https://img.buymeacoffee.com/button-api/?text=buy%20me%20a%20coffee&emoji=&slug=pjpimentel&button_colour=5F7FFF&font_colour=ffffff&font_family=Inter&outline_colour=000000&coffee_colour=FFDD01" /></a>
-##### _this is a *work in progress* and, for now, new patch versions have no backward-compatibility guarantees_
+##### _making openstreetmap data usable by anyone: from `.osm.pbf` to the first query answer._
 ## open source geocode
 
 [![actions](https://github.com/pjpimentel/geolite/actions/workflows/11_ci_master.yml/badge.svg?branch=master)](https://github.com/pjpimentel/geolite/actions/workflows/11_ci_master.yml)
@@ -24,7 +24,7 @@ $ geolite http-server # open http://localhost:8080
 
 ```bash
 # command line
-$ docker run pjpimentel/geolite:0.0.1 -- --version
+$ docker run pjpimentel/geolite:latest --version
 # pre-built countries geocodes
 $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
 # open http://localhost:8080
@@ -62,8 +62,8 @@ $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
 ### base image
 
 ```bash
-$ docker run pjpimentel/geolite:0.0.1 -- --version
-$ docker run -t -v ./data:/data pjpimentel/geolite:0.0.1 build brazil
+$ docker run pjpimentel/geolite:latest --version
+$ docker run -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest build brazil
 ```
 
 ### pre-built images
@@ -112,15 +112,16 @@ $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:la
 ```bash
 $ geolite osm-pbf-file download brazil
 $ geolite extract osm-pbf-blob-chunks brazil
+$ geolite extract osm-pbf-header brazil
 $ geolite extract osm-pbf-data brazil
-$ geolite extract osm-admin-levels
-$ geolite extract osm-house-numbers
+$ geolite --preset brazil extract osm-admin-levels
+$ geolite --preset brazil extract osm-house-numbers
 ```
 
 ### index extracted data
 ```bash
 $ geolite index admin-levels-hierarchy
-$ geolite index user-friendly-name
+$ geolite --preset brazil index user-friendly-name
 $ geolite index coordinates
 ```
 
@@ -149,12 +150,12 @@ $ geolite --sqlite-path sudeste.sqlite3 build sudeste
 $ geolite --sqlite-path nordeste.sqlite3 build nordeste
 
 # merge all builds into a new combined database (created fresh)
-$ geolite merge brazil.sqlite3 sudeste.sqlite3 nordeste.sqlite3 ...
+$ geolite --preset brazil merge brazil.sqlite3 sudeste.sqlite3 nordeste.sqlite3 ...
 
 # or with docker 
 $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/sudeste.sqlite3 build sudeste
 $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/nordeste.sqlite3 build nordeste
-$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/brazil.sqlite3 merge /.geolite/brazil.sqlite3 /.geolite/sudeste.sqlite3 /.geolite/nordeste.sqlite3
+$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --preset brazil merge /.geolite/brazil.sqlite3 /.geolite/sudeste.sqlite3 /.geolite/nordeste.sqlite3
 $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/brazil.sqlite3 http-server
 ```
 
@@ -168,4 +169,16 @@ $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:la
 
 the data comes from any `.osm.pbf` file (openstreetmap's protobuffer format). this project uses [geofabrik](https://download.geofabrik.de) as the initial source, which extracts its data from [openstreetmap](https://www.openstreetmap.org).
 
+### c) which license applies?
+
+the source code is under [agplv3](LICENSE) and its dependencies keep their own (all permissive: mit, apache-2.0, bsd, zlib, isc). databases built from openstreetmap data — including the ones shipped in the `prebuilt-*` images — are derivative databases under the [odbl](https://opendatacommons.org/licenses/odbl/), filtered and restructured for geocoding: © [openstreetmap contributors](https://www.openstreetmap.org/copyright).
+
+### d) why build another geocoder?
+
+two reasons, in this order: to practice rust on a problem large enough to be interesting, and because the alternatives i tried were a bit too complex for a quick run.
+
 ## license: [GNU AGPLv3](LICENSE)
+
+---
+
+##### _this is a *work in progress* and, for now, new patch versions have no backward-compatibility guarantees_
