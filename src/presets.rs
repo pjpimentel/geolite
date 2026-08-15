@@ -2,7 +2,7 @@
 pub struct preset {
   pub name: &'static str,
   pub extract_osm_admin_levels: extract_osm_admin_levels_preset,
-  pub extract_house_numbers: extract_house_numbers_preset,
+  pub house_numbers: crate::domain::house_number::house_number_policy,
   pub index_user_friendly_name: index_user_friendly_name_preset,
 }
 
@@ -11,13 +11,6 @@ pub struct extract_osm_admin_levels_preset {
   pub admin_levels: &'static [u8],
   pub admin_levels_rules: &'static [crate::extract::admin_levels::extraction_rules],
   pub name_priority: &'static [&'static str],
-}
-
-#[derive(Clone, Copy)]
-pub struct extract_house_numbers_preset {
-  pub housenumber_tags: &'static [&'static str],
-  pub street_tags: &'static [&'static str],
-  pub drop_values: &'static [&'static str],
 }
 
 #[derive(Clone, Copy)]
@@ -33,10 +26,13 @@ pub const DEFAULT: preset = preset {
     admin_levels_rules: &[],
     name_priority: &["name"],
   },
-  extract_house_numbers: extract_house_numbers_preset {
-    housenumber_tags: &["addr:housenumber"],
+  house_numbers: crate::domain::house_number::house_number_policy {
+    number_tags: &["addr:housenumber"],
     street_tags: &["addr:street"],
     drop_values: &[],
+    max_digits: 5,
+    shapes: crate::domain::house_number::policy::SIMPLE_SHAPES,
+    allow_hash_prefix: false,
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[],
@@ -62,9 +58,9 @@ pub const BRAZIL: preset = preset {
     admin_levels: &[2, 4, 8, 10, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -88,9 +84,9 @@ pub const PORTUGAL: preset = preset {
     admin_levels: &[2, 6, 8, 10, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -121,9 +117,9 @@ pub const ARGENTINA: preset = preset {
     admin_levels: &[2, 4, 5, 8, 10, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -149,9 +145,9 @@ pub const BOLIVIA: preset = preset {
     admin_levels: &[2, 4, 8, 10, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -176,9 +172,9 @@ pub const CHILE: preset = preset {
     admin_levels: &[2, 4, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -210,9 +206,11 @@ pub const COLOMBIA: preset = preset {
     admin_levels: &[2, 4, 6, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    shapes: crate::domain::house_number::policy::COMPOUND_SHAPES,
+    allow_hash_prefix: true,
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -244,9 +242,9 @@ pub const ECUADOR: preset = preset {
     admin_levels: &[2, 4, 6, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -276,7 +274,7 @@ pub const GUYANA: preset = preset {
     admin_levels: &[2, 4, 6, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: DEFAULT.extract_house_numbers,
+  house_numbers: DEFAULT.house_numbers,
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
     ("rd.", "road"),
@@ -299,9 +297,9 @@ pub const PARAGUAY: preset = preset {
     admin_levels: &[2, 4, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -328,9 +326,9 @@ pub const PERU: preset = preset {
     admin_levels: &[2, 4, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -360,7 +358,7 @@ pub const SURINAME: preset = preset {
     admin_levels: &[2, 4, 6, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: DEFAULT.extract_house_numbers,
+  house_numbers: DEFAULT.house_numbers,
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
     ("str.", "straat"),
@@ -383,9 +381,9 @@ pub const URUGUAY: preset = preset {
     admin_levels: &[2, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -412,9 +410,9 @@ pub const VENEZUELA: preset = preset {
     admin_levels: &[2, 4, 6, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: extract_house_numbers_preset {
+  house_numbers: crate::domain::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    ..DEFAULT.extract_house_numbers
+    ..DEFAULT.house_numbers
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
@@ -442,7 +440,7 @@ pub const NETHERLANDS: preset = preset {
     admin_levels: &[2, 4, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: DEFAULT.extract_house_numbers,
+  house_numbers: DEFAULT.house_numbers,
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
     ("str.", "straat"),
@@ -465,7 +463,7 @@ pub const SWITZERLAND: preset = preset {
     admin_levels: &[2, 4, 8, 12],
     ..DEFAULT.extract_osm_admin_levels
   },
-  extract_house_numbers: DEFAULT.extract_house_numbers,
+  house_numbers: DEFAULT.house_numbers,
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[
     ("str.", "strasse"),

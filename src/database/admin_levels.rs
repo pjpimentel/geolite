@@ -3,6 +3,8 @@ use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
 use rusqlite::Connection;
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
+use crate::domain::kernel::admin_area_id::admin_area_id;
+
 pub struct admin_geometry(pub Geometry<f64>);
 
 impl admin_geometry {
@@ -80,30 +82,6 @@ pub struct admin_levels {
   // country_iso_code: ISO 3166-1 alpha-2 (2 chars, e.g. 'BR', 'US')
   pub country_iso_code: Option<String>,
   pub post_code: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum admin_id_kind {
-  way,
-  relation,
-}
-
-pub fn pack_admin_id(kind: admin_id_kind, osm_id: u64) -> u64 {
-  match kind {
-    admin_id_kind::way => osm_id << 1,
-    admin_id_kind::relation => (osm_id << 1) | 1,
-  }
-}
-
-#[allow(dead_code)]
-pub fn unpack_admin_id(id: u64) -> (admin_id_kind, u64) {
-  let osm_id = id >> 1;
-  let kind = if id & 1 == 1 {
-    admin_id_kind::relation
-  } else {
-    admin_id_kind::way
-  };
-  (kind, osm_id)
 }
 
 const SQL_CREATE: &str = "
@@ -637,8 +615,8 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_levels]) -> i64 {
     let mut stmt = tx.prepare(SQL_UPSERT).expect("failed to prepare upsert");
     for row in rows {
       let id: u64 = match (row.relation_id, row.way_id) {
-        (Some(rel), _) => pack_admin_id(admin_id_kind::relation, rel),
-        (None, Some(w)) => pack_admin_id(admin_id_kind::way, w),
+        (Some(rel), _) => admin_area_id::from_relation(rel).raw(),
+        (None, Some(w)) => admin_area_id::from_way(w).raw(),
         (None, None) => panic!(
           "admin_levels row has neither way_id nor relation_id; \
            cannot derive a stable id (admin_level={}, name={:?})",

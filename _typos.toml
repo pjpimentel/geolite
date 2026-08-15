@@ -1,5 +1,6 @@
 [files]
-extend-exclude = ["tasks.md"]
+# documents written entirely in portuguese; excluded wholesale instead of growing the dictionary
+extend-exclude = ["tasks.md", "spec.md"]
 
 [default.extend-words]
 # portuguese words flagged as english misspellings

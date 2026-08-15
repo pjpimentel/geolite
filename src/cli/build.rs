@@ -95,7 +95,7 @@ pub fn command_handler_build(
 
   println!();
   println!("\x1b[2m── extract house-numbers\x1b[0m");
-  command_handler_extract_osm_house_numbers(sqlite_path, false, preset.extract_house_numbers);
+  command_handler_extract_osm_house_numbers(sqlite_path, false, preset.house_numbers);
 
   println!();
   println!("\x1b[2m── index\x1b[0m");

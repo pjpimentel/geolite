@@ -30,11 +30,16 @@ fn candidate(
 ) -> crate::database::house_numbers::candidate_row {
   crate::database::house_numbers::candidate_row {
     id,
-    number: number.to_string(),
+    number: crate::domain::house_number::house_number::normalize(number, &policy())
+      .expect("number must normalize"),
     addr_street: addr_street.map(str::to_owned),
     lon,
     lat,
   }
+}
+
+fn policy() -> crate::domain::house_number::house_number_policy {
+  crate::presets::resolve(None).house_numbers
 }
 
 // duas ruas paralelas — a primeira em y=0, a segunda em y=second_y — e um unico
@@ -44,7 +49,7 @@ fn two_parallel_streets(
   second_y: f64,
   addr_street: Option<&str>,
   candidate_y: f64,
-) -> Vec<crate::database::house_numbers::house_numbers> {
+) -> Vec<house_number_link> {
   process_tile(tile_data {
     streets: vec![
       make_street(1, names.0, &[(0.0, 0.0), (1.0, 0.0)]),
@@ -206,9 +211,9 @@ fn _03_01_matches_by_proximity_when_addr_street_is_absent() {
   let out = two_parallel_streets(("Rua Perto", "Rua Distante"), 0.1, None, 0.001);
 
   assert_eq!(out.len(), 1);
-  assert_eq!(out[0].admin_level_id, 1, "deve casar com a rua mais proxima");
-  assert_eq!(out[0].strategy, STRATEGY_BY_PROXIMITY);
-  assert_eq!(out[0].number, "100");
+  assert_eq!(out[0].street_id.raw(), 1, "deve casar com a rua mais proxima");
+  assert_eq!(out[0].strategy, link_strategy::by_proximity);
+  assert_eq!(out[0].number.stored_form(), "100");
   assert_eq!(out[0].node_id, 10);
 }
 
@@ -224,8 +229,8 @@ fn _03_02_prefers_the_street_named_in_addr_street() {
   );
 
   assert_eq!(out.len(), 1);
-  assert_eq!(out[0].admin_level_id, 2);
-  assert_eq!(out[0].strategy, STRATEGY_BY_NAME);
+  assert_eq!(out[0].street_id.raw(), 2);
+  assert_eq!(out[0].strategy, link_strategy::by_name);
 }
 
 // 03.03: name matching disregards case differences
@@ -237,7 +242,7 @@ fn _03_03_matches_addr_street_case_insensitively() {
   });
 
   assert_eq!(out.len(), 1);
-  assert_eq!(out[0].strategy, STRATEGY_BY_NAME);
+  assert_eq!(out[0].strategy, link_strategy::by_name);
 }
 
 // 03.04: entre varias ruas de mesmo nome vence a mais proxima
@@ -246,8 +251,8 @@ fn _03_04_picks_the_nearest_among_streets_sharing_a_name() {
   let out = two_parallel_streets(("Rua Igual", "Rua Igual"), 0.05, Some("Rua Igual"), 0.049);
 
   assert_eq!(out.len(), 1);
-  assert_eq!(out[0].admin_level_id, 2);
-  assert_eq!(out[0].strategy, STRATEGY_BY_NAME);
+  assert_eq!(out[0].street_id.raw(), 2);
+  assert_eq!(out[0].strategy, link_strategy::by_name);
 }
 
 // 03.05: addr:street que nao corresponde a nenhuma rua cai de volta na proximidade
@@ -259,8 +264,8 @@ fn _03_05_falls_back_to_proximity_when_addr_street_matches_nothing() {
   });
 
   assert_eq!(out.len(), 1);
-  assert_eq!(out[0].admin_level_id, 1);
-  assert_eq!(out[0].strategy, STRATEGY_BY_PROXIMITY);
+  assert_eq!(out[0].street_id.raw(), 1);
+  assert_eq!(out[0].strategy, link_strategy::by_proximity);
 }
 
 // 03.06: candidato mais distante que MAX_MATCH_DEG e descartado
@@ -284,13 +289,9 @@ fn _03_07_stores_the_point_projected_onto_the_street() {
   });
 
   assert_eq!(out.len(), 1);
-  match out[0].wkb.geometry() {
-    Geometry::Point(p) => {
-      assert!((p.x() - 5.0).abs() < 1e-9);
-      assert!((p.y() - 0.0).abs() < 1e-9, "deve estar projetado sobre a rua");
-    }
-    other => panic!("esperado Point, veio {other:?}"),
-  }
+  let p = out[0].point;
+  assert!((p.x() - 5.0).abs() < 1e-9);
+  assert!((p.y() - 0.0).abs() < 1e-9, "deve estar projetado sobre a rua");
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -338,9 +339,6 @@ fn insert_house_node(conn: &rusqlite::Connection, id: u64, lon: f64, lat: f64, t
   );
 }
 
-fn preset() -> crate::presets::extract_house_numbers_preset {
-  crate::presets::resolve(None).extract_house_numbers
-}
 
 fn stored(conn: &rusqlite::Connection) -> Vec<(i64, i64, String, i64)> {
   let mut stmt = conn
@@ -360,7 +358,7 @@ fn _04_00_returns_early_when_there_are_no_candidates() {
   insert_street(&conn, 1, "Rua Vazia", &[(0.0, 0.0), (1.0, 0.0)]);
 
   let seen = std::cell::RefCell::new(Vec::new());
-  run(&conn, preset(), |p| {
+  run(&conn, policy(), |p| {
     seen.borrow_mut().push((p.total, p.processed));
   });
 
@@ -376,7 +374,7 @@ fn _04_01_matches_and_persists_house_numbers_by_proximity() {
   insert_house_node(&conn, 10, 0.5, 0.001, &[("addr:housenumber", "100")]);
 
   let seen = std::cell::RefCell::new(Vec::new());
-  run(&conn, preset(), |p| {
+  run(&conn, policy(), |p| {
     seen.borrow_mut().push((p.total, p.processed));
   });
 
@@ -384,7 +382,7 @@ fn _04_01_matches_and_persists_house_numbers_by_proximity() {
   assert_eq!(rows.len(), 1);
   assert_eq!(rows[0].0, 10, "node_id");
   assert_eq!(rows[0].2, "100", "number");
-  assert_eq!(rows[0].3, STRATEGY_BY_PROXIMITY as i64);
+  assert_eq!(rows[0].3, link_strategy::by_proximity.code() as i64);
 
   let seen = seen.into_inner();
   assert_eq!(seen.first().expect("evento inicial"), &(1, 0));
@@ -405,11 +403,11 @@ fn _04_02_matches_by_name_when_addr_street_is_present() {
     &[("addr:housenumber", "100"), ("addr:street", "Rua Nomeada")],
   );
 
-  run(&conn, preset(), |_| {});
+  run(&conn, policy(), |_| {});
 
   let rows = stored(&conn);
   assert_eq!(rows.len(), 1);
-  assert_eq!(rows[0].3, STRATEGY_BY_NAME as i64);
+  assert_eq!(rows[0].3, link_strategy::by_name.code() as i64);
 }
 
 // 04.03: rua no tile vizinho ainda e considerada, gracas a expansao de +-1 tile
@@ -420,7 +418,7 @@ fn _04_03_considers_streets_from_neighbouring_tiles() {
   insert_street(&conn, 1, "Rua da Fronteira", &[(1.9, 0.0), (2.1, 0.0)]);
   insert_house_node(&conn, 10, 2.05, 0.001, &[("addr:housenumber", "100")]);
 
-  run(&conn, preset(), |_| {});
+  run(&conn, policy(), |_| {});
 
   let rows = stored(&conn);
   assert_eq!(
@@ -440,7 +438,7 @@ fn _04_04_processes_candidates_spread_across_tiles() {
   insert_house_node(&conn, 10, 0.5, 0.001, &[("addr:housenumber", "100")]);
   insert_house_node(&conn, 20, 10.5, 10.001, &[("addr:housenumber", "200")]);
 
-  run(&conn, preset(), |_| {});
+  run(&conn, policy(), |_| {});
 
   let rows = stored(&conn);
   assert_eq!(rows.len(), 2);
@@ -455,7 +453,7 @@ fn _04_05_skips_candidates_with_no_street_within_range() {
   insert_street(&conn, 1, "Rua Distante", &[(0.0, 0.0), (1.0, 0.0)]);
   insert_house_node(&conn, 10, 50.0, 50.0, &[("addr:housenumber", "100")]);
 
-  run(&conn, preset(), |_| {});
+  run(&conn, policy(), |_| {});
 
   assert!(stored(&conn).is_empty());
 }
@@ -489,7 +487,7 @@ fn _04_06_skips_streets_whose_geometry_is_not_linear() {
   );
   insert_house_node(&conn, 10, 0.001, 0.001, &[("addr:housenumber", "100")]);
 
-  run(&conn, preset(), |_| {});
+  run(&conn, policy(), |_| {});
 
   assert!(
     stored(&conn).is_empty(),

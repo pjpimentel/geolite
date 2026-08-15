@@ -1,8 +1,9 @@
 use crate::database::admin_levels::{
-  admin_geometry, admin_id_kind, admin_levels as admin_levels_row, batch_upsert, pack_admin_id,
+  admin_geometry, admin_levels as admin_levels_row, batch_upsert,
 };
 use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
 use crate::database::{open_write_main, read_user_version};
+use crate::domain::kernel::admin_area_id::admin_area_id;
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
 use crate::presets::DEFAULT;
 use crate::query;
@@ -91,9 +92,9 @@ fn _01_end_to_end_merge_into_a_fresh_base_rebuilds_indexes() {
   let source_b = temp_path("e2e_source_b");
   let index_dir = format!("{}.tantivy", temp_path("e2e_index"));
 
-  let way1 = pack_admin_id(admin_id_kind::way, 1) as i64;
+  let way1 = admin_area_id::from_way(1).raw() as i64;
   build_source(&source_a, &[make_way(1)], &[make_house(100, way1, "10")]);
-  let way3 = pack_admin_id(admin_id_kind::way, 3) as i64;
+  let way3 = admin_area_id::from_way(3).raw() as i64;
   build_source(&source_b, &[make_way(3)], &[make_house(200, way3, "20")]);
 
   // base does not exist yet — merge must create it fresh and populate it from both sources.
@@ -171,8 +172,8 @@ fn _02_merge_matches_single_combined_build_query_parity() {
   let merged_index = format!("{}.tantivy", temp_path("parity_merged_index"));
   let combined_index = format!("{}.tantivy", temp_path("parity_combined_index"));
 
-  let alpha = pack_admin_id(admin_id_kind::way, 1) as i64;
-  let gamma = pack_admin_id(admin_id_kind::way, 3) as i64;
+  let alpha = admin_area_id::from_way(1).raw() as i64;
+  let gamma = admin_area_id::from_way(3).raw() as i64;
 
   // two regions built separately, then merged into a fresh base (re-derives all indexes). the rows
   // are re-created per db because admin_levels is not Clone.
@@ -238,16 +239,16 @@ fn _02_merge_matches_single_combined_build_query_parity() {
 
   // text queries in each region resolve to the same street in both builds.
   for q in ["Alpha", "Beta", "Gamma", "Delta"] {
-    let m = top_street_name(&query::run(&mconn, Some(&mindex), q, None, None, None, None, false));
-    let c = top_street_name(&query::run(&cconn, Some(&cindex), q, None, None, None, None, false));
+    let m = top_street_name(&query::run(&mconn, &crate::presets::DEFAULT.house_numbers, Some(&mindex), q, None, None, None, None, false));
+    let c = top_street_name(&query::run(&cconn, &crate::presets::DEFAULT.house_numbers, Some(&cindex), q, None, None, None, None, false));
     assert!(m.is_some(), "query '{q}' returned no match in the merged build");
     assert_eq!(m, c, "merged vs combined differ for text query '{q}'");
   }
 
   // reverse geocoding (coordinates) is identical too: a point in each region.
   for coord in ["-23.90,-46.30", "43.70,7.40"] {
-    let m = top_street_name(&query::run(&mconn, Some(&mindex), coord, None, None, None, None, false));
-    let c = top_street_name(&query::run(&cconn, Some(&cindex), coord, None, None, None, None, false));
+    let m = top_street_name(&query::run(&mconn, &crate::presets::DEFAULT.house_numbers, Some(&mindex), coord, None, None, None, None, false));
+    let c = top_street_name(&query::run(&cconn, &crate::presets::DEFAULT.house_numbers, Some(&cindex), coord, None, None, None, None, false));
     assert_eq!(m, c, "merged vs combined differ for coordinate query '{coord}'");
   }
 

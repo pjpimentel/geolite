@@ -83,7 +83,7 @@ fn _00_text_search_prioritizes_exact_case_match() {
   crate::index::hierarchy::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
-  let out_a = crate::query::run(&conn, Some(&index), "AAA", None, None, None, None, true);
+  let out_a = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "AAA", None, None, None, None, true);
   let names_a: Vec<String> = out_a
     .matches
     .iter()
@@ -91,7 +91,7 @@ fn _00_text_search_prioritizes_exact_case_match() {
     .collect();
   assert_eq!(names_a, vec!["AAA", "aaa"]);
 
-  let out_b = crate::query::run(&conn, Some(&index), "bbb", None, None, None, None, true);
+  let out_b = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "bbb", None, None, None, None, true);
   let names_b: Vec<String> = out_b
     .matches
     .iter()
@@ -112,7 +112,7 @@ fn _01_text_search_prioritizes_closest_spelling_variant() {
   crate::index::hierarchy::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
-  let out_brasil = crate::query::run(&conn, Some(&index), "brasil", None, None, None, None, true);
+  let out_brasil = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "brasil", None, None, None, None, true);
   let names_brasil: Vec<String> = out_brasil
     .matches
     .iter()
@@ -120,7 +120,7 @@ fn _01_text_search_prioritizes_closest_spelling_variant() {
     .collect();
   assert_eq!(names_brasil, vec!["Brasil"]);
 
-  let out_brazil = crate::query::run(&conn, Some(&index), "brazil", None, None, None, None, true);
+  let out_brazil = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "brazil", None, None, None, None, true);
   let names_brazil: Vec<String> = out_brazil
     .matches
     .iter()
@@ -142,7 +142,7 @@ fn _03_text_search_prioritizes_matching_diacritic_variant() {
   let (_index_guard, index) = build_test_index(&conn);
 
   let out_praca_diacritico =
-    crate::query::run(&conn, Some(&index), "praça", None, None, None, None, true);
+    crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "praça", None, None, None, None, true);
   let names_diacritico: Vec<String> = out_praca_diacritico
     .matches
     .iter()
@@ -151,7 +151,7 @@ fn _03_text_search_prioritizes_matching_diacritic_variant() {
   assert_eq!(names_diacritico, vec!["Praça", "Praca"]);
 
   let out_praca_simples =
-    crate::query::run(&conn, Some(&index), "Praca", None, None, None, None, true);
+    crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "Praca", None, None, None, None, true);
   let names_simples: Vec<String> = out_praca_simples
     .matches
     .iter()
@@ -174,7 +174,7 @@ fn _04_text_search_prioritizes_record_with_matching_hierarchy() {
   let (_index_guard, index) = build_test_index(&conn);
 
   let first_match = |input: &str| -> Option<String> {
-    crate::query::run(&conn, Some(&index), input, None, None, None, None, true)
+    crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), input, None, None, None, None, true)
       .matches
       .first()
       .map(|m| m.friendly_name.clone())
@@ -213,6 +213,7 @@ fn _05_text_search_prioritizes_matching_word_order() {
 
   let mut out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua castro alves, embare",
     None,
@@ -226,6 +227,7 @@ fn _05_text_search_prioritizes_matching_word_order() {
 
   out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "embare, rua castro alves",
     None,
@@ -252,6 +254,7 @@ fn _06_text_search_finds_street_by_postcode_with_hyphen() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "01310-100",
     None,
@@ -283,6 +286,7 @@ fn _07_text_search_finds_street_by_postcode_without_hyphen() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "01310100",
     None,
@@ -315,6 +319,7 @@ fn _08_friendly_name_contains_postcode_when_street_has_one() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "av paulista",
     None,
@@ -338,6 +343,7 @@ fn _09_friendly_name_omits_postcode_when_street_has_none() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "av paulista",
     None,
@@ -361,6 +367,7 @@ fn _10_text_search_finds_match_when_input_has_extra_leading_word() {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "hotel sehrs",
     None,
@@ -383,6 +390,7 @@ fn _11_text_search_finds_match_when_input_has_extra_trailing_word() {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire ipanema",
     None,
@@ -410,6 +418,7 @@ fn _12_text_search_rank_results_as_expected() {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "hotel sehrs",
     None,
@@ -441,6 +450,7 @@ fn _13_similarity_reflects_match_quality() {
   let outputs = &[
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "rua castro alves",
       None,
@@ -449,11 +459,12 @@ fn _13_similarity_reflects_match_quality() {
       None,
       true,
     ),
-    crate::query::run(&conn, Some(&index), "rua", None, None, None, None, true),
-    crate::query::run(&conn, Some(&index), "castro", None, None, None, None, true),
-    crate::query::run(&conn, Some(&index), "alves", None, None, None, None, true),
+    crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "rua", None, None, None, None, true),
+    crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "castro", None, None, None, None, true),
+    crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "alves", None, None, None, None, true),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "rua castro",
       None,
@@ -464,6 +475,7 @@ fn _13_similarity_reflects_match_quality() {
     ),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "castro alves",
       None,
@@ -474,6 +486,7 @@ fn _13_similarity_reflects_match_quality() {
     ),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "rua alves",
       None,
@@ -484,6 +497,7 @@ fn _13_similarity_reflects_match_quality() {
     ),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "alves castro rua",
       None,
@@ -494,6 +508,7 @@ fn _13_similarity_reflects_match_quality() {
     ),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "rua castro alvez",
       None,
@@ -504,6 +519,7 @@ fn _13_similarity_reflects_match_quality() {
     ),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "11250-000",
       None,
@@ -514,6 +530,7 @@ fn _13_similarity_reflects_match_quality() {
     ),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "hotel rua castro alves",
       None,
@@ -524,6 +541,7 @@ fn _13_similarity_reflects_match_quality() {
     ),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "praca da se",
       None,
@@ -534,6 +552,7 @@ fn _13_similarity_reflects_match_quality() {
     ),
     crate::query::run(
       &conn,
+      &crate::presets::DEFAULT.house_numbers,
       Some(&index),
       "11250000",
       None,
@@ -591,6 +610,7 @@ fn _14_text_search_praca_doutor_hipolito_do_rego_embare_santos() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "praca doutor hipolito do rego embare santos",
     None,
@@ -633,6 +653,7 @@ fn _15_text_search_with_trailing_house_number_resolves_exact_point() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire 100",
     None,
@@ -668,6 +689,7 @@ fn _16_text_search_with_leading_house_number_resolves_exact_point() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "100 rua oscar freire",
     None,
@@ -698,6 +720,7 @@ fn _17_text_search_with_missing_house_number_interpolates_between_neighbors() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire 150",
     None,
@@ -733,6 +756,7 @@ fn _18_text_search_with_unbracketable_house_number_marks_absent() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire 400",
     None,
@@ -762,7 +786,7 @@ fn _19_text_search_by_postcode_does_not_strip_a_house_number() {
   let (_index_guard, index) = build_test_index(&conn);
 
   for q in ["01310-100", "01310100"] {
-    let out = crate::query::run(&conn, Some(&index), q, None, None, None, None, true);
+    let out = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), q, None, None, None, None, true);
     let m = out.matches.first().expect("expected one match");
     assert!(m.house_number.is_none());
     assert_eq!(
@@ -785,6 +809,7 @@ fn _20_text_search_ignores_a_street_name_number_and_resolves_the_house_number() 
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua 25 de marco 100",
     None,
@@ -827,7 +852,7 @@ fn _21_house_number_resolves_the_same_in_the_middle_or_at_the_end() {
     "rua castro alves, embare, santos 35",
     "rua castro alves 35, embare, santos",
   ] {
-    let out = crate::query::run(&conn, Some(&index), q, None, None, None, None, true);
+    let out = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), q, None, None, None, None, true);
     let m = out.matches.first().expect("expected one match");
     let hn = m.house_number.as_ref().expect("expected house_number");
     assert!(matches!(hn.kind, crate::query::house_number_match::exact));
@@ -853,6 +878,7 @@ fn _22_uses_only_the_first_numeric_occurrence_after_the_street_name() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire 50 200",
     None,
@@ -883,6 +909,7 @@ fn _23_ignores_every_number_that_belongs_to_the_street_name() {
 
   let with_number = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua 25 de marco de 2024 100",
     None,
@@ -905,6 +932,7 @@ fn _23_ignores_every_number_that_belongs_to_the_street_name() {
 
   let without_number = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua 25 de marco de 2024",
     None,
@@ -936,6 +964,7 @@ fn _24_segment_with_house_number_outranks_the_bare_segment() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua castro alves 35",
     None,
@@ -990,6 +1019,7 @@ fn _25_resolving_the_house_number_boosts_similarity() {
   // base coverage for "rua oscar freire 100" is 3/4 = 0.75 (the number is uncovered)
   let resolved = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire 100",
     None,
@@ -1008,6 +1038,7 @@ fn _25_resolving_the_house_number_boosts_similarity() {
   // an absent number leaves similarity untouched
   let absent = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire 999",
     None,
@@ -1037,6 +1068,7 @@ fn _26_admin_level_filter_keeps_only_requested_levels() {
 
   let out_city = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "embare",
     None,
@@ -1050,6 +1082,7 @@ fn _26_admin_level_filter_keeps_only_requested_levels() {
 
   let out_both = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "embare",
     None,
@@ -1074,6 +1107,7 @@ fn _27_house_number_enriched_match_requires_level_30_in_the_filter() {
 
   let out_street_only = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire 100",
     None,
@@ -1086,6 +1120,7 @@ fn _27_house_number_enriched_match_requires_level_30_in_the_filter() {
 
   let out_with_30 = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "rua oscar freire 100",
     None,
@@ -1116,6 +1151,7 @@ fn _28_admin_level_filter_finds_levels_ranked_beyond_the_fts_limit() {
 
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "santos",
     None,
@@ -1159,6 +1195,7 @@ fn _30_bounding_wkt_keeps_in_region_match_ranked_beyond_fts_limit() {
   .unwrap();
   let out = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     Some(&index),
     "praca",
     None,
@@ -1173,4 +1210,70 @@ fn _30_bounding_wkt_keeps_in_region_match_ranked_beyond_fts_limit() {
     .filter_map(|m| m.admin_levels.last().map(|al| al.name.clone()))
     .collect();
   assert_eq!(names, vec!["praca do mar shopping center jardim"]);
+}
+
+// the colombian nomenclature, end to end: the compound number reaches the database intact and the
+// query now recognizes it whole. before the house_number domain the query kept only the "48" of
+// "52-48", which matched nothing on the street and fell into a meaningless interpolation.
+#[test]
+fn _31_colombian_compound_house_number_resolves_exactly_under_its_preset() {
+  let conn = crate::database::open_write(":memory:");
+  batch_upsert(&conn, &[make_street_row("calle 82", 0.000, 1)]);
+  crate::index::coordinates::run(&conn, |_| {});
+  crate::index::hierarchy::run(&conn, |_| {});
+  let id = street_id(&conn, "calle 82");
+  insert_house_number(&conn, id, 1, "52-48", -46.31980, -23.97240);
+  insert_house_number(&conn, id, 2, "52-60", -46.31960, -23.97220);
+  let (_index_guard, index) = build_test_index(&conn);
+
+  let colombia = crate::presets::COLOMBIA.house_numbers;
+  for query in ["calle 82 # 52-48", "calle 82 #52-48", "calle 82 52-48"] {
+    let out = crate::query::run(
+      &conn,
+      &colombia,
+      Some(&index),
+      query,
+      None,
+      None,
+      None,
+      None,
+      true,
+    );
+    let m = out.matches.first().expect("expected one match");
+    let hn = m.house_number.as_ref().expect("expected house_number");
+    assert!(
+      matches!(hn.kind, crate::query::house_number_match::exact),
+      "query={query}"
+    );
+    assert_eq!(hn.number, "52-48", "query={query}");
+    assert_eq!(m.latitude, -23.97240, "query={query}");
+    assert_eq!(m.longitude, -46.31980, "query={query}");
+  }
+}
+
+// the same query under a preset that does not write compound numbers must keep behaving as it
+// always did: brazil reads "12-14" as a range, not as a door number.
+#[test]
+fn _32_a_compound_number_stays_invisible_under_a_simple_preset() {
+  let conn = crate::database::open_write(":memory:");
+  batch_upsert(&conn, &[make_street_row("rua x", 0.000, 1)]);
+  crate::index::coordinates::run(&conn, |_| {});
+  crate::index::hierarchy::run(&conn, |_| {});
+  let id = street_id(&conn, "rua x");
+  insert_house_number(&conn, id, 1, "12-14", -46.31980, -23.97240);
+  let (_index_guard, index) = build_test_index(&conn);
+
+  let out = crate::query::run(
+    &conn,
+    &crate::presets::BRAZIL.house_numbers,
+    Some(&index),
+    "rua x 12-14",
+    None,
+    None,
+    None,
+    None,
+    true,
+  );
+  let m = out.matches.first().expect("expected one match");
+  assert!(m.house_number.is_none());
 }

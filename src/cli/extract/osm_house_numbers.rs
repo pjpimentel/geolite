@@ -4,7 +4,7 @@ use std::time::Instant;
 pub fn command_handler_extract_osm_house_numbers(
   sqlite_path: &str,
   recreate: bool,
-  preset: crate::presets::extract_house_numbers_preset,
+  preset: crate::domain::house_number::house_number_policy,
 ) {
   if recreate {
     crate::database::destroy_data(sqlite_path, false, false, false, true);

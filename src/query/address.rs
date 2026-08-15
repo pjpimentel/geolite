@@ -138,6 +138,7 @@ fn build_match(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
   conn: &Connection,
+  house_numbers: &crate::domain::house_number::house_number_policy,
   tantivy_index: &tantivy_index,
   query: &str,
   friendly_name_format: Option<&str>,
@@ -215,7 +216,13 @@ pub(crate) fn run(
 
   // enrich antes dos filtros: o house_number move lat/lon (pro ponto do numero) e ajusta
   // similarity, que os filtros bounding_wkt/min_quality leem. truncate fica por ultimo.
-  super::house_number::enrich_house_number_from_query(conn, query, &mut matches, friendly_name_format);
+  super::house_number::enrich_house_number_from_query(
+    conn,
+    query,
+    &mut matches,
+    friendly_name_format,
+    house_numbers,
+  );
 
   // keep bm25 (score) as the primary order; break ties by similarity, so among two segments of
   // the same street with the same score the one that resolved the house number (which gets a

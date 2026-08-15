@@ -26,6 +26,7 @@ fn _00_00_serves_status_from_a_background_thread() {
       port,
       1,
       DEFAULT.index_user_friendly_name.boosts,
+      DEFAULT.house_numbers,
     );
   });
 

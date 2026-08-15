@@ -6,15 +6,15 @@ use rstar::{AABB, PointDistance, RTree, RTreeObject};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use crate::domain::house_number::{house_number_link, link_strategy};
+use crate::domain::kernel::admin_area_id::admin_area_id;
+
 const TILE_SIZE: f64 = 2.0;
 // approximates the legacy 3x3 grid filter at 0.05° per cell —
 // candidates further than this from the nearest street are skipped
 const MAX_MATCH_DEG: f64 = 0.15;
 const WKB_BATCH: usize = 500;
 const CHUNK_SIZE: usize = 500;
-
-const STRATEGY_BY_PROXIMITY: u8 = 0;
-const STRATEGY_BY_NAME: u8 = 1;
 
 struct street {
   // FK to admin_levels.id (internal autoincrement) — stays i64
@@ -94,7 +94,7 @@ fn closest_point_on_geometry(geom: &MultiLineString<f64>, p: &Point<f64>) -> Opt
   best.map(|(cp, _)| cp)
 }
 
-fn process_tile(tile: tile_data) -> Vec<crate::database::house_numbers::house_numbers> {
+fn process_tile(tile: tile_data) -> Vec<house_number_link> {
   let tile_data {
     streets,
     candidates,
@@ -116,11 +116,11 @@ fn process_tile(tile: tile_data) -> Vec<crate::database::house_numbers::house_nu
 
   let max_dist_sq = MAX_MATCH_DEG * MAX_MATCH_DEG;
 
-  let mut results: Vec<crate::database::house_numbers::house_numbers> = Vec::new();
+  let mut results: Vec<house_number_link> = Vec::new();
   for c in candidates {
     let pt = Point::new(c.lon, c.lat);
     let mut best: Option<Arc<street>> = None;
-    let mut strategy = STRATEGY_BY_PROXIMITY;
+    let mut strategy = link_strategy::by_proximity;
 
     if let Some(addr_street) = &c.addr_street
       && let Some(matches) = by_name.get(&addr_street.to_lowercase())
@@ -134,7 +134,7 @@ fn process_tile(tile: tile_data) -> Vec<crate::database::house_numbers::house_nu
         }
       }
       if best.is_some() {
-        strategy = STRATEGY_BY_NAME;
+        strategy = link_strategy::by_name;
       }
     }
 
@@ -148,11 +148,11 @@ fn process_tile(tile: tile_data) -> Vec<crate::database::house_numbers::house_nu
     if let Some(s) = best
       && let Some(cp) = closest_point_on_geometry(&s.geometry, &pt)
     {
-      results.push(crate::database::house_numbers::house_numbers {
+      results.push(house_number_link {
         node_id: c.id,
-        admin_level_id: s.id,
+        street_id: admin_area_id::from_raw(s.id as u64),
         number: c.number,
-        wkb: Geometry::Point(cp).into(),
+        point: cp,
         strategy,
       });
     }
@@ -162,15 +162,10 @@ fn process_tile(tile: tile_data) -> Vec<crate::database::house_numbers::house_nu
 
 pub fn run(
   conn: &rusqlite::Connection,
-  preset: crate::presets::extract_house_numbers_preset,
+  policy: crate::domain::house_number::house_number_policy,
   progress: impl Fn(progress_report),
 ) {
-  let all_candidates = crate::database::house_numbers::load_all_candidates(
-    conn,
-    preset.housenumber_tags,
-    preset.street_tags,
-    preset.drop_values,
-  );
+  let all_candidates = crate::database::house_numbers::load_all_candidates(conn, &policy);
   let total = all_candidates.len() as u64;
 
   progress(progress_report {
@@ -277,14 +272,14 @@ pub fn run(
     })
     .collect();
 
-  let all_rows: Vec<crate::database::house_numbers::house_numbers> = handles
+  let all_links: Vec<house_number_link> = handles
     .into_iter()
     .flat_map(|h| h.join().expect("worker thread panicked"))
     .collect();
 
   let mut processed: u64 = 0;
-  for chunk in all_rows.chunks(CHUNK_SIZE) {
-    processed += crate::database::house_numbers::batch_insert(conn, chunk) as u64;
+  for chunk in all_links.chunks(CHUNK_SIZE) {
+    processed += crate::database::house_numbers::batch_insert_links(conn, chunk) as u64;
     progress(progress_report { total, processed });
   }
 }

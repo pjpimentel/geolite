@@ -72,7 +72,7 @@ fn synthetic_index(
 }
 
 fn query_text(conn: &Connection, index: &tantivy::tantivy_index, q: &str) -> query::query_output {
-  query::run(conn, Some(index), q, None, None, None, None, false)
+  query::run(conn, &crate::presets::DEFAULT.house_numbers, Some(index), q, None, None, None, None, false)
 }
 
 // the most specific admin_level of a match is the matched street (highest level number).

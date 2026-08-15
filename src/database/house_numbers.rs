@@ -1,6 +1,9 @@
+use geo::Geometry;
 use rusqlite::Connection;
 
 use super::admin_levels::admin_geometry;
+use crate::domain::house_number::house_number;
+use crate::domain::house_number::{house_number_link, house_number_policy};
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS house_numbers (
@@ -28,37 +31,19 @@ const SQL_STREETS_WITH_GEOMETRY: &str = "
   AND wkb IS NOT NULL;
 ";
 
+// the raw tag value comes back untouched: trimming, the drop list and the canonical form of a
+// letter suffix are all decided by the house_number value object, so that what gets written and
+// what a query recognises can never drift apart again. CAST keeps a numeric json value readable
+// as text, which TRIM used to guarantee.
 const SQL_LOAD_ALL_CANDIDATES: &str = "
-  WITH raw AS (
-    SELECT
-      id,
-      TRIM({number_select}) AS number,
-      {street_select} AS addr_street,
-      CAST(payload->>'lon' AS REAL) AS lon,
-      CAST(payload->>'lat' AS REAL) AS lat
-    FROM osm_data.osm_nodes
-    WHERE {number_select} IS NOT NULL
-  )
   SELECT
     id,
-    CASE
-      WHEN SUBSTR(number, -1, 1) GLOB '[A-Za-z]'
-        AND (SUBSTR(number, -2, 1) = ' ' OR SUBSTR(number, -2, 1) = '-')
-        AND SUBSTR(number, 1, LENGTH(number) - 2) <> ''
-        AND SUBSTR(number, 1, LENGTH(number) - 2) NOT GLOB '*[^0-9]*'
-        THEN SUBSTR(number, 1, LENGTH(number) - 2) || UPPER(SUBSTR(number, -1, 1))
-      WHEN SUBSTR(number, -1, 1) GLOB '[A-Za-z]'
-        AND SUBSTR(number, 1, LENGTH(number) - 1) <> ''
-        AND SUBSTR(number, 1, LENGTH(number) - 1) NOT GLOB '*[^0-9]*'
-        THEN SUBSTR(number, 1, LENGTH(number) - 1) || UPPER(SUBSTR(number, -1, 1))
-      ELSE number
-    END AS number,
-    addr_street,
-    lon,
-    lat
-  FROM raw
-  WHERE number <> ''
-  {drop_clause}
+    CAST({number_select} AS TEXT) AS number,
+    {street_select} AS addr_street,
+    CAST(payload->>'lon' AS REAL) AS lon,
+    CAST(payload->>'lat' AS REAL) AS lat
+  FROM osm_data.osm_nodes
+  WHERE {number_select} IS NOT NULL
 ";
 
 
@@ -164,7 +149,7 @@ pub fn streets_wkb_by_ids(conn: &Connection, ids: &[i64]) -> Vec<street_wkb_row>
 
 pub struct candidate_row {
   pub id: u64,
-  pub number: String,
+  pub number: house_number,
   pub addr_street: Option<String>,
   pub lon: f64,
   pub lat: f64,
@@ -172,48 +157,44 @@ pub struct candidate_row {
 
 pub fn load_all_candidates(
   conn: &Connection,
-  housenumber_tags: &[&str],
-  street_tags: &[&str],
-  drop_values: &[&str],
+  policy: &house_number_policy,
 ) -> Vec<candidate_row> {
-  debug_assert!(!housenumber_tags.is_empty(), "housenumber_tags must not be empty");
-  let number_select = super::build_name_select("payload", housenumber_tags);
-  let street_select = super::build_name_select("payload", street_tags);
-  let drop_clause = if drop_values.is_empty() {
-    String::new()
-  } else {
-    let placeholders = drop_values.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-    format!("AND LOWER(number) NOT IN ({placeholders})")
-  };
+  debug_assert!(!policy.number_tags.is_empty(), "number_tags must not be empty");
+  let number_select = super::build_name_select("payload", policy.number_tags);
+  let street_select = super::build_name_select("payload", policy.street_tags);
   let sql = SQL_LOAD_ALL_CANDIDATES
     .replace("{number_select}", &number_select)
-    .replace("{street_select}", &street_select)
-    .replace("{drop_clause}", &drop_clause);
-  let params: Vec<rusqlite::types::Value> = drop_values
-    .iter()
-    .map(|d| rusqlite::types::Value::Text(d.to_lowercase()))
-    .collect();
+    .replace("{street_select}", &street_select);
   let mut stmt = conn
     .prepare(&sql)
     .expect("failed to prepare load all candidates");
   stmt
-    .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-      Ok(candidate_row {
-        id: row.get(0)?,
-        number: row.get(1)?,
-        addr_street: row.get(2)?,
-        lon: row.get(3)?,
-        lat: row.get(4)?,
-      })
+    .query_map([], |row| {
+      Ok((
+        row.get::<_, u64>(0)?,
+        row.get::<_, String>(1)?,
+        row.get::<_, Option<String>>(2)?,
+        row.get::<_, f64>(3)?,
+        row.get::<_, f64>(4)?,
+      ))
     })
     .expect("failed to query candidates")
     .map(|r| r.expect("failed to read candidate row"))
+    .filter_map(|(id, raw, addr_street, lon, lat)| {
+      house_number::normalize(&raw, policy).map(|number| candidate_row {
+        id,
+        number,
+        addr_street,
+        lon,
+        lat,
+      })
+    })
     .collect()
 }
 
 pub struct hn_for_street {
   pub admin_level_id: i64,
-  pub number: String,
+  pub number: house_number,
   pub wkb: Option<admin_geometry>,
 }
 
@@ -237,13 +218,31 @@ pub fn by_admin_level_ids(conn: &Connection, ids: &[i64]) -> Vec<hn_for_street> 
     .query_map(rusqlite::params_from_iter(params.iter()), |row| {
       Ok(hn_for_street {
         admin_level_id: row.get(0)?,
-        number: row.get(1)?,
+        // already canonical on disk; read back without re-applying the ingestion policy.
+        number: house_number::from_stored(&row.get::<_, String>(1)?),
         wkb: row.get(2)?,
       })
     })
     .expect("failed to query by_admin_level_ids")
     .map(|r| r.expect("failed to read hn_for_street row"))
     .collect()
+}
+
+// maps the domain's placed numbers onto storage rows: the identity is unpacked back into the
+// integer key, the number is written in its stored form and the point is encoded as spatialite
+// wkb — all three being persistence concerns the domain does not carry.
+pub fn batch_insert_links(conn: &Connection, links: &[house_number_link]) -> i64 {
+  let rows: Vec<house_numbers> = links
+    .iter()
+    .map(|link| house_numbers {
+      node_id: link.node_id,
+      admin_level_id: link.street_id.raw() as i64,
+      number: link.number.stored_form().to_string(),
+      wkb: Geometry::Point(link.point).into(),
+      strategy: link.strategy.code(),
+    })
+    .collect();
+  batch_insert(conn, &rows)
 }
 
 pub fn batch_insert(conn: &Connection, rows: &[house_numbers]) -> i64 {

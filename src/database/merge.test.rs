@@ -1,8 +1,9 @@
 use crate::database::admin_levels::{
-  admin_geometry, admin_id_kind, admin_levels as admin_levels_row, batch_upsert, pack_admin_id,
+  admin_geometry, admin_levels as admin_levels_row, batch_upsert,
 };
 use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
 use crate::database::open_write_main;
+use crate::domain::kernel::admin_area_id::admin_area_id;
 use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 
@@ -84,7 +85,7 @@ fn _00_merge_combines_admin_levels_without_id_collision() {
   // ways {1, 2, 3} → exactly three rows; way 2 upserted, not duplicated.
   assert_eq!(count(&conn, "SELECT COUNT(*) FROM admin_levels"), 3);
 
-  let way3_id = pack_admin_id(admin_id_kind::way, 3) as i64;
+  let way3_id = admin_area_id::from_way(3).raw() as i64;
   assert_eq!(
     count(&conn, &format!("SELECT COUNT(*) FROM admin_levels WHERE id = {way3_id}")),
     1,
@@ -102,7 +103,7 @@ fn _01_merge_house_numbers_dedupes_by_node_id() {
   let source_path = temp_path("houses_source");
 
   // both databases reference admin_level way 1 (id = 2). node 100 overlaps; node 200 is new.
-  let way1_id = pack_admin_id(admin_id_kind::way, 1) as i64;
+  let way1_id = admin_area_id::from_way(1).raw() as i64;
   build_source(&base_path, &[make_way(1)], &[make_house(100, way1_id, "10")]);
   build_source(
     &source_path,

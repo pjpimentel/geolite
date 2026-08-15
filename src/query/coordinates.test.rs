@@ -229,6 +229,7 @@ fn _00_returns_the_10_closest_records() {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -298,6 +299,7 @@ fn _01_results_are_ordered_by_distance_from_coordinates_to_street() {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -383,6 +385,7 @@ fn run_hierarchy_case(area_admin_level: u8, area_name: &str) {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -527,6 +530,7 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -691,6 +695,7 @@ fn run_nested_polygons_case(area_admin_level: u8) {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -758,6 +763,7 @@ fn _05_bounding_box_keeps_only_matches_inside_the_box() {
   let bounds = crate::query::bounding_geometry::from_rect(bbox);
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -790,6 +796,7 @@ fn _06_bounding_box_excluding_all_matches_returns_empty_matches() {
   let bounds = crate::query::bounding_geometry::from_rect(bbox);
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -822,6 +829,7 @@ fn _07_degenerate_bounding_geometry_with_zero_area_does_not_panic() {
   let bounds = crate::query::bounding_geometry::from_rect(bbox);
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -846,6 +854,7 @@ fn _08_admin_level_filter_keeps_matches_with_requested_level() {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -870,6 +879,7 @@ fn _09_admin_level_filter_with_no_matching_level_returns_empty_matches() {
 
   let output = crate::query::run(
     &conn,
+    &crate::presets::DEFAULT.house_numbers,
     None,
     "-23.97241,-46.31980",
     None,
@@ -938,7 +948,7 @@ fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
   let bounds =
     crate::http::parse_bounding_wkt("POLYGON((0.08 0.08, -0.02 0.08, 0.08 -0.02, 0.08 0.08))")
       .unwrap();
-  let output = crate::query::run(&conn, None, "0,0", None, None, Some(bounds), None, true);
+  let output = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, None, "0,0", None, None, Some(bounds), None, true);
   let names: Vec<&str> = output
     .matches
     .iter()

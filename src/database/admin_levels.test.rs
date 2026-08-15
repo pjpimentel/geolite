@@ -1,6 +1,4 @@
-use super::{
-  admin_id_kind, admin_levels as admin_levels_row, batch_upsert, pack_admin_id, unpack_admin_id,
-};
+use super::{admin_levels as admin_levels_row, batch_upsert};
 use geo::{Coord, Geometry, LineString};
 
 const SQL_SELECT_WAY_PAIRS: &str = "
@@ -108,19 +106,9 @@ fn _01_relation_ids_0_to_10_produce_bit_packed_ids() {
   );
 }
 
-#[test]
-fn _02_pack_admin_id_way_examples() {
-  let actual: Vec<u64> = (0u64..=10).map(|n| pack_admin_id(admin_id_kind::way, n)).collect();
-  assert_eq!(actual, vec![0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
-}
-
-#[test]
-fn _03_pack_admin_id_relation_examples() {
-  let actual: Vec<u64> = (0u64..=10)
-    .map(|n| pack_admin_id(admin_id_kind::relation, n))
-    .collect();
-  assert_eq!(actual, vec![1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21]);
-}
+// the packing rule itself now lives in the shared kernel; see
+// src/domain/kernel/admin_area_id.test.rs. what stays here is that batch_upsert derives the
+// stored id from it (_00 and _01 above).
 
 #[test]
 fn _05_mbr_center_reads_the_spatialite_bbox_center() {
@@ -149,24 +137,3 @@ fn _06_mbr_center_rejects_short_or_invalid_blobs() {
   assert_eq!(super::mbr_center(&[0xFFu8; 40]), None);
 }
 
-#[test]
-fn _04_unpack_admin_id_examples() {
-  let actual: Vec<(admin_id_kind, u64)> = (0u64..=11).map(unpack_admin_id).collect();
-  assert_eq!(
-    actual,
-    vec![
-      (admin_id_kind::way, 0),
-      (admin_id_kind::relation, 0),
-      (admin_id_kind::way, 1),
-      (admin_id_kind::relation, 1),
-      (admin_id_kind::way, 2),
-      (admin_id_kind::relation, 2),
-      (admin_id_kind::way, 3),
-      (admin_id_kind::relation, 3),
-      (admin_id_kind::way, 4),
-      (admin_id_kind::relation, 4),
-      (admin_id_kind::way, 5),
-      (admin_id_kind::relation, 5),
-    ],
-  );
-}
