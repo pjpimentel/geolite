@@ -2,8 +2,6 @@ use std::io::Read;
 
 use super::message::blob_msg;
 
-// a blob is stored either raw or zlib-compressed; the two fields are mutually exclusive and one of
-// them is always set in a well-formed file.
 pub fn decompress(blob: &blob_msg) -> Vec<u8> {
   let raw = blob.raw();
   if !raw.is_empty() {

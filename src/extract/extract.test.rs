@@ -3,8 +3,8 @@ use prost::Message;
 
 use crate::extract::pbf_fixtures::{blob_compression, make_blob};
 
-fn decode(bytes: &[u8]) -> crate::pbf::message::blob_msg {
-  crate::pbf::message::blob_msg::decode(bytes).expect("failed to decode blob")
+fn decode(bytes: &[u8]) -> crate::domain::osm_pbf_file::message::blob_msg {
+  crate::domain::osm_pbf_file::message::blob_msg::decode(bytes).expect("failed to decode blob")
 }
 
 // 00.00: blob sem compressao devolve os bytes originais intactos
@@ -13,7 +13,7 @@ fn _00_00_returns_raw_bytes_when_blob_is_uncompressed() {
   let payload = b"conteudo do bloco".to_vec();
   let blob = decode(&make_blob(&payload, blob_compression::raw));
 
-  assert_eq!(crate::pbf::blob::decompress(&blob), payload);
+  assert_eq!(crate::domain::osm_pbf_file::compression::decompress(&blob), payload);
 }
 
 // 00.01: blob zlib e inflado de volta ao payload original
@@ -24,7 +24,7 @@ fn _00_01_inflates_zlib_blob_payload() {
   let bytes = make_blob(&payload, blob_compression::zlib);
   let blob = decode(&bytes);
 
-  assert_eq!(crate::pbf::blob::decompress(&blob), payload);
+  assert_eq!(crate::domain::osm_pbf_file::compression::decompress(&blob), payload);
   assert!(
     bytes.len() < payload.len(),
     "o fixture deveria estar comprimido de fato"
@@ -47,7 +47,7 @@ fn _00_02_prefers_raw_over_zlib_when_both_are_present() {
     .encode_to_vec(),
   );
 
-  assert_eq!(crate::pbf::blob::decompress(&blob), b"do raw");
+  assert_eq!(crate::domain::osm_pbf_file::compression::decompress(&blob), b"do raw");
 }
 
 // 00.03: blob sem raw e sem zlib_data nao tem como ser decodificado
@@ -55,5 +55,5 @@ fn _00_02_prefers_raw_over_zlib_when_both_are_present() {
 #[should_panic(expected = "unsupported blob compression")]
 fn _00_03_panics_when_blob_has_neither_raw_nor_zlib() {
   let blob = decode(&make_blob(b"ignorado", blob_compression::none));
-  crate::pbf::blob::decompress(&blob);
+  crate::domain::osm_pbf_file::compression::decompress(&blob);
 }

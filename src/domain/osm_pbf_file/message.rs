@@ -1,19 +1,7 @@
-// the osm pbf wire format, as prost message structs.
-//
-// a `.osm.pbf` file is a sequence of length-prefixed blobs; a data blob decompresses into a
-// primitive block, which carries a string table and groups of nodes, ways and relations. the
-// coordinates are delta-encoded against the block's granularity and offsets, which is why the
-// block-level fields matter to every element decoder.
-//
-// spec: https://wiki.openstreetmap.org/wiki/PBF_Format
-
-// what precedes every blob: its kind ("OSMHeader" or "OSMData") and how many bytes it occupies.
-// walking these headers is how the file is split into byte ranges without decompressing anything.
 #[derive(prost::Message)]
 pub struct blob_header_msg {
   #[prost(string, tag = "1")]
   pub r#type: String,
-  // wire-compatible with int32 for non-negative values; datasize is always >= 0 in practice
   #[prost(uint32, tag = "3")]
   pub datasize: u32,
 }
@@ -28,7 +16,6 @@ pub struct blob_msg {
   pub zlib_data: Option<Vec<u8>>,
 }
 
-// the first blob of every file: the bounding box it covers and how it was produced.
 #[derive(prost::Message)]
 pub struct header_block_msg {
   #[prost(message, optional, tag = "1")]

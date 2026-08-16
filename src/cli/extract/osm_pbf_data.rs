@@ -172,7 +172,7 @@ pub fn command_handler_extract_osm_pbf_data(
         include_ways,
         include_relations,
         ignore_info,
-        tags: crate::pbf::tag_policy::tag_policy {
+        tags: crate::domain::osm_tag::tag_policy {
           include: tags_include,
           ignore: tags_ignore,
         },

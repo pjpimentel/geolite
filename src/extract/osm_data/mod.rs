@@ -15,8 +15,8 @@ use crate::domain::osm_relation::decoder::decode as decode_relations;
 use crate::domain::osm_relation::osm_relation_row;
 use crate::domain::osm_way::decoder::decode as decode_ways;
 use crate::domain::osm_way::osm_way_row;
-use crate::pbf::message::{blob_msg, primitive_block_msg, string_table_msg};
-use crate::pbf::tag_policy::tag_policy;
+use crate::domain::osm_pbf_file::message::{blob_msg, primitive_block_msg, string_table_msg};
+use crate::domain::osm_tag::tag_policy;
 
 
 pub struct data_opts {
@@ -324,7 +324,7 @@ fn decode_raw_blob(
 
 fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
   let blob = blob_msg::decode(blob_data).expect("failed to decode blob");
-  let raw = crate::pbf::blob::decompress(&blob);
+  let raw = crate::domain::osm_pbf_file::compression::decompress(&blob);
   let block =
     primitive_block_msg::decode(raw.as_slice()).expect("failed to decode primitive block");
 

@@ -1,7 +1,7 @@
 use super::*;
 use crate::domain::osm_relation::entity::osm_member_type;
 use relation_msg;
-use crate::pbf::tag_policy::tag_policy;
+use crate::domain::osm_tag::tag_policy;
 
 fn default_opts() -> tag_policy {
   tag_policy::default()

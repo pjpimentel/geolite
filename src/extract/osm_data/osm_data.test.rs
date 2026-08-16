@@ -14,7 +14,7 @@ fn default_opts() -> data_opts {
     include_ways: true,
     include_relations: true,
     ignore_info: true,
-    tags: crate::pbf::tag_policy::tag_policy {
+    tags: crate::domain::osm_tag::tag_policy {
       include: None,
       ignore: None,
     },
@@ -285,7 +285,7 @@ fn _00_07_filters_tags_with_tags_include() {
     "od_00_07",
     &[chunk],
     data_opts {
-      tags: crate::pbf::tag_policy::tag_policy {
+      tags: crate::domain::osm_tag::tag_policy {
         include: Some(vec!["name".to_string()]),
         ignore: None,
       },
@@ -313,7 +313,7 @@ fn _00_08_filters_tags_with_tags_ignore() {
     "od_00_08",
     &[chunk],
     data_opts {
-      tags: crate::pbf::tag_policy::tag_policy {
+      tags: crate::domain::osm_tag::tag_policy {
         include: None,
         ignore: Some(vec!["amenity".to_string()]),
       },

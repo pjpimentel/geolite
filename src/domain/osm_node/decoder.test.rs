@@ -1,6 +1,6 @@
 use super::*;
-use crate::pbf::message::dense_nodes_msg;
-use crate::pbf::tag_policy::tag_policy;
+use crate::domain::osm_pbf_file::message::dense_nodes_msg;
+use crate::domain::osm_tag::tag_policy;
 
 fn default_opts() -> tag_policy {
   tag_policy::default()

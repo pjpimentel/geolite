@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::blob_index::{self, chunk_type, osm_pbf_blob_chunk};
-use crate::pbf::message::blob_header_msg;
+use super::message::blob_header_msg;
 
 pub(crate) struct progress {
   pub(crate) total_bytes: u64,

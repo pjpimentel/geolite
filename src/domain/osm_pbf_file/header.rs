@@ -4,8 +4,7 @@ use std::{
   io::{Read, Seek},
 };
 
-use super::{blob_index, repository};
-use crate::pbf::{blob, message};
+use super::{blob_index, compression, message, repository};
 
 pub struct header_bbox {
   pub bottom: f64,
@@ -36,7 +35,7 @@ pub fn run(pbf: &str, conn: &rusqlite::Connection, file_id: u32) -> header_outpu
     .expect("failed to read header blob");
 
   let blob = message::blob_msg::decode(blob_buf.as_slice()).expect("failed to decode blob");
-  let raw = blob::decompress(&blob);
+  let raw = compression::decompress(&blob);
 
   let h = message::header_block_msg::decode(raw.as_slice()).expect("failed to decode header block");
 

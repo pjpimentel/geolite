@@ -23,11 +23,14 @@ admin_level_hierarchy/  which area contains which — the `admin_levels_hierarch
 osm_tag/        the openstreetmap tag vocabulary — shared, and not a table
   key               the keys geolite interprets, their osm literal and their json path
   value             the keys whose values are a closed set: place, highway, leisure
+  policy            which keys survive extraction: an include list, an ignore list, or neither
   select            the sql that reads a tag out of a stored payload
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the twelve writes and reads
   catalog           the geofabrik index, cached in the table, and the local listing
   download          the parallel range download and the md5 verdict
+  message           the protobuf structs the file is written in
+  compression       taking a blob's bytes out of it, raw or zlib
   header            the file's first blob → the `osm_header_*` columns
   blob_index        the file's byte layout — the `osm_data.osm_pbf_blob_chunks` table
   blob_scanner      the pass that walks the file and fills it
@@ -148,10 +151,16 @@ set where there is one, the normalisation. it does **not** own what a *combinati
 carry a house number is `house_number::policy`. blurring that would undo the split those slices
 were built on.
 
-**it names the interpreted vocabulary, not the stored one.** `pbf::tag_policy` keeps whatever the
-file carries — an absent include list means "every tag" — and stays stringly-typed on purpose,
-because the pipeline stores keys nobody here has heard of. the enum is the subset the code reasons
-about, so a misspelled key is a compile error instead of a query that quietly returns nothing.
+**it names the interpreted vocabulary, not the stored one**, and both live here with different
+typing on purpose. `key` is the closed, typed set the code reasons about, so a misspelled key is a
+compile error rather than a query that quietly returns nothing. `policy` is the filter the pipeline
+runs while decoding — an absent include list means "every tag" — and stays stringly-typed, because
+the pipeline stores keys nobody here has heard of.
+
+`policy` sits beside `key` for the same reason `house_number::policy` sits beside its value object:
+a policy belongs with the vocabulary it filters. it is **not** the pbf file's — the format does not
+care which tags you keep, `osm_pbf_file` never reads it, and what fills it are the `--tags-include`
+and `--tags-ignore` flags at the edge.
 
 ### why the path is always quoted
 
@@ -244,6 +253,31 @@ until this slice landed and deleted them. the ddl in `repository` is the shape.
 1. merges parts in order into the final `.osm.pbf` file
 1. verifies md5 checksum against `<url>.md5` (ok / mismatch / unavailable)
 1. records the result (`file_path`, `size_bytes`, `md5`, `downloaded_at`) in the matching `osm_pbf_files` row
+
+### the wire format — `message` and `compression`
+
+a `.osm.pbf` file is a sequence of length-prefixed blobs. a data blob decompresses into a *primitive
+block*, which carries a string table and groups of nodes, ways and relations. coordinates are
+delta-encoded against the block's granularity and offsets, and tags are pairs of indexes into the
+string table — which is why the block-level fields matter to every element decoder.
+
+```
+blob → primitive block → primitive group → node | dense nodes | way | relation
+                       ↘ string table
+```
+
+the thirteen protobuf structs stay in one file because they are **nested types of one another**:
+`primitive_group_msg` holds `node_msg`, `way_msg` and `relation_msg` as fields. splitting them
+across the element folders would make the wire format depend on the domains, which is backwards —
+and it would break the one thing that makes a transcription reviewable, which is reading the field
+numbers side by side against the spec:
+[PBF_Format](https://wiki.openstreetmap.org/wiki/PBF_Format).
+
+**why the format lives here and `jsonb` does not.** both are codecs, and the difference is
+ownership: `database/jsonb.rs` is sqlite's storage format, used by whoever writes a payload and
+owned by no concept; these messages are the format of **this file**, and the file is a concept with
+a folder. a format shared by nobody in particular stays outside; a format that belongs to someone
+lives with them.
 
 ### the byte layout — `blob_index`
 

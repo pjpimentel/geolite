@@ -31,7 +31,6 @@ fn _02_an_ignore_list_drops_only_what_it_names() {
   assert!(!policy.passes("building"));
 }
 
-// both lists apply: a tag has to survive the include list and then the ignore list.
 #[test]
 fn _03_the_two_lists_apply_together() {
   let policy = policy(Some(&["name", "building"]), Some(&["building"]));
@@ -43,7 +42,6 @@ fn _03_the_two_lists_apply_together() {
 #[test]
 fn _04_filter_resolves_indexes_against_the_string_table() {
   let policy = tag_policy::default();
-  // keys/vals index into STRINGS: highway=residential, name=Rua Alfa
   let out = policy.filter(STRINGS, &[1, 3], &[2, 4]);
   assert_eq!(out, vec![("highway", "residential"), ("name", "Rua Alfa")]);
 }
@@ -55,8 +53,6 @@ fn _05_filter_drops_the_pairs_the_policy_rejects() {
   assert_eq!(out, vec![("name", "Rua Alfa")]);
 }
 
-// an index past the string table means a malformed block; the pair is skipped rather than
-// panicking mid-file.
 #[test]
 fn _06_filter_skips_pairs_pointing_outside_the_string_table() {
   let policy = tag_policy::default();
