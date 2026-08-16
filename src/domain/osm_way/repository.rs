@@ -3,6 +3,8 @@ use rusqlite::Connection;
 use super::entity::osm_way_row;
 use super::filter::way_filter;
 use crate::domain::admin_level::level;
+use crate::domain::osm_tag::value::{highway_value, leisure_value, place_value};
+use crate::domain::osm_tag::{key, osm_tag, select};
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS osm_data.osm_ways (
@@ -69,54 +71,57 @@ pub struct way_coord_row {
   pub lat: f64,
 }
 
-const SQL_FILTER_PLACE_NEIGHBOURHOOD: &str =
-  "json_extract(payload, '$.tags.place') = 'neighbourhood'";
-const SQL_FILTER_PLACE_SUBURB: &str = "json_extract(payload, '$.tags.place') = 'suburb'";
-const SQL_FILTER_HIGHWAY_RESIDENTIAL: &str =
-  "json_extract(payload, '$.tags.highway') = 'residential'";
-const SQL_FILTER_HIGHWAY_PRIMARY: &str = "json_extract(payload, '$.tags.highway') = 'primary'";
-const SQL_FILTER_HIGHWAY_SECONDARY: &str = "json_extract(payload, '$.tags.highway') = 'secondary'";
-const SQL_FILTER_HIGHWAY_TERTIARY: &str = "json_extract(payload, '$.tags.highway') = 'tertiary'";
-const SQL_FILTER_HIGHWAY_UNCLASSIFIED: &str =
-  "json_extract(payload, '$.tags.highway') = 'unclassified'";
-const SQL_FILTER_HIGHWAY_LIVING_STREET: &str =
-  "json_extract(payload, '$.tags.highway') = 'living_street'";
-const SQL_FILTER_EXCLUDE_PLACE_NEIGHBOURHOOD: &str =
-  "COALESCE(json_extract(payload, '$.tags.place'), '') NOT IN ('neighbourhood')";
-const SQL_FILTER_EXCLUDE_PLACE_SUBURB: &str =
-  "COALESCE(json_extract(payload, '$.tags.place'), '') NOT IN ('suburb')";
-const SQL_FILTER_EXCLUDE_LEISURE_PARK: &str =
-  "COALESCE(json_extract(payload, '$.tags.leisure'), '') NOT IN ('park')";
-const SQL_FILTER_EXCLUDE_BUILDING: &str = "json_extract(payload, '$.tags.building') IS NULL";
-const SQL_FILTER_EXCLUDE_WATERWAY: &str = "json_extract(payload, '$.tags.waterway') IS NULL";
-
-// the predicate each filter stands for, over the way's json payload.
-fn filter_sql(filter: &way_filter) -> &'static str {
+// the predicate each filter stands for, over the way's json payload. the meaning is `way_filter`'s
+// and the vocabulary is `osm_tag`'s; all this does is put the two together.
+pub(super) fn filter_sql(filter: &way_filter) -> String {
+  use highway_value as hw;
+  let p = "payload";
   match filter {
-    way_filter::include_place_neighbourhood => SQL_FILTER_PLACE_NEIGHBOURHOOD,
-    way_filter::include_place_suburb => SQL_FILTER_PLACE_SUBURB,
-    way_filter::include_highway_residential => SQL_FILTER_HIGHWAY_RESIDENTIAL,
-    way_filter::include_highway_primary => SQL_FILTER_HIGHWAY_PRIMARY,
-    way_filter::include_highway_secondary => SQL_FILTER_HIGHWAY_SECONDARY,
-    way_filter::include_highway_tertiary => SQL_FILTER_HIGHWAY_TERTIARY,
-    way_filter::include_highway_unclassified => SQL_FILTER_HIGHWAY_UNCLASSIFIED,
-    way_filter::include_highway_living_street => SQL_FILTER_HIGHWAY_LIVING_STREET,
-    way_filter::exclude_place_neighbourhood => SQL_FILTER_EXCLUDE_PLACE_NEIGHBOURHOOD,
-    way_filter::exclude_place_suburb => SQL_FILTER_EXCLUDE_PLACE_SUBURB,
-    way_filter::exclude_leisure_park => SQL_FILTER_EXCLUDE_LEISURE_PARK,
-    way_filter::exclude_building => SQL_FILTER_EXCLUDE_BUILDING,
-    way_filter::exclude_waterway => SQL_FILTER_EXCLUDE_WATERWAY,
+    way_filter::include_place_neighbourhood => {
+      select::equals(p, osm_tag::place, place_value::neighbourhood.value())
+    }
+    way_filter::include_place_suburb => {
+      select::equals(p, osm_tag::place, place_value::suburb.value())
+    }
+    way_filter::include_highway_residential => {
+      select::equals(p, osm_tag::highway, hw::residential.value())
+    }
+    way_filter::include_highway_primary => select::equals(p, osm_tag::highway, hw::primary.value()),
+    way_filter::include_highway_secondary => {
+      select::equals(p, osm_tag::highway, hw::secondary.value())
+    }
+    way_filter::include_highway_tertiary => {
+      select::equals(p, osm_tag::highway, hw::tertiary.value())
+    }
+    way_filter::include_highway_unclassified => {
+      select::equals(p, osm_tag::highway, hw::unclassified.value())
+    }
+    way_filter::include_highway_living_street => {
+      select::equals(p, osm_tag::highway, hw::living_street.value())
+    }
+    way_filter::exclude_place_neighbourhood => {
+      select::not_in(p, osm_tag::place, &[place_value::neighbourhood.value()])
+    }
+    way_filter::exclude_place_suburb => {
+      select::not_in(p, osm_tag::place, &[place_value::suburb.value()])
+    }
+    way_filter::exclude_leisure_park => {
+      select::not_in(p, osm_tag::leisure, &[leisure_value::park.value()])
+    }
+    way_filter::exclude_building => select::is_null(p, osm_tag::building),
+    way_filter::exclude_waterway => select::is_null(p, osm_tag::waterway),
   }
 }
 
 pub fn remaining_ids_by_tags(conn: &Connection, level: level, filter: &[way_filter]) -> Vec<u64> {
   let level = level.value();
-  let filter_clauses: Vec<&str> = filter.iter().map(filter_sql).collect();
+  let filter_clauses: Vec<String> = filter.iter().map(filter_sql).collect();
   let filter_part = if filter_clauses.is_empty() {
     String::new()
   } else {
     format!("\n    AND {}", filter_clauses.join("\n    AND "))
   };
+  let has_name = select::is_not_null("osm_data.osm_ways.payload", osm_tag::name);
   let sql = format!(
     "
     SELECT osm_data.osm_ways.id
@@ -124,7 +129,7 @@ pub fn remaining_ids_by_tags(conn: &Connection, level: level, filter: &[way_filt
     LEFT JOIN main.admin_levels AS already_indexed
       ON already_indexed.way_id = osm_data.osm_ways.id
       AND already_indexed.admin_level = {level}
-    WHERE json_extract(osm_data.osm_ways.payload, '$.tags.name') IS NOT NULL
+    WHERE {has_name}
       AND already_indexed.way_id IS NULL
       {filter_part}
     "
@@ -145,15 +150,13 @@ pub fn way_coords_chunk(
   name_priority: &[&str],
 ) -> Vec<way_coord_row> {
   let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-  let name_select = crate::database::name_select::build_name_select("osm_data.osm_ways.payload", name_priority);
+  let name_select = select::coalesce_of("osm_data.osm_ways.payload", name_priority);
+  let post_code_select = select::normalized_coalesce("osm_data.osm_ways.payload", key::POST_CODE);
   let sql = format!(
     "SELECT
            osm_data.osm_ways.id AS way_id,
            {name_select} AS way_name,
-           NULLIF(UPPER(TRIM(COALESCE(
-             JSON_EXTRACT(osm_data.osm_ways.payload, '$.tags.postal_code'),
-             JSON_EXTRACT(osm_data.osm_ways.payload, '$.tags.\"addr:postcode\"')
-           ))), '') AS post_code,
+           {post_code_select} AS post_code,
            CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lon') AS REAL) AS lon,
            CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lat') AS REAL) AS lat
          FROM osm_data.osm_ways,

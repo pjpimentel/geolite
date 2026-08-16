@@ -2,6 +2,7 @@ use rusqlite::Connection;
 
 use super::entity::osm_relation_row;
 use crate::domain::admin_level::level;
+use crate::domain::osm_tag::{key, select};
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS osm_data.osm_relations (
@@ -125,7 +126,10 @@ pub fn relation_coords_chunk(
   name_priority: &[&str],
 ) -> Vec<relation_coord_row> {
   let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-  let name_select = crate::database::name_select::build_name_select("osm_data.osm_relations.payload", name_priority);
+  let payload = "osm_data.osm_relations.payload";
+  let name_select = select::coalesce_of(payload, name_priority);
+  let country_iso_select = select::normalized_coalesce(payload, key::COUNTRY_ISO);
+  let post_code_select = select::normalized_coalesce(payload, key::POST_CODE);
   let sql = format!(
     "WITH way_members AS (
        SELECT
@@ -133,14 +137,8 @@ pub fn relation_coords_chunk(
          CAST(mem.key AS INTEGER) AS way_order,
          CAST(JSON_EXTRACT(mem.value, '$.id') AS INTEGER) AS way_id,
          {name_select} AS relation_name,
-         NULLIF(UPPER(TRIM(COALESCE(
-           JSON_EXTRACT(osm_data.osm_relations.payload, '$.tags.\"ISO3166-1\"'),
-           JSON_EXTRACT(osm_data.osm_relations.payload, '$.tags.\"ISO3166-1:alpha2\"')
-         ))), '') AS country_iso_code,
-         NULLIF(UPPER(TRIM(COALESCE(
-           JSON_EXTRACT(osm_data.osm_relations.payload, '$.tags.postal_code'),
-           JSON_EXTRACT(osm_data.osm_relations.payload, '$.tags.\"addr:postcode\"')
-         ))), '') AS post_code
+         {country_iso_select} AS country_iso_code,
+         {post_code_select} AS post_code
        FROM osm_data.osm_relations, JSON_EACH(JSON_EXTRACT(osm_data.osm_relations.payload, '$.members')) AS mem
        WHERE osm_data.osm_relations.id IN ({placeholders})
        AND JSON_EXTRACT(mem.value, '$.type') = 'w'

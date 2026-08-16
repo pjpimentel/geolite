@@ -20,6 +20,10 @@ admin_level_hierarchy/  which area contains which — the `admin_levels_hierarch
   label             the `user_friendly_name` rule: own name, parent's label, post code
   repository        the ddl, the lookup, the insert and what is still pending
   resolver          the containment algorithm: point-in-polygon against an in-memory rtree
+osm_tag/        the openstreetmap tag vocabulary — shared, and not a table
+  key               the keys geolite interprets, their osm literal and their json path
+  value             the keys whose values are a closed set: place, highway, leisure
+  select            the sql that reads a tag out of a stored payload
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the twelve writes and reads
   catalog           the geofabrik index, cached in the table, and the local listing
@@ -108,6 +112,41 @@ is implemented explicitly rather than derived, so that moving a variant cannot s
 
 `u8` survives in exactly two places, both of them edges: the `admin_levels.admin_level` column and
 the `level` field of the json response.
+
+## osm_tag
+
+the only folder here that is **not a table**. it is shared vocabulary, the way
+`admin_level::scale` is a scale rather than a row, and it sits under `domain` rather than beside
+`pbf` because a tag carries meaning: `pbf` is the format, this is what the format is saying.
+
+### two boundaries, and they matter more than the contents
+
+**it owns the key and the shape of its value** — the osm literal, the json path, the closed value
+set where there is one, the normalisation. it does **not** own what a *combination* of tags means.
+"a way with a `highway` tag and no `building` tag is a street" is `osm_way::way_filter`; which tags
+carry a house number is `house_number::policy`. blurring that would undo the split those slices
+were built on.
+
+**it names the interpreted vocabulary, not the stored one.** `pbf::tag_policy` keeps whatever the
+file carries — an absent include list means "every tag" — and stays stringly-typed on purpose,
+because the pipeline stores keys nobody here has heard of. the enum is the subset the code reasons
+about, so a misspelled key is a compile error instead of a query that quietly returns nothing.
+
+### why the path is always quoted
+
+sqlite is forgiving about a bare key in a json path — `:` and `-` both work unquoted, which is why
+the hand-written paths this replaced were correct. two characters are not forgiving:
+
+| key | bare path | quoted path |
+|---|---|---|
+| `addr:postcode` | works | works |
+| `ISO3166-1` | works | works |
+| `a.b` | **NULL, no error** — read as a nested path | works |
+| `c[1]` | **NULL, no error** — read as an array index | works |
+
+no key osm uses today contains either, and `is_valid_key` rejects both, so this is a latent hazard
+rather than a live bug. quoting always is simply the one form that cannot be silently wrong — and
+it is what the name select had been doing since before this folder existed.
 
 ## admin_level_hierarchy
 

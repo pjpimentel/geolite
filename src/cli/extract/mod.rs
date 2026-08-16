@@ -90,10 +90,7 @@ fn parse_name_priority(raw: &str) -> Result<Vec<&str>, String> {
     return Err("at least one tag required".to_string());
   }
   for tag in &tags {
-    if !tag
-      .chars()
-      .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '-' || c == '_')
-    {
+    if !crate::domain::osm_tag::key::is_valid_key(tag) {
       return Err(format!("invalid characters in tag '{tag}'"));
     }
   }

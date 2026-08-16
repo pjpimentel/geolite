@@ -19,7 +19,6 @@ macro_rules! impl_table_ops {
 pub const SCHEMA_VERSION: u32 = 1;
 
 pub mod jsonb;
-pub mod name_select;
 pub mod merge;
 
 pub fn osm_data_path(main_path: &str) -> String {
