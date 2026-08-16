@@ -15,30 +15,30 @@ pub struct progress_report {
 #[derive(Clone, Copy)]
 pub struct extraction_rules {
   pub level: u8,
-  pub include: &'static [crate::database::osm_ways::filters],
-  pub exclude: &'static [crate::database::osm_ways::filters],
+  pub include: &'static [crate::domain::osm_way::way_filter],
+  pub exclude: &'static [crate::domain::osm_way::way_filter],
 }
 
-fn default_include(level: u8) -> &'static [crate::database::osm_ways::filters] {
-  use crate::database::osm_ways::filters;
+fn default_include(level: u8) -> &'static [crate::domain::osm_way::way_filter] {
+  use crate::domain::osm_way::way_filter;
   match level {
     10 => &[
-      filters::include_place_neighbourhood,
-      filters::include_place_suburb,
+      way_filter::include_place_neighbourhood,
+      way_filter::include_place_suburb,
     ],
     _ => &[],
   }
 }
 
-fn default_exclude(level: u8) -> &'static [crate::database::osm_ways::filters] {
-  use crate::database::osm_ways::filters;
+fn default_exclude(level: u8) -> &'static [crate::domain::osm_way::way_filter] {
+  use crate::domain::osm_way::way_filter;
   match level {
     12 => &[
-      filters::exclude_place_neighbourhood,
-      filters::exclude_place_suburb,
-      filters::exclude_leisure_park,
-      filters::exclude_building,
-      filters::exclude_waterway,
+      way_filter::exclude_place_neighbourhood,
+      way_filter::exclude_place_suburb,
+      way_filter::exclude_leisure_park,
+      way_filter::exclude_building,
+      way_filter::exclude_waterway,
     ],
     _ => &[],
   }
@@ -48,8 +48,8 @@ pub fn resolve_rules(
   level: u8,
   overrides: &[extraction_rules],
 ) -> (
-  &'static [crate::database::osm_ways::filters],
-  &'static [crate::database::osm_ways::filters],
+  &'static [crate::domain::osm_way::way_filter],
+  &'static [crate::domain::osm_way::way_filter],
 ) {
   if let Some(r) = overrides.iter().find(|r| r.level == level) {
     return (r.include, r.exclude);

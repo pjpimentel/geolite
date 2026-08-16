@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::*;
 
 fn setup_db() -> Connection {
@@ -9,7 +10,7 @@ fn setup_db() -> Connection {
 }
 
 fn make_row(id: u64, refs: Vec<i64>, tags: Vec<(&str, &str)>) -> osm_way_row {
-  let way = crate::extract::osm_data::osm_ways::osm_way {
+  let way = crate::domain::osm_way::osm_way {
     id: id as i64,
     refs,
     tags: tags
@@ -18,7 +19,7 @@ fn make_row(id: u64, refs: Vec<i64>, tags: Vec<(&str, &str)>) -> osm_way_row {
       .collect(),
   };
   let mut payload = Vec::new();
-  crate::extract::osm_data::element_payload::encode_way(
+  crate::domain::osm_way::payload::encode(
     &mut crate::database::jsonb::encoder::new(),
     &mut payload,
     &way,
@@ -112,7 +113,7 @@ fn _02_remaining_ids_by_tags_excludes_ways_already_in_admin_levels() {
     "INSERT INTO admin_levels (way_id, admin_level, wkb, name) VALUES (1, 12, zeroblob(1), 'A')",
     rusqlite::params![],
   ).expect("failed to insert admin_level");
-  let mut ids = remaining_ids_by_tags(&conn, 12, &[filters::include_highway_residential]);
+  let mut ids = remaining_ids_by_tags(&conn, level::street, &[way_filter::include_highway_residential]);
   ids.sort();
   assert_eq!(ids, vec![2, 3]);
 }
@@ -142,55 +143,55 @@ fn _03_all_mapped_filters_works_as_expected() {
   );
 
   assert_eq!(
-    remaining_ids_by_tags(&conn, 99, &[filters::include_place_neighbourhood]),
+    remaining_ids_by_tags(&conn, level::address, &[way_filter::include_place_neighbourhood]),
     vec![1]
   );
   assert_eq!(
-    remaining_ids_by_tags(&conn, 99, &[filters::include_place_suburb]),
+    remaining_ids_by_tags(&conn, level::address, &[way_filter::include_place_suburb]),
     vec![2]
   );
   assert_eq!(
-    remaining_ids_by_tags(&conn, 99, &[filters::include_highway_residential]),
+    remaining_ids_by_tags(&conn, level::address, &[way_filter::include_highway_residential]),
     vec![3]
   );
   assert_eq!(
-    remaining_ids_by_tags(&conn, 99, &[filters::include_highway_primary]),
+    remaining_ids_by_tags(&conn, level::address, &[way_filter::include_highway_primary]),
     vec![4]
   );
   assert_eq!(
-    remaining_ids_by_tags(&conn, 99, &[filters::include_highway_secondary]),
+    remaining_ids_by_tags(&conn, level::address, &[way_filter::include_highway_secondary]),
     vec![5]
   );
   assert_eq!(
-    remaining_ids_by_tags(&conn, 99, &[filters::include_highway_tertiary]),
+    remaining_ids_by_tags(&conn, level::address, &[way_filter::include_highway_tertiary]),
     vec![6]
   );
   assert_eq!(
-    remaining_ids_by_tags(&conn, 99, &[filters::include_highway_unclassified]),
+    remaining_ids_by_tags(&conn, level::address, &[way_filter::include_highway_unclassified]),
     vec![7]
   );
   assert_eq!(
-    remaining_ids_by_tags(&conn, 99, &[filters::include_highway_living_street]),
+    remaining_ids_by_tags(&conn, level::address, &[way_filter::include_highway_living_street]),
     vec![8]
   );
 
-  let mut ids = remaining_ids_by_tags(&conn, 99, &[filters::exclude_place_neighbourhood]);
+  let mut ids = remaining_ids_by_tags(&conn, level::address, &[way_filter::exclude_place_neighbourhood]);
   ids.sort();
   assert_eq!(ids, vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 
-  let mut ids = remaining_ids_by_tags(&conn, 99, &[filters::exclude_place_suburb]);
+  let mut ids = remaining_ids_by_tags(&conn, level::address, &[way_filter::exclude_place_suburb]);
   ids.sort();
   assert_eq!(ids, vec![1, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 
-  let mut ids = remaining_ids_by_tags(&conn, 99, &[filters::exclude_leisure_park]);
+  let mut ids = remaining_ids_by_tags(&conn, level::address, &[way_filter::exclude_leisure_park]);
   ids.sort();
   assert_eq!(ids, vec![1, 2, 3, 4, 5, 6, 7, 8, 10, 11]);
 
-  let mut ids = remaining_ids_by_tags(&conn, 99, &[filters::exclude_building]);
+  let mut ids = remaining_ids_by_tags(&conn, level::address, &[way_filter::exclude_building]);
   ids.sort();
   assert_eq!(ids, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 11]);
 
-  let mut ids = remaining_ids_by_tags(&conn, 99, &[filters::exclude_waterway]);
+  let mut ids = remaining_ids_by_tags(&conn, level::address, &[way_filter::exclude_waterway]);
   ids.sort();
   assert_eq!(ids, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 }

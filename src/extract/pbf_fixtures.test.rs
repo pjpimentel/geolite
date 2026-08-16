@@ -745,20 +745,20 @@ pub(crate) fn insert_way(
   refs: &[i64],
   tags: &[(&str, &str)],
 ) {
-  let way = super::osm_data::osm_ways::osm_way {
+  let way = crate::domain::osm_way::osm_way {
     id: id as i64,
     refs: refs.to_vec(),
     tags: tag_map(tags),
   };
   let mut payload = Vec::new();
-  super::osm_data::element_payload::encode_way(
+  crate::domain::osm_way::payload::encode(
     &mut crate::database::jsonb::encoder::new(),
     &mut payload,
     &way,
   );
-  crate::database::osm_ways::insert_rows(
+  crate::domain::osm_way::repository::insert_rows(
     conn,
-    &[crate::database::osm_ways::osm_way_row {
+    &[crate::domain::osm_way::osm_way_row {
       id,
       osm_pbf_chunk_id: 0,
       payload,
@@ -871,8 +871,8 @@ pub(crate) const NAME_PRIORITY: &[&str] = &["name"];
 // override de regras de um nivel so, no formato que o run dos estagios aceita
 pub(crate) fn level_rules(
   level: u8,
-  include: &'static [crate::database::osm_ways::filters],
-  exclude: &'static [crate::database::osm_ways::filters],
+  include: &'static [crate::domain::osm_way::way_filter],
+  exclude: &'static [crate::domain::osm_way::way_filter],
 ) -> [super::admin_levels::extraction_rules; 1] {
   [super::admin_levels::extraction_rules {
     level,

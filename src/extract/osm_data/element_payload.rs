@@ -1,28 +1,9 @@
 use crate::database::jsonb::{encoder, write_int, write_text};
 
 use super::osm_relations::{osm_member_type, osm_relation};
-use super::osm_ways::osm_way;
 
-// how a way and a relation are written into their `payload` column. they stay in the pipeline
-// until each gets its own slice, next to the decoders they pair with.
-
-pub fn encode_way(encoder: &mut encoder, out: &mut Vec<u8>, way: &osm_way) {
-  encoder.write_object(out, |enc, body| {
-      write_text(body, "refs");
-      enc.write_array(body, |_, refs_body| {
-        for r in &way.refs {
-          write_int(refs_body, *r);
-        }
-      });
-      write_text(body, "tags");
-      enc.write_object(body, |_, tags_body| {
-        for (k, v) in &way.tags {
-          write_text(tags_body, k);
-          write_text(tags_body, v);
-        }
-      });
-  });
-}
+// how a relation is written into its `payload` column. it stays in the pipeline until the
+// relation slice lands, next to the decoder it pairs with.
 
 pub fn encode_relation(encoder: &mut encoder, out: &mut Vec<u8>, rel: &osm_relation) {
   encoder.write_object(out, |enc, body| {

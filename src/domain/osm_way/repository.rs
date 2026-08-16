@@ -1,20 +1,8 @@
 use rusqlite::Connection;
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
-impl ToSql for crate::extract::osm_data::osm_ways::osm_way {
-  fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-    let json = serde_json::to_string(self)
-      .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    Ok(ToSqlOutput::Owned(rusqlite::types::Value::Text(json)))
-  }
-}
-
-impl FromSql for crate::extract::osm_data::osm_ways::osm_way {
-  fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-    let text = value.as_str()?;
-    serde_json::from_str(text).map_err(|e| FromSqlError::Other(Box::new(e)))
-  }
-}
+use super::entity::osm_way_row;
+use super::filter::way_filter;
+use crate::domain::admin_level::level;
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS osm_data.osm_ways (
@@ -54,19 +42,23 @@ fn build_multi_insert_sql(n: usize) -> String {
   sql
 }
 
-impl_table_ops!(pub(super), SQL_CREATE, SQL_DROP);
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create osm_ways");
+}
+
+#[allow(dead_code)]
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop osm_ways");
+}
 
 pub fn create_indexes(conn: &Connection) {
   conn
     .execute_batch(SQL_CREATE_INDEXES)
     .expect("failed to create osm_ways indexes");
-}
-
-pub struct osm_way_row {
-  pub id: u64,
-  pub osm_pbf_chunk_id: u32,
-  // pre-encoded JSONB binary (sqlite jsonb format) — bound diretamente como BLOB
-  pub payload: Vec<u8>,
 }
 
 pub struct way_coord_row {
@@ -98,46 +90,28 @@ const SQL_FILTER_EXCLUDE_LEISURE_PARK: &str =
 const SQL_FILTER_EXCLUDE_BUILDING: &str = "json_extract(payload, '$.tags.building') IS NULL";
 const SQL_FILTER_EXCLUDE_WATERWAY: &str = "json_extract(payload, '$.tags.waterway') IS NULL";
 
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-pub enum filters {
-  include_place_neighbourhood,
-  include_place_suburb,
-  include_highway_residential,
-  include_highway_primary,
-  include_highway_secondary,
-  include_highway_tertiary,
-  include_highway_unclassified,
-  include_highway_living_street,
-  exclude_place_neighbourhood,
-  exclude_place_suburb,
-  exclude_leisure_park,
-  exclude_building,
-  exclude_waterway,
-}
-
-impl filters {
-  fn as_sql(&self) -> &'static str {
-    match self {
-      filters::include_place_neighbourhood => SQL_FILTER_PLACE_NEIGHBOURHOOD,
-      filters::include_place_suburb => SQL_FILTER_PLACE_SUBURB,
-      filters::include_highway_residential => SQL_FILTER_HIGHWAY_RESIDENTIAL,
-      filters::include_highway_primary => SQL_FILTER_HIGHWAY_PRIMARY,
-      filters::include_highway_secondary => SQL_FILTER_HIGHWAY_SECONDARY,
-      filters::include_highway_tertiary => SQL_FILTER_HIGHWAY_TERTIARY,
-      filters::include_highway_unclassified => SQL_FILTER_HIGHWAY_UNCLASSIFIED,
-      filters::include_highway_living_street => SQL_FILTER_HIGHWAY_LIVING_STREET,
-      filters::exclude_place_neighbourhood => SQL_FILTER_EXCLUDE_PLACE_NEIGHBOURHOOD,
-      filters::exclude_place_suburb => SQL_FILTER_EXCLUDE_PLACE_SUBURB,
-      filters::exclude_leisure_park => SQL_FILTER_EXCLUDE_LEISURE_PARK,
-      filters::exclude_building => SQL_FILTER_EXCLUDE_BUILDING,
-      filters::exclude_waterway => SQL_FILTER_EXCLUDE_WATERWAY,
-    }
+// the predicate each filter stands for, over the way's json payload.
+fn filter_sql(filter: &way_filter) -> &'static str {
+  match filter {
+    way_filter::include_place_neighbourhood => SQL_FILTER_PLACE_NEIGHBOURHOOD,
+    way_filter::include_place_suburb => SQL_FILTER_PLACE_SUBURB,
+    way_filter::include_highway_residential => SQL_FILTER_HIGHWAY_RESIDENTIAL,
+    way_filter::include_highway_primary => SQL_FILTER_HIGHWAY_PRIMARY,
+    way_filter::include_highway_secondary => SQL_FILTER_HIGHWAY_SECONDARY,
+    way_filter::include_highway_tertiary => SQL_FILTER_HIGHWAY_TERTIARY,
+    way_filter::include_highway_unclassified => SQL_FILTER_HIGHWAY_UNCLASSIFIED,
+    way_filter::include_highway_living_street => SQL_FILTER_HIGHWAY_LIVING_STREET,
+    way_filter::exclude_place_neighbourhood => SQL_FILTER_EXCLUDE_PLACE_NEIGHBOURHOOD,
+    way_filter::exclude_place_suburb => SQL_FILTER_EXCLUDE_PLACE_SUBURB,
+    way_filter::exclude_leisure_park => SQL_FILTER_EXCLUDE_LEISURE_PARK,
+    way_filter::exclude_building => SQL_FILTER_EXCLUDE_BUILDING,
+    way_filter::exclude_waterway => SQL_FILTER_EXCLUDE_WATERWAY,
   }
 }
 
-pub fn remaining_ids_by_tags(conn: &Connection, level: u8, filter: &[filters]) -> Vec<u64> {
-  let filter_clauses: Vec<&str> = filter.iter().map(|f| f.as_sql()).collect();
+pub fn remaining_ids_by_tags(conn: &Connection, level: level, filter: &[way_filter]) -> Vec<u64> {
+  let level = level.value();
+  let filter_clauses: Vec<&str> = filter.iter().map(filter_sql).collect();
   let filter_part = if filter_clauses.is_empty() {
     String::new()
   } else {
@@ -171,7 +145,7 @@ pub fn way_coords_chunk(
   name_priority: &[&str],
 ) -> Vec<way_coord_row> {
   let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-  let name_select = super::build_name_select("osm_data.osm_ways.payload", name_priority);
+  let name_select = crate::database::build_name_select("osm_data.osm_ways.payload", name_priority);
   let sql = format!(
     "SELECT
            osm_data.osm_ways.id AS way_id,
@@ -210,7 +184,7 @@ pub fn way_coords_chunk(
     .collect()
 }
 
-pub(crate) fn insert_rows(conn: &Connection, rows: &[osm_way_row]) {
+pub fn insert_rows(conn: &Connection, rows: &[osm_way_row]) {
   if rows.is_empty() {
     return;
   }
@@ -232,5 +206,5 @@ pub(crate) fn insert_rows(conn: &Connection, rows: &[osm_way_row]) {
 }
 
 #[cfg(test)]
-#[path = "osm_ways.test.rs"]
+#[path = "repository.test.rs"]
 mod tests;

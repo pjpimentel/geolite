@@ -782,7 +782,7 @@ fn _02_01_buffer_row_count_sums_every_queue() {
     osm_pbf_chunk_id: 1,
     payload: Vec::new(),
   });
-  data.ways.push_back(crate::database::osm_ways::osm_way_row {
+  data.ways.push_back(crate::domain::osm_way::osm_way_row {
     id: 2,
     osm_pbf_chunk_id: 1,
     payload: Vec::new(),

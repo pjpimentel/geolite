@@ -24,7 +24,6 @@ pub mod merge;
 pub mod osm_pbf_blob_chunks;
 pub mod osm_pbf_files;
 pub mod osm_relations;
-pub mod osm_ways;
 
 // builds a COALESCE(JSON_EXTRACT(...), ...) over a list of osm name tags ordered by
 // priority. `payload_expr` is the qualified column expression, e.g.
@@ -131,7 +130,7 @@ pub fn open_write(path: &str) -> Connection {
     .expect("failed to set osm_data pragmas");
   osm_pbf_blob_chunks::create_table(&conn);
   crate::domain::osm_node::repository::create_table(&conn);
-  osm_ways::create_table(&conn);
+  crate::domain::osm_way::repository::create_table(&conn);
   osm_relations::create_table(&conn);
   conn
 }

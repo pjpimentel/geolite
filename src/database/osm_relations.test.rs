@@ -157,7 +157,7 @@ fn _04_remaining_ids_excludes_relations_already_present_in_admin_levels() {
 //   // todo!()
 // }
 
-// fn make_way_row(id: i64, refs: Vec<i64>) -> crate::database::osm_ways::osm_way_row {
+// fn make_way_row(id: i64, refs: Vec<i64>) -> crate::domain::osm_way::osm_way_row {
 //   // todo!()
 // }
 

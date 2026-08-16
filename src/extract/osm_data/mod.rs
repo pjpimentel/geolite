@@ -9,12 +9,13 @@ use std::{
 use crate::database::jsonb;
 use crate::domain::osm_node::decoder::{block_scale, decode_dense_nodes, decode_nodes};
 use crate::domain::osm_node::osm_node_row;
+use crate::domain::osm_way::decoder::decode as decode_ways;
+use crate::domain::osm_way::osm_way_row;
 use crate::pbf::message::{blob_msg, primitive_block_msg, string_table_msg};
 use crate::pbf::tag_policy::tag_policy;
 
 pub mod element_payload;
 pub mod osm_relations;
-pub mod osm_ways;
 
 pub struct data_opts {
   pub include_nodes: bool,
@@ -28,20 +29,20 @@ pub struct data_opts {
 
 struct decoded_blob_output {
   nodes: Vec<crate::domain::osm_node::osm_node>,
-  ways: Vec<osm_ways::osm_way>,
+  ways: Vec<crate::domain::osm_way::osm_way>,
   relations: Vec<osm_relations::osm_relation>,
 }
 
 struct decoded_blob {
   nodes: Vec<osm_node_row>,
-  ways: Vec<crate::database::osm_ways::osm_way_row>,
+  ways: Vec<osm_way_row>,
   relations: Vec<crate::database::osm_relations::osm_relation_row>,
 }
 
 #[derive(Default)]
 struct buffer_data {
   nodes: VecDeque<osm_node_row>,
-  ways: VecDeque<crate::database::osm_ways::osm_way_row>,
+  ways: VecDeque<osm_way_row>,
   relations: VecDeque<crate::database::osm_relations::osm_relation_row>,
 }
 
@@ -91,7 +92,7 @@ fn decoded_blob_bytes(blob: &decoded_blob) -> usize {
   let nodes_heap: usize = blob.nodes.iter().map(|r| r.payload.capacity()).sum();
 
   let ways_stack =
-    blob.ways.capacity() * std::mem::size_of::<crate::database::osm_ways::osm_way_row>();
+    blob.ways.capacity() * std::mem::size_of::<osm_way_row>();
   let ways_heap: usize = blob.ways.iter().map(|r| r.payload.capacity()).sum();
 
   let rels_stack = blob.relations.capacity()
@@ -297,13 +298,7 @@ fn decode_raw_blob(
         nodes.push(osm_node_row::encode(&n, raw.chunk.id, encoder));
       }
       for w in output.ways {
-        let mut payload = Vec::with_capacity(128 + w.refs.len() * 4);
-        element_payload::encode_way(encoder, &mut payload, &w);
-        ways.push(crate::database::osm_ways::osm_way_row {
-          id: w.id as u64,
-          osm_pbf_chunk_id: raw.chunk.id,
-          payload,
-        });
+        ways.push(osm_way_row::encode(&w, raw.chunk.id, encoder));
       }
       for r in output.relations {
         let mut payload = Vec::with_capacity(128 + r.members.len() * 32);
@@ -357,7 +352,7 @@ fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
 
   for group in &block.primitivegroup {
     if opts.include_ways {
-      ways.extend(osm_ways::decode(&group.ways, &strings, opts));
+      ways.extend(decode_ways(&group.ways, &strings, &opts.tags));
     }
     if opts.include_relations {
       relations.extend(osm_relations::decode(&group.relations, &strings, opts));
@@ -546,7 +541,7 @@ fn writer_thread(
         .unchecked_transaction()
         .expect("failed to begin transaction");
       crate::domain::osm_node::repository::insert_rows(&tx, &nodes_taken);
-      crate::database::osm_ways::insert_rows(&tx, &ways_taken);
+      crate::domain::osm_way::repository::insert_rows(&tx, &ways_taken);
       crate::database::osm_relations::insert_rows(&tx, &relations_taken);
       tx.commit().expect("failed to commit");
 

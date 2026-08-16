@@ -155,9 +155,9 @@ fn _01_04_deduplicates_ways_matching_more_than_one_include_filter() {
   let conn = pbf_fixtures::memory_db();
   // place so pode ter um valor; para forcar a duplicata usamos um override
   // cujos dois filtros casam com o mesmo way
-  const BOTH: &[crate::database::osm_ways::filters] = &[
-    crate::database::osm_ways::filters::include_place_neighbourhood,
-    crate::database::osm_ways::filters::include_place_neighbourhood,
+  const BOTH: &[crate::domain::osm_way::way_filter] = &[
+    crate::domain::osm_way::way_filter::include_place_neighbourhood,
+    crate::domain::osm_way::way_filter::include_place_neighbourhood,
   ];
   let rules = pbf_fixtures::level_rules(10, BOTH, &[]);
   pbf_fixtures::insert_unit_square_way(&conn, 10, 1, ALVALADE);

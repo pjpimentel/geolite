@@ -20,6 +20,12 @@ osm_node/       an openstreetmap node — the `osm_data.osm_nodes` table
   decoder           the pbf wire form, plain and dense, into nodes
   payload           the jsonb written into the `payload` column
   repository        the ddl, the index and the bulk insert
+osm_way/        an openstreetmap way — the `osm_data.osm_ways` table
+  entity            the way itself, and the storage row with its encoded payload
+  decoder           the pbf wire form, with its delta-encoded node references
+  payload           the jsonb written into the `payload` column
+  filter            which ways a level wants, as meaning rather than as sql
+  repository        the ddl, the index, the bulk insert and the candidate queries
 house_number/   a door number placed on a street — the `house_numbers` table
   entity            the row as it is written: node, street, number, point, strategy
   value             the value object: normalize (ingestion) / recognize (query) / compare
@@ -34,10 +40,11 @@ every folder follows the same shape: `entity` is the row, `repository` is its sq
 objects and services sit alongside. everything a concept needs is in one place, and the only write
 path into a table is through its entity.
 
-`osm_node` is the one place where the storage row is public rather than private to the repository.
+`osm_node` and `osm_way` are the two places where the storage row is public rather than private to
+the repository.
 the extraction pipeline builds rows in several decoder threads at once and sizes its write buffer
-from the encoded payload, so the encoding has to happen before the insert — `osm_node_row::encode`
-is still the only way to build one, and it takes a node.
+from the encoded payload, so the encoding has to happen before the insert — `encode` is still the
+only way to build a row, and it takes the element.
 
 what stays outside the domain is what belongs to no concept in particular: the sqlite connection
 lifecycle, the cli and the http server.

@@ -30,11 +30,11 @@ fn _00_01_level_10_resolves_to_default_include() {
   assert_eq!(include.len(), 2);
   assert!(matches!(
     include[0],
-    crate::database::osm_ways::filters::include_place_neighbourhood
+    crate::domain::osm_way::way_filter::include_place_neighbourhood
   ));
   assert!(matches!(
     include[1],
-    crate::database::osm_ways::filters::include_place_suburb
+    crate::domain::osm_way::way_filter::include_place_suburb
   ));
   assert!(exclude.is_empty());
 }
@@ -47,21 +47,21 @@ fn _00_02_level_12_resolves_to_default_exclude() {
   assert_eq!(exclude.len(), 5);
   assert!(matches!(
     exclude[0],
-    crate::database::osm_ways::filters::exclude_place_neighbourhood
+    crate::domain::osm_way::way_filter::exclude_place_neighbourhood
   ));
   assert!(matches!(
     exclude[4],
-    crate::database::osm_ways::filters::exclude_waterway
+    crate::domain::osm_way::way_filter::exclude_waterway
   ));
 }
 
 // 00.03: override do mesmo nivel tem precedencia sobre o default
 #[test]
 fn _00_03_override_takes_precedence_over_default() {
-  const INCLUDE: &[crate::database::osm_ways::filters] =
-    &[crate::database::osm_ways::filters::include_highway_primary];
-  const EXCLUDE: &[crate::database::osm_ways::filters] =
-    &[crate::database::osm_ways::filters::exclude_building];
+  const INCLUDE: &[crate::domain::osm_way::way_filter] =
+    &[crate::domain::osm_way::way_filter::include_highway_primary];
+  const EXCLUDE: &[crate::domain::osm_way::way_filter] =
+    &[crate::domain::osm_way::way_filter::exclude_building];
   let overrides = [extraction_rules {
     level: 12,
     include: INCLUDE,
@@ -72,7 +72,7 @@ fn _00_03_override_takes_precedence_over_default() {
   assert_eq!(include.len(), 1);
   assert!(matches!(
     include[0],
-    crate::database::osm_ways::filters::include_highway_primary
+    crate::domain::osm_way::way_filter::include_highway_primary
   ));
   assert_eq!(exclude.len(), 1);
 }
@@ -80,8 +80,8 @@ fn _00_03_override_takes_precedence_over_default() {
 // 00.04: override de outro nivel nao afeta o nivel consultado
 #[test]
 fn _00_04_override_for_another_level_is_ignored() {
-  const INCLUDE: &[crate::database::osm_ways::filters] =
-    &[crate::database::osm_ways::filters::include_highway_primary];
+  const INCLUDE: &[crate::domain::osm_way::way_filter] =
+    &[crate::domain::osm_way::way_filter::include_highway_primary];
   let overrides = [extraction_rules {
     level: 4,
     include: INCLUDE,
