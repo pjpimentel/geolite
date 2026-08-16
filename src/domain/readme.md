@@ -15,6 +15,11 @@ admin_level/    a named administrative area — the `admin_levels` table
   geometry          the wkb column codec, its mbr shortcut and the bounding box
   repository        the ddl, the indexes, the eleven queries and the upsert
   spatial_index     the rtree of every level's bounding box
+osm_node/       an openstreetmap node — the `osm_data.osm_nodes` table
+  entity            the node itself, and the storage row with its encoded payload
+  decoder           the pbf wire form, plain and dense, into nodes
+  payload           the jsonb written into the `payload` column
+  repository        the ddl, the index and the bulk insert
 house_number/   a door number placed on a street — the `house_numbers` table
   entity            the row as it is written: node, street, number, point, strategy
   value             the value object: normalize (ingestion) / recognize (query) / compare
@@ -25,9 +30,14 @@ house_number/   a door number placed on a street — the `house_numbers` table
   repository        the ddl, the indexes, the candidate scan and the insert
 ```
 
-both folders follow the same shape: `entity` is the row, `repository` is its sql, and the value
+every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
 objects and services sit alongside. everything a concept needs is in one place, and the only write
 path into a table is through its entity.
+
+`osm_node` is the one place where the storage row is public rather than private to the repository.
+the extraction pipeline builds rows in several decoder threads at once and sizes its write buffer
+from the encoded payload, so the encoding has to happen before the insert — `osm_node_row::encode`
+is still the only way to build one, and it takes a node.
 
 what stays outside the domain is what belongs to no concept in particular: the sqlite connection
 lifecycle, the cli and the http server.

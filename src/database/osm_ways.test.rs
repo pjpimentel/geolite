@@ -18,7 +18,11 @@ fn make_row(id: u64, refs: Vec<i64>, tags: Vec<(&str, &str)>) -> osm_way_row {
       .collect(),
   };
   let mut payload = Vec::new();
-  crate::extract::osm_data::jsonb_encode::encoder::new().encode_osm_way(&mut payload, &way);
+  crate::extract::osm_data::element_payload::encode_way(
+    &mut crate::database::jsonb::encoder::new(),
+    &mut payload,
+    &way,
+  );
   osm_way_row {
     id,
     osm_pbf_chunk_id: 0,

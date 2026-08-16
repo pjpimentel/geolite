@@ -1,13 +1,10 @@
 use super::*;
 
-use crate::extract::osm_data::osm_nodes::osm_node;
-use crate::extract::osm_data::osm_relations::{
-  osm_member_type, osm_relation, osm_relation_member,
-};
-use crate::extract::osm_data::osm_ways::osm_way;
+use crate::database::jsonb::{TYPE_TEXTRAW, encoder, write_header};
+use crate::domain::osm_node::osm_node;
 
-// o proprio sqlite e o oraculo do formato: se o jsonb estiver malformado,
-// JSON() falha ou devolve algo diferente do esperado
+// sqlite itself is the oracle for the format: a malformed jsonb makes JSON() fail or return
+// something other than what was written.
 fn to_json(payload: &[u8]) -> serde_json::Value {
   let conn = rusqlite::Connection::open_in_memory().expect("failed to open sqlite");
   let text: String = conn
@@ -26,7 +23,8 @@ fn tags(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
 fn encode_text_object(value: &str) -> serde_json::Value {
   let mut enc = encoder::new();
   let mut out = Vec::new();
-  enc.encode_osm_node(
+  encode(
+    &mut enc,
     &mut out,
     &osm_node {
       id: 1,
@@ -43,7 +41,9 @@ fn encode_text_object(value: &str) -> serde_json::Value {
 fn _00_00_encodes_node_with_lat_lon_and_tags() {
   let mut enc = encoder::new();
   let mut out = Vec::new();
-  enc.encode_osm_node(
+  encode(
+
+    &mut enc,
     &mut out,
     &osm_node {
       id: 7,
@@ -64,7 +64,9 @@ fn _00_00_encodes_node_with_lat_lon_and_tags() {
 fn _00_01_encodes_node_without_tags_as_empty_object() {
   let mut enc = encoder::new();
   let mut out = Vec::new();
-  enc.encode_osm_node(
+  encode(
+
+    &mut enc,
     &mut out,
     &osm_node {
       id: 8,
@@ -75,67 +77,6 @@ fn _00_01_encodes_node_without_tags_as_empty_object() {
   );
 
   assert_eq!(to_json(&out)["tags"], serde_json::json!({}));
-}
-
-// 00.02: way vira objeto com array de refs e objeto de tags
-#[test]
-fn _00_02_encodes_way_with_refs_array() {
-  let mut enc = encoder::new();
-  let mut out = Vec::new();
-  enc.encode_osm_way(
-    &mut out,
-    &osm_way {
-      id: 100,
-      refs: vec![1, 2, -3],
-      tags: tags(&[("highway", "residential")]),
-    },
-  );
-
-  let json = to_json(&out);
-  assert_eq!(json["refs"], serde_json::json!([1, 2, -3]));
-  assert_eq!(json["tags"]["highway"], "residential");
-}
-
-// 00.03: relation carrega os tres tipos de membro, cada um com sua sigla
-#[test]
-fn _00_03_encodes_relation_with_every_member_type() {
-  let mut enc = encoder::new();
-  let mut out = Vec::new();
-  enc.encode_osm_relation(
-    &mut out,
-    &osm_relation {
-      id: 200,
-      tags: tags(&[("name", "Lisboa")]),
-      members: vec![
-        osm_relation_member {
-          osm_member_type: osm_member_type::node,
-          id: 1,
-          role: "admin_centre".to_string(),
-        },
-        osm_relation_member {
-          osm_member_type: osm_member_type::way,
-          id: 2,
-          role: "outer".to_string(),
-        },
-        osm_relation_member {
-          osm_member_type: osm_member_type::relation,
-          id: 3,
-          role: "subarea".to_string(),
-        },
-      ],
-    },
-  );
-
-  let json = to_json(&out);
-  assert_eq!(json["tags"]["name"], "Lisboa");
-  assert_eq!(
-    json["members"],
-    serde_json::json!([
-      { "type": "n", "id": 1, "role": "admin_centre" },
-      { "type": "w", "id": 2, "role": "outer" },
-      { "type": "r", "id": 3, "role": "subarea" },
-    ])
-  );
 }
 
 // 00.04: payload de ate 11 bytes cabe no cabecalho de 1 byte
@@ -185,30 +126,6 @@ fn _00_07_writes_five_byte_header_for_large_payloads() {
   );
 }
 
-// 00.08: above 2^32 bytes class 15 writes 8 size bytes. a real payload of that
-// size is unfeasible, so only the header is checked in isolation
-#[test]
-fn _00_08_writes_nine_byte_header_for_payloads_above_four_gib() {
-  let mut out = Vec::new();
-  write_header(&mut out, TYPE_TEXTRAW, 0x1_0000_0000);
-  assert_eq!(
-    out,
-    vec![(15u8 << 4) | TYPE_TEXTRAW, 0, 0, 0, 1, 0, 0, 0, 0]
-  );
-}
-
-// 00.09: inteiros e floats sao gravados como payload decimal em texto
-#[test]
-fn _00_09_writes_ints_and_floats_as_decimal_text() {
-  let mut out = Vec::new();
-  write_int(&mut out, -42);
-  assert_eq!(out, vec![(3u8 << 4) | TYPE_INT, b'-', b'4', b'2']);
-
-  let mut out = Vec::new();
-  write_float(&mut out, 3.5);
-  assert_eq!(out, vec![(3u8 << 4) | TYPE_FLOAT, b'3', b'.', b'5']);
-}
-
 // 00.10: o mesmo encoder reutiliza os buffers de scratch entre linhas — o
 // resultado precisa ser identico ao de um encoder novo a cada linha
 #[test]
@@ -227,7 +144,7 @@ fn _00_10_reuses_scratch_buffers_across_encodes() {
     .iter()
     .map(|n| {
       let mut out = Vec::new();
-      shared.encode_osm_node(&mut out, n);
+      encode(&mut shared, &mut out, n);
       out
     })
     .collect();
@@ -236,7 +153,7 @@ fn _00_10_reuses_scratch_buffers_across_encodes() {
     .iter()
     .map(|n| {
       let mut out = Vec::new();
-      encoder::new().encode_osm_node(&mut out, n);
+      encode(&mut encoder::new(), &mut out, n);
       out
     })
     .collect();
@@ -246,7 +163,7 @@ fn _00_10_reuses_scratch_buffers_across_encodes() {
     "reaproveitar scratch nao pode alterar o resultado"
   );
   assert!(
-    !shared.scratches.is_empty(),
+    shared.pooled_buffers() > 0,
     "o pool deve reter buffers para reuso"
   );
 }

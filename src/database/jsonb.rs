@@ -15,13 +15,13 @@
 //   11 ARRAY   — concatenated elements
 //   12 OBJECT  — alternating key/value elements
 
-const TYPE_INT: u8 = 3;
-const TYPE_FLOAT: u8 = 5;
-const TYPE_TEXTRAW: u8 = 10;
-const TYPE_ARRAY: u8 = 11;
-const TYPE_OBJECT: u8 = 12;
+pub(crate) const TYPE_INT: u8 = 3;
+pub(crate) const TYPE_FLOAT: u8 = 5;
+pub(crate) const TYPE_TEXTRAW: u8 = 10;
+pub(crate) const TYPE_ARRAY: u8 = 11;
+pub(crate) const TYPE_OBJECT: u8 = 12;
 
-fn write_header(out: &mut Vec<u8>, jsonb_type: u8, payload_len: usize) {
+pub fn write_header(out: &mut Vec<u8>, jsonb_type: u8, payload_len: usize) {
   if payload_len <= 11 {
     out.push(((payload_len as u8) << 4) | jsonb_type);
   } else if payload_len <= 0xFF {
@@ -39,19 +39,19 @@ fn write_header(out: &mut Vec<u8>, jsonb_type: u8, payload_len: usize) {
   }
 }
 
-fn write_int(out: &mut Vec<u8>, n: i64) {
+pub fn write_int(out: &mut Vec<u8>, n: i64) {
   let s = n.to_string();
   write_header(out, TYPE_INT, s.len());
   out.extend_from_slice(s.as_bytes());
 }
 
-fn write_float(out: &mut Vec<u8>, f: f64) {
+pub fn write_float(out: &mut Vec<u8>, f: f64) {
   let s = format!("{f}");
   write_header(out, TYPE_FLOAT, s.len());
   out.extend_from_slice(s.as_bytes());
 }
 
-fn write_text(out: &mut Vec<u8>, s: &str) {
+pub fn write_text(out: &mut Vec<u8>, s: &str) {
   let bytes = s.as_bytes();
   write_header(out, TYPE_TEXTRAW, bytes.len());
   out.extend_from_slice(bytes);
@@ -71,6 +71,12 @@ impl encoder {
     }
   }
 
+  // how many scratch buffers the pool is holding. only the reuse test looks at this.
+  #[allow(dead_code)]
+  pub(crate) fn pooled_buffers(&self) -> usize {
+    self.scratches.len()
+  }
+
   fn alloc(&mut self) -> Vec<u8> {
     self
       .scratches
@@ -83,7 +89,7 @@ impl encoder {
     self.scratches.push(buf);
   }
 
-  fn write_object<F>(&mut self, out: &mut Vec<u8>, f: F)
+  pub fn write_object<F>(&mut self, out: &mut Vec<u8>, f: F)
   where
     F: FnOnce(&mut encoder, &mut Vec<u8>),
   {
@@ -94,7 +100,7 @@ impl encoder {
     self.free(scratch);
   }
 
-  fn write_array<F>(&mut self, out: &mut Vec<u8>, f: F)
+  pub fn write_array<F>(&mut self, out: &mut Vec<u8>, f: F)
   where
     F: FnOnce(&mut encoder, &mut Vec<u8>),
   {
@@ -104,88 +110,8 @@ impl encoder {
     out.extend_from_slice(&scratch);
     self.free(scratch);
   }
-
-  pub fn encode_osm_node(
-    &mut self,
-    out: &mut Vec<u8>,
-    node: &super::osm_nodes::osm_node,
-  ) {
-    self.write_object(out, |enc, body| {
-      write_text(body, "lat");
-      write_float(body, node.lat);
-      write_text(body, "lon");
-      write_float(body, node.lon);
-      write_text(body, "tags");
-      enc.write_object(body, |_, tags_body| {
-        for (k, v) in &node.tags {
-          write_text(tags_body, k);
-          write_text(tags_body, v);
-        }
-      });
-    });
-  }
-
-  pub fn encode_osm_way(
-    &mut self,
-    out: &mut Vec<u8>,
-    way: &super::osm_ways::osm_way,
-  ) {
-    self.write_object(out, |enc, body| {
-      write_text(body, "refs");
-      enc.write_array(body, |_, refs_body| {
-        for r in &way.refs {
-          write_int(refs_body, *r);
-        }
-      });
-      write_text(body, "tags");
-      enc.write_object(body, |_, tags_body| {
-        for (k, v) in &way.tags {
-          write_text(tags_body, k);
-          write_text(tags_body, v);
-        }
-      });
-    });
-  }
-
-  pub fn encode_osm_relation(
-    &mut self,
-    out: &mut Vec<u8>,
-    rel: &super::osm_relations::osm_relation,
-  ) {
-    self.write_object(out, |enc, body| {
-      write_text(body, "tags");
-      enc.write_object(body, |_, tags_body| {
-        for (k, v) in &rel.tags {
-          write_text(tags_body, k);
-          write_text(tags_body, v);
-        }
-      });
-      write_text(body, "members");
-      enc.write_array(body, |enc2, members_body| {
-        for m in &rel.members {
-          enc2.write_object(members_body, |_, mem_body| {
-            write_text(mem_body, "type");
-            write_text(mem_body, member_type_str(&m.osm_member_type));
-            write_text(mem_body, "id");
-            write_int(mem_body, m.id);
-            write_text(mem_body, "role");
-            write_text(mem_body, &m.role);
-          });
-        }
-      });
-    });
-  }
-}
-
-fn member_type_str(t: &super::osm_relations::osm_member_type) -> &'static str {
-  use super::osm_relations::osm_member_type;
-  match t {
-    osm_member_type::node => "n",
-    osm_member_type::way => "w",
-    osm_member_type::relation => "r",
-  }
 }
 
 #[cfg(test)]
-#[path = "jsonb_encode.test.rs"]
+#[path = "jsonb.test.rs"]
 mod tests;

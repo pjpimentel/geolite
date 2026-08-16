@@ -22,8 +22,11 @@ fn make_row(id: u64, admin_level: &str, name: Option<&str>) -> osm_relation_row 
     members: vec![],
   };
   let mut payload = Vec::new();
-  crate::extract::osm_data::jsonb_encode::encoder::new()
-    .encode_osm_relation(&mut payload, &relation);
+  crate::extract::osm_data::element_payload::encode_relation(
+    &mut crate::database::jsonb::encoder::new(),
+    &mut payload,
+    &relation,
+  );
   osm_relation_row {
     id,
     osm_pbf_chunk_id: 0,
@@ -150,7 +153,7 @@ fn _04_remaining_ids_excludes_relations_already_present_in_admin_levels() {
   assert_eq!(ids.len(), 0);
 }
 
-// fn make_node_row(id: i64, lat: f64, lon: f64) -> crate::database::osm_nodes::osm_node_row {
+// fn make_node_row(id: i64, lat: f64, lon: f64) -> crate::domain::osm_node::osm_node_row {
 //   // todo!()
 // }
 

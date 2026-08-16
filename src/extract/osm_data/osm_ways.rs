@@ -7,14 +7,14 @@ pub struct osm_way {
 }
 
 pub(super) fn decode(
-  ways: &[super::way_msg],
+  ways: &[crate::pbf::message::way_msg],
   strings: &[&str],
   opts: &super::data_opts,
 ) -> Vec<osm_way> {
   let mut elements = Vec::new();
 
   for w in ways {
-    let tags = super::filter_tags(strings, &w.keys, &w.vals, opts);
+    let tags = opts.tags.filter(strings, &w.keys, &w.vals);
     let mut ref_acc: i64 = 0;
     let refs: Vec<i64> = w
       .refs

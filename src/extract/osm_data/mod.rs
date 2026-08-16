@@ -6,152 +6,15 @@ use std::{
   sync::{Arc, Condvar, Mutex},
 };
 
-pub mod jsonb_encode;
-pub mod osm_nodes;
+use crate::database::jsonb;
+use crate::domain::osm_node::decoder::{block_scale, decode_dense_nodes, decode_nodes};
+use crate::domain::osm_node::osm_node_row;
+use crate::pbf::message::{blob_msg, primitive_block_msg, string_table_msg};
+use crate::pbf::tag_policy::tag_policy;
+
+pub mod element_payload;
 pub mod osm_relations;
 pub mod osm_ways;
-
-#[derive(prost::Message)]
-pub(super) struct blob_msg {
-  #[prost(bytes = "vec", optional, tag = "1")]
-  raw: Option<Vec<u8>>,
-  #[prost(int32, optional, tag = "2")]
-  raw_size: Option<i32>,
-  #[prost(bytes = "vec", optional, tag = "3")]
-  zlib_data: Option<Vec<u8>>,
-}
-
-#[derive(prost::Message)]
-struct string_table_msg {
-  #[prost(bytes = "vec", repeated, tag = "1")]
-  s: Vec<Vec<u8>>,
-}
-
-#[derive(prost::Message)]
-struct primitive_block_msg {
-  #[prost(message, optional, tag = "1")]
-  stringtable: Option<string_table_msg>,
-  #[prost(message, repeated, tag = "2")]
-  primitivegroup: Vec<primitive_group_msg>,
-  #[prost(int32, optional, tag = "17")]
-  granularity: Option<i32>,
-  #[prost(int64, optional, tag = "19")]
-  lat_offset: Option<i64>,
-  #[prost(int64, optional, tag = "20")]
-  lon_offset: Option<i64>,
-  #[prost(int32, optional, tag = "18")]
-  date_granularity: Option<i32>,
-}
-
-#[derive(prost::Message)]
-struct primitive_group_msg {
-  #[prost(message, repeated, tag = "1")]
-  nodes: Vec<node_msg>,
-  #[prost(message, optional, tag = "2")]
-  dense: Option<dense_nodes_msg>,
-  #[prost(message, repeated, tag = "3")]
-  ways: Vec<way_msg>,
-  #[prost(message, repeated, tag = "4")]
-  relations: Vec<relation_msg>,
-}
-
-#[derive(prost::Message)]
-struct info_msg {
-  #[prost(int32, optional, tag = "1", default = "-1")]
-  version: Option<i32>,
-  #[prost(int64, optional, tag = "2")]
-  timestamp: Option<i64>,
-  #[prost(int64, optional, tag = "3")]
-  changeset: Option<i64>,
-  #[prost(int32, optional, tag = "4")]
-  uid: Option<i32>,
-  #[prost(uint32, optional, tag = "5")]
-  user_sid: Option<u32>,
-  #[prost(bool, optional, tag = "6")]
-  visible: Option<bool>,
-}
-
-#[derive(prost::Message)]
-struct dense_info_msg {
-  #[prost(int32, repeated, tag = "1")]
-  version: Vec<i32>,
-  #[prost(sint64, repeated, tag = "2")]
-  timestamp: Vec<i64>,
-  #[prost(sint64, repeated, tag = "3")]
-  changeset: Vec<i64>,
-  #[prost(sint32, repeated, tag = "4")]
-  uid: Vec<i32>,
-  #[prost(sint32, repeated, tag = "5")]
-  user_sid: Vec<i32>,
-  #[prost(bool, repeated, tag = "6")]
-  visible: Vec<bool>,
-}
-
-#[derive(prost::Message)]
-pub(super) struct node_msg {
-  #[prost(sint64, tag = "1")]
-  id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  info: Option<info_msg>,
-  #[prost(sint64, tag = "8")]
-  lat: i64,
-  #[prost(sint64, tag = "9")]
-  lon: i64,
-}
-
-#[derive(prost::Message)]
-pub(super) struct dense_nodes_msg {
-  #[prost(sint64, repeated, tag = "1")]
-  id: Vec<i64>,
-  #[prost(message, optional, tag = "5")]
-  denseinfo: Option<dense_info_msg>,
-  #[prost(sint64, repeated, tag = "8")]
-  lat: Vec<i64>,
-  #[prost(sint64, repeated, tag = "9")]
-  lon: Vec<i64>,
-  #[prost(int32, repeated, tag = "10")]
-  keys_vals: Vec<i32>,
-}
-
-#[derive(prost::Message)]
-pub(super) struct way_msg {
-  #[prost(int64, tag = "1")]
-  id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  info: Option<info_msg>,
-  #[prost(sint64, repeated, tag = "8")]
-  refs: Vec<i64>,
-  #[prost(sint64, repeated, tag = "9")]
-  lat: Vec<i64>,
-  #[prost(sint64, repeated, tag = "10")]
-  lon: Vec<i64>,
-}
-
-#[derive(prost::Message)]
-pub(super) struct relation_msg {
-  #[prost(int64, tag = "1")]
-  id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  info: Option<info_msg>,
-  #[prost(int32, repeated, tag = "8")]
-  roles_sid: Vec<i32>,
-  #[prost(sint64, repeated, tag = "9")]
-  memids: Vec<i64>,
-  #[prost(int32, repeated, tag = "10")]
-  types: Vec<i32>,
-}
 
 pub struct data_opts {
   pub include_nodes: bool,
@@ -159,26 +22,25 @@ pub struct data_opts {
   pub include_relations: bool,
   #[allow(dead_code)]
   pub ignore_info: bool,
-  pub tags_include: Option<Vec<String>>,
-  pub tags_ignore: Option<Vec<String>>,
+  pub tags: tag_policy,
   pub buffer_bytes: usize,
 }
 
 struct decoded_blob_output {
-  nodes: Vec<osm_nodes::osm_node>,
+  nodes: Vec<crate::domain::osm_node::osm_node>,
   ways: Vec<osm_ways::osm_way>,
   relations: Vec<osm_relations::osm_relation>,
 }
 
 struct decoded_blob {
-  nodes: Vec<crate::database::osm_nodes::osm_node_row>,
+  nodes: Vec<osm_node_row>,
   ways: Vec<crate::database::osm_ways::osm_way_row>,
   relations: Vec<crate::database::osm_relations::osm_relation_row>,
 }
 
 #[derive(Default)]
 struct buffer_data {
-  nodes: VecDeque<crate::database::osm_nodes::osm_node_row>,
+  nodes: VecDeque<osm_node_row>,
   ways: VecDeque<crate::database::osm_ways::osm_way_row>,
   relations: VecDeque<crate::database::osm_relations::osm_relation_row>,
 }
@@ -225,7 +87,7 @@ struct write_buffer {
 
 fn decoded_blob_bytes(blob: &decoded_blob) -> usize {
   let nodes_stack =
-    blob.nodes.capacity() * std::mem::size_of::<crate::database::osm_nodes::osm_node_row>();
+    blob.nodes.capacity() * std::mem::size_of::<osm_node_row>();
   let nodes_heap: usize = blob.nodes.iter().map(|r| r.payload.capacity()).sum();
 
   let ways_stack =
@@ -422,7 +284,7 @@ fn read_blob_bytes(
 fn decode_raw_blob(
   raw: &raw_blob,
   opts: &data_opts,
-  encoder: &mut jsonb_encode::encoder,
+  encoder: &mut jsonb::encoder,
 ) -> decoded_blob {
   let mut nodes = Vec::new();
   let mut ways = Vec::new();
@@ -432,17 +294,11 @@ fn decode_raw_blob(
     crate::database::osm_pbf_blob_chunks::chunk_type::data => {
       let output = decode_blob(&raw.data, opts);
       for n in output.nodes {
-        let mut payload = Vec::with_capacity(128);
-        encoder.encode_osm_node(&mut payload, &n);
-        nodes.push(crate::database::osm_nodes::osm_node_row {
-          id: n.id as u64,
-          osm_pbf_chunk_id: raw.chunk.id,
-          payload,
-        });
+        nodes.push(osm_node_row::encode(&n, raw.chunk.id, encoder));
       }
       for w in output.ways {
         let mut payload = Vec::with_capacity(128 + w.refs.len() * 4);
-        encoder.encode_osm_way(&mut payload, &w);
+        element_payload::encode_way(encoder, &mut payload, &w);
         ways.push(crate::database::osm_ways::osm_way_row {
           id: w.id as u64,
           osm_pbf_chunk_id: raw.chunk.id,
@@ -451,7 +307,7 @@ fn decode_raw_blob(
       }
       for r in output.relations {
         let mut payload = Vec::with_capacity(128 + r.members.len() * 32);
-        encoder.encode_osm_relation(&mut payload, &r);
+        element_payload::encode_relation(encoder, &mut payload, &r);
         relations.push(crate::database::osm_relations::osm_relation_row {
           id: r.id as u64,
           osm_pbf_chunk_id: raw.chunk.id,
@@ -477,7 +333,7 @@ fn decode_raw_blob(
 
 fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
   let blob = blob_msg::decode(blob_data).expect("failed to decode blob");
-  let raw = super::decompress_blob(&blob);
+  let raw = crate::pbf::blob::decompress(&blob);
   let block =
     primitive_block_msg::decode(raw.as_slice()).expect("failed to decode primitive block");
 
@@ -489,10 +345,11 @@ fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
     .map(|b| std::str::from_utf8(b).unwrap_or(""))
     .collect();
 
-  let granularity = block.granularity.unwrap_or(100) as i64;
-  let lat_offset = block.lat_offset.unwrap_or(0);
-  let lon_offset = block.lon_offset.unwrap_or(0);
-  let date_granularity = block.date_granularity.unwrap_or(1000) as i64;
+  let scale = block_scale {
+    granularity: block.granularity.unwrap_or(100) as i64,
+    lat_offset: block.lat_offset.unwrap_or(0),
+    lon_offset: block.lon_offset.unwrap_or(0),
+  };
 
   let mut nodes = Vec::new();
   let mut ways = Vec::new();
@@ -506,25 +363,9 @@ fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
       relations.extend(osm_relations::decode(&group.relations, &strings, opts));
     }
     if opts.include_nodes {
-      nodes.extend(osm_nodes::decode_nodes(
-        &group.nodes,
-        &strings,
-        granularity,
-        lat_offset,
-        lon_offset,
-        date_granularity,
-        opts,
-      ));
+      nodes.extend(decode_nodes(&group.nodes, &strings, scale, &opts.tags));
       if let Some(dense) = &group.dense {
-        nodes.extend(osm_nodes::decode_dense_nodes(
-          dense,
-          &strings,
-          granularity,
-          lat_offset,
-          lon_offset,
-          date_granularity,
-          opts,
-        ));
+        nodes.extend(decode_dense_nodes(dense, &strings, scale, &opts.tags));
       }
     }
   }
@@ -534,39 +375,6 @@ fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
     ways,
     relations,
   }
-}
-
-/////////////////////////////////////////////////////////////////////////////////
-fn tag_passes(k: &str, opts: &data_opts) -> bool {
-  opts
-    .tags_include
-    .as_ref()
-    .is_none_or(|l| l.iter().any(|i| i == k))
-    && opts
-      .tags_ignore
-      .as_ref()
-      .is_none_or(|l| !l.iter().any(|i| i == k))
-}
-
-fn filter_tags<'a>(
-  strings: &[&'a str],
-  keys: &[u32],
-  vals: &[u32],
-  opts: &data_opts,
-) -> Vec<(&'a str, &'a str)> {
-  keys
-    .iter()
-    .zip(vals.iter())
-    .filter_map(|(&k_idx, &v_idx)| {
-      let k = strings.get(k_idx as usize)?;
-      let v = strings.get(v_idx as usize)?;
-      if tag_passes(k, opts) {
-        Some((*k, *v))
-      } else {
-        None
-      }
-    })
-    .collect()
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -604,7 +412,7 @@ fn decode_thread(
   prog_tx: std::sync::mpsc::Sender<prog_event>,
 ) -> std::thread::JoinHandle<()> {
   std::thread::spawn(move || {
-    let mut encoder = jsonb_encode::encoder::new();
+    let mut encoder = jsonb::encoder::new();
     loop {
       let raw = {
         let mut state = read_q.inner.lock().unwrap();
@@ -737,7 +545,7 @@ fn writer_thread(
       let tx = conn
         .unchecked_transaction()
         .expect("failed to begin transaction");
-      crate::database::osm_nodes::insert_rows(&tx, &nodes_taken);
+      crate::domain::osm_node::repository::insert_rows(&tx, &nodes_taken);
       crate::database::osm_ways::insert_rows(&tx, &ways_taken);
       crate::database::osm_relations::insert_rows(&tx, &relations_taken);
       tx.commit().expect("failed to commit");

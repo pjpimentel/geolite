@@ -25,14 +25,14 @@ pub(crate) struct osm_relation_member {
 }
 
 pub(super) fn decode(
-  relations: &[super::relation_msg],
+  relations: &[crate::pbf::message::relation_msg],
   strings: &[&str],
   opts: &super::data_opts,
 ) -> Vec<osm_relation> {
   let mut elements = Vec::new();
 
   for r in relations {
-    let tags = super::filter_tags(strings, &r.keys, &r.vals, opts);
+    let tags = opts.tags.filter(strings, &r.keys, &r.vals);
     let mut memid_acc: i64 = 0;
     let members: Vec<osm_relation_member> = r
       .memids

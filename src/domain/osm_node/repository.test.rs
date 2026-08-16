@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::domain::osm_node::{osm_node, osm_node_row};
+
 fn setup_db() -> Connection {
   let conn = crate::database::open_write(":memory:");
   conn
@@ -9,7 +11,7 @@ fn setup_db() -> Connection {
 }
 
 fn make_row(id: u64, lat: f64, lon: f64, tags: Vec<(&str, &str)>) -> osm_node_row {
-  let node = crate::extract::osm_data::osm_nodes::osm_node {
+  let node = osm_node {
     id: id as i64,
     lat,
     lon,
@@ -18,13 +20,7 @@ fn make_row(id: u64, lat: f64, lon: f64, tags: Vec<(&str, &str)>) -> osm_node_ro
       .map(|(k, v)| (k.to_string(), v.to_string()))
       .collect(),
   };
-  let mut payload = Vec::new();
-  crate::extract::osm_data::jsonb_encode::encoder::new().encode_osm_node(&mut payload, &node);
-  osm_node_row {
-    id,
-    osm_pbf_chunk_id: 0,
-    payload,
-  }
+  osm_node_row::encode(&node, 0, &mut crate::database::jsonb::encoder::new())
 }
 
 #[test]

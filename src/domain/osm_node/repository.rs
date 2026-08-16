@@ -1,20 +1,6 @@
 use rusqlite::Connection;
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
-impl ToSql for crate::extract::osm_data::osm_nodes::osm_node {
-  fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-    let json = serde_json::to_string(self)
-      .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    Ok(ToSqlOutput::Owned(rusqlite::types::Value::Text(json)))
-  }
-}
-
-impl FromSql for crate::extract::osm_data::osm_nodes::osm_node {
-  fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-    let text = value.as_str()?;
-    serde_json::from_str(text).map_err(|e| FromSqlError::Other(Box::new(e)))
-  }
-}
+use super::entity::osm_node_row;
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS osm_data.osm_nodes (
@@ -54,7 +40,18 @@ fn build_multi_insert_sql(n: usize) -> String {
   sql
 }
 
-impl_table_ops!(pub(super), SQL_CREATE, SQL_DROP);
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create osm_nodes");
+}
+
+#[allow(dead_code)]
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop osm_nodes");
+}
 
 pub fn create_indexes(conn: &Connection) {
   conn
@@ -62,14 +59,7 @@ pub fn create_indexes(conn: &Connection) {
     .expect("failed to create osm_nodes indexes");
 }
 
-pub struct osm_node_row {
-  pub id: u64,
-  pub osm_pbf_chunk_id: u32,
-  // pre-encoded JSONB binary (sqlite jsonb format) — bound diretamente como BLOB
-  pub payload: Vec<u8>,
-}
-
-pub(crate) fn insert_rows(conn: &Connection, rows: &[osm_node_row]) {
+pub fn insert_rows(conn: &Connection, rows: &[osm_node_row]) {
   if rows.is_empty() {
     return;
   }
@@ -91,5 +81,5 @@ pub(crate) fn insert_rows(conn: &Connection, rows: &[osm_node_row]) {
 }
 
 #[cfg(test)]
-#[path = "osm_nodes.test.rs"]
+#[path = "repository.test.rs"]
 mod tests;

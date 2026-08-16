@@ -717,17 +717,21 @@ pub(crate) fn insert_node(
   lat: f64,
   tags: &[(&str, &str)],
 ) {
-  let node = super::osm_data::osm_nodes::osm_node {
+  let node = crate::domain::osm_node::osm_node {
     id: id as i64,
     lat,
     lon,
     tags: tag_map(tags),
   };
   let mut payload = Vec::new();
-  super::osm_data::jsonb_encode::encoder::new().encode_osm_node(&mut payload, &node);
-  crate::database::osm_nodes::insert_rows(
+  crate::domain::osm_node::payload::encode(
+    &mut crate::database::jsonb::encoder::new(),
+    &mut payload,
+    &node,
+  );
+  crate::domain::osm_node::repository::insert_rows(
     conn,
-    &[crate::database::osm_nodes::osm_node_row {
+    &[crate::domain::osm_node::osm_node_row {
       id,
       osm_pbf_chunk_id: 0,
       payload,
@@ -747,7 +751,11 @@ pub(crate) fn insert_way(
     tags: tag_map(tags),
   };
   let mut payload = Vec::new();
-  super::osm_data::jsonb_encode::encoder::new().encode_osm_way(&mut payload, &way);
+  super::osm_data::element_payload::encode_way(
+    &mut crate::database::jsonb::encoder::new(),
+    &mut payload,
+    &way,
+  );
   crate::database::osm_ways::insert_rows(
     conn,
     &[crate::database::osm_ways::osm_way_row {
@@ -784,7 +792,11 @@ pub(crate) fn insert_relation(
       .collect(),
   };
   let mut payload = Vec::new();
-  super::osm_data::jsonb_encode::encoder::new().encode_osm_relation(&mut payload, &relation);
+  super::osm_data::element_payload::encode_relation(
+    &mut crate::database::jsonb::encoder::new(),
+    &mut payload,
+    &relation,
+  );
   crate::database::osm_relations::insert_rows(
     conn,
     &[crate::database::osm_relations::osm_relation_row {

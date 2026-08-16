@@ -1,5 +1,6 @@
 #![allow(nonstandard_style)]
 #[rustfmt::skip] mod domain; // foundation, not a pipeline stage
+#[rustfmt::skip] mod pbf; // the osm pbf wire format
 #[rustfmt::skip] mod cli; // 0
 #[rustfmt::skip] mod database; // 1
 #[rustfmt::skip] mod osm_pbf_file; // 2

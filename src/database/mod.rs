@@ -19,8 +19,8 @@ macro_rules! impl_table_ops {
 pub const SCHEMA_VERSION: u32 = 1;
 
 pub mod admin_levels_hierarchy;
+pub mod jsonb;
 pub mod merge;
-pub mod osm_nodes;
 pub mod osm_pbf_blob_chunks;
 pub mod osm_pbf_files;
 pub mod osm_relations;
@@ -130,7 +130,7 @@ pub fn open_write(path: &str) -> Connection {
     )
     .expect("failed to set osm_data pragmas");
   osm_pbf_blob_chunks::create_table(&conn);
-  osm_nodes::create_table(&conn);
+  crate::domain::osm_node::repository::create_table(&conn);
   osm_ways::create_table(&conn);
   osm_relations::create_table(&conn);
   conn

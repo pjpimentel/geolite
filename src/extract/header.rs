@@ -64,8 +64,8 @@ pub fn run(pbf: &str, conn: &rusqlite::Connection, file_id: u32) -> header_outpu
     .read_exact(&mut blob_buf)
     .expect("failed to read header blob");
 
-  let blob = super::osm_data::blob_msg::decode(blob_buf.as_slice()).expect("failed to decode blob");
-  let raw = super::decompress_blob(&blob);
+  let blob = crate::pbf::message::blob_msg::decode(blob_buf.as_slice()).expect("failed to decode blob");
+  let raw = crate::pbf::blob::decompress(&blob);
 
   let h = header_block_msg::decode(raw.as_slice()).expect("failed to decode header block");
 

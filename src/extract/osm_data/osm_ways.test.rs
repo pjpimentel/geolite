@@ -1,17 +1,19 @@
-fn default_opts() -> super::super::data_opts {
-  super::super::data_opts {
+fn default_opts() -> crate::extract::osm_data::data_opts {
+  crate::extract::osm_data::data_opts {
     include_nodes: true,
     include_ways: true,
     include_relations: true,
     ignore_info: true,
-    tags_include: None,
-    tags_ignore: None,
+    tags: crate::pbf::tag_policy::tag_policy {
+      include: None,
+      ignore: None,
+    },
     buffer_bytes: 1_073_741_824,
   }
 }
 
-fn make_way(id: i64, keys: Vec<u32>, vals: Vec<u32>, refs: Vec<i64>) -> super::super::way_msg {
-  super::super::way_msg {
+fn make_way(id: i64, keys: Vec<u32>, vals: Vec<u32>, refs: Vec<i64>) -> crate::pbf::message::way_msg {
+  crate::pbf::message::way_msg {
     id,
     keys,
     vals,
