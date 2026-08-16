@@ -1,6 +1,3 @@
-// a pbf primitive block stores coordinates as integers, scaled by `granularity` and shifted by the
-// block's offsets. every node in the block decodes against the same three numbers.
-
 use super::entity::osm_node;
 use crate::pbf::message::{dense_nodes_msg, node_msg};
 use crate::pbf::tag_policy::tag_policy;
@@ -21,7 +18,6 @@ impl block_scale {
   }
 }
 
-// the plain form: one message per node, each carrying its own id and coordinates.
 pub fn decode(
   nodes: &[node_msg],
   strings: &[&str],
@@ -46,9 +42,6 @@ pub fn decode(
     .collect()
 }
 
-// the dense form, which is how real files store the overwhelming majority of nodes: ids and
-// coordinates are delta-encoded against the previous node, and every node's tags are concatenated
-// into one flat `keys_vals` stream where a 0 closes the current node.
 pub fn decode_dense(
   dense: &dense_nodes_msg,
   strings: &[&str],

@@ -1,7 +1,3 @@
-// walks a `.osm.pbf` file front to back, reading only the length-prefixed blob headers and skipping
-// the blob bodies, to record where every blob starts and ends. it is what fills `blob_index`, and it
-// is the only pass over the file that never decompresses anything.
-
 use prost::Message;
 use std::{
   fs,

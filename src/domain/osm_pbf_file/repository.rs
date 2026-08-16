@@ -1,8 +1,3 @@
-// the catalogue of source files. every column group here is written by a different moment of the
-// pipeline — the geofabrik columns by `catalog`, the download columns by `download`, the
-// `osm_header_*` columns by `header`, the counts by the extraction stages — and the row is read
-// back only by `file_path`, `geofabrik_url` and `id`.
-
 use rusqlite::Connection;
 
 const SQL_CREATE: &str = "

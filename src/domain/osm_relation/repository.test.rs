@@ -45,12 +45,10 @@ fn _00_insert_rows_persists_all_rows() {
       make_row(2, "8", Some("São Paulo")),
     ],
   );
-  // ensure total
   let count: i64 = conn
     .query_row("SELECT COUNT(*) FROM osm_data.osm_relations", [], |row| row.get(0))
     .expect("failed to count");
   assert_eq!(count, 2);
-  // ensure json tag admin_level is saved as expected
   let id: i64 = conn
     .query_row(
       "SELECT id FROM osm_data.osm_relations WHERE JSON_EXTRACT(payload, '$.tags.admin_level') = '4'",
@@ -59,7 +57,6 @@ fn _00_insert_rows_persists_all_rows() {
     )
     .expect("failed to query");
   assert_eq!(id, 1);
-  // ensure json tag name is saved as expected
   let id: i64 = conn
     .query_row(
       "SELECT id FROM osm_data.osm_relations WHERE JSON_EXTRACT(payload, '$.tags.name') = 'São Paulo'",
@@ -116,7 +113,6 @@ fn _02_all_ids_by_admin_level_returns_only_matching_level() {
   assert_eq!(ids, vec![3]);
   ids = all_ids_by_admin_level(&conn, level::continent);
   assert_eq!(ids.len(), 0);
-  // sem nome deve ser ignorado
   ids = all_ids_by_admin_level(&conn, level::locality);
   assert_eq!(ids.len(), 0);
 }
@@ -154,39 +150,22 @@ fn _03_remaining_ids_excludes_relations_already_present_in_admin_levels() {
   assert_eq!(ids.len(), 0);
 }
 
-// fn make_node_row(id: i64, lat: f64, lon: f64) -> crate::domain::osm_node::osm_node_row {
-//   // todo!()
-// }
-
-// fn make_way_row(id: i64, refs: Vec<i64>) -> crate::domain::osm_way::osm_way_row {
-//   // todo!()
-// }
-
-// fn make_relation_row(id: i64, admin_level: &str, name: &str, way_ids: Vec<i64>) -> osm_relations {
-//   // todo!()
-// }
-
 #[test]
 fn _04_returns_coords_for_single_relation() {
-  // todo!()
 }
 
 #[test]
 fn _05_returns_empty_for_unknown_ids() {
-  // todo!()
 }
 
 #[test]
 fn _06_preserves_node_sequence_order_within_way() {
-  // todo!()
 }
 
 #[test]
 fn _07_ignores_non_way_members() {
-  // todo!()
 }
 
 #[test]
 fn _08_returns_coords_for_multiple_relations_in_chunk() {
-  // todo!()
 }

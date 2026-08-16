@@ -1,7 +1,3 @@
-// reads the file's first blob — the osm header — and writes what it says into the file's row: the
-// bounding box it covers, the features it needs, the program that wrote it and where its
-// replication stream lives.
-
 use prost::Message;
 use std::{
   fs,

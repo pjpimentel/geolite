@@ -1,8 +1,3 @@
-// the `house_numbers` table: the ddl, its index, the candidate scan and the insert.
-//
-// the scan returns the raw tag value: what counts as a number, and in which written forms, is the
-// value object's decision and not sql's — which is what keeps ingestion and query from drifting.
-
 use geo::Geometry;
 use rusqlite::Connection;
 
@@ -60,8 +55,6 @@ pub fn drop_indexes(conn: &Connection) {
 pub struct street_meta_row {
   pub id: i64,
   pub name: String,
-  // coarse centroid (lon, lat) read from the geometry's MBR — used only to bucket streets into
-  // tiles during house-number matching, so MBR-center precision is sufficient.
   pub cx: f64,
   pub cy: f64,
 }
@@ -132,10 +125,6 @@ pub struct candidate_row {
   pub lat: f64,
 }
 
-// the raw tag value comes back untouched: trimming, the drop list and the canonical form of a
-// letter suffix are all decided by the house_number value object, so that what gets written and
-// what a query recognises can never drift apart again. CAST keeps a numeric json value readable
-// as text, which TRIM used to guarantee.
 const SQL_LOAD_ALL_CANDIDATES: &str = "
   SELECT
     id,
@@ -210,7 +199,6 @@ pub fn by_admin_level_ids(conn: &Connection, ids: &[i64]) -> Vec<hn_for_street> 
     .query_map(rusqlite::params_from_iter(params.iter()), |row| {
       Ok(hn_for_street {
         admin_level_id: row.get(0)?,
-        // already canonical on disk; read back without re-applying the ingestion policy.
         number: house_number::from_stored(&row.get::<_, String>(1)?),
         wkb: row.get(2)?,
       })
@@ -220,9 +208,6 @@ pub fn by_admin_level_ids(conn: &Connection, ids: &[i64]) -> Vec<hn_for_street> 
     .collect()
 }
 
-// maps the domain's placed numbers onto storage rows: the identity is unpacked back into the
-// integer key, the number is written in its stored form and the point is encoded as spatialite
-// wkb — all three being persistence concerns the domain does not carry.
 pub fn batch_insert_links(conn: &Connection, links: &[house_number_link]) -> i64 {
   let rows: Vec<house_numbers> = links
     .iter()
@@ -237,8 +222,6 @@ pub fn batch_insert_links(conn: &Connection, links: &[house_number_link]) -> i64
   batch_insert(conn, &rows)
 }
 
-// the storage shape of a placed number: the identity unpacked into its integer key, the number
-// in its stored form and the point encoded as spatialite wkb.
 struct house_numbers {
   pub node_id: u64,
   pub admin_level_id: i64,

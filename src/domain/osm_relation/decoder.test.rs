@@ -7,7 +7,6 @@ fn default_opts() -> tag_policy {
   tag_policy::default()
 }
 
-
 fn make_relation(
   id: i64,
   keys: Vec<u32>,
@@ -27,7 +26,6 @@ fn make_relation(
   }
 }
 
-// 0: delta-decode de memids multi-member → [5, 3, -2] acumula em [5, 8, 6]
 #[test]
 fn _00_delta_decodes_member_ids() {
   let rel = make_relation(
@@ -46,7 +44,6 @@ fn _00_delta_decodes_member_ids() {
   assert_eq!(result[0].members[2].id, 6);
 }
 
-// 1: types=[0, 1, 2] → [node, way, relation], cobrindo todos os bracos do match
 #[test]
 fn _01_maps_member_types_node_way_relation() {
   let rel = make_relation(
@@ -72,7 +69,6 @@ fn _01_maps_member_types_node_way_relation() {
   ));
 }
 
-// 2: roles_sid=[1, 2] resolvidos via string table → ["outer", "inner"]
 #[test]
 fn _02_resolves_member_roles_from_string_table() {
   let rel = make_relation(1, vec![], vec![], vec![1, 2], vec![10, 0], vec![1, 1]);
@@ -82,7 +78,6 @@ fn _02_resolves_member_roles_from_string_table() {
   assert_eq!(result[0].members[1].role, "inner");
 }
 
-// 3: roles_sid mais curto que memids → member faltante cai em strings[0]=""
 #[test]
 fn _03_missing_role_falls_back_to_empty_string() {
   let rel = make_relation(1, vec![], vec![], vec![1], vec![1, 2], vec![1, 1]);
@@ -93,7 +88,6 @@ fn _03_missing_role_falls_back_to_empty_string() {
   assert_eq!(result[0].members[1].role, "");
 }
 
-// 4: multiplas relations preservam ordem e r.id NAO e delta → [100, 200] fica [100, 200]
 #[test]
 fn _04_preserves_order_of_multiple_relations() {
   let r1 = make_relation(100, vec![], vec![], vec![], vec![], vec![]);

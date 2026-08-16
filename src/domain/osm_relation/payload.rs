@@ -1,8 +1,3 @@
-// how a relation is written into the `payload` column: `{tags, members}`.
-//
-// the member type is stored as a single letter, which is what the extraction queries match on when
-// they pick out the way members of a boundary.
-
 use super::entity::{osm_member_type, osm_relation};
 use crate::database::jsonb::{encoder, write_int, write_text};
 

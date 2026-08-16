@@ -1,6 +1,3 @@
-// the `admin_levels_hierarchy` table. the two `pending_*` queries live here rather than with
-// `admin_level` because they ask what this table still owes, not anything about an admin level.
-
 use rusqlite::Connection;
 
 use super::entity::{decode_chain, hierarchy_lookup_row, hierarchy_row};

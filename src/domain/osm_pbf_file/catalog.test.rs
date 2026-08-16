@@ -17,8 +17,6 @@ fn sqlite(name: &str) -> (String, rusqlite::Connection) {
   (path, conn)
 }
 
-// 00: fetches index from http, persists rows in osm_pbf_files,
-// and returns items sorted by id.
 #[test]
 fn _00_fetches_and_caches_when_no_cache_exists() {
   let (db_path, db) = sqlite("ls_t00");
@@ -32,7 +30,6 @@ fn _00_fetches_and_caches_when_no_cache_exists() {
   assert!(Path::new(&db_path).exists());
 }
 
-// 01: second call with recreate_cache=false reads from sqlite, no http.
 #[test]
 fn _01_returns_cached_without_refetching() {
   let (_db_path, db) = sqlite("ls_t01");
@@ -44,7 +41,6 @@ fn _01_returns_cached_without_refetching() {
   assert_eq!(requests.lock().unwrap().len(), after_first);
 }
 
-// 02: recreate_cache=true forces a new http fetch even when cache exists.
 #[test]
 fn _02_recreate_cache_forces_refetch() {
   let (_db_path, db) = sqlite("ls_t02");
@@ -56,7 +52,6 @@ fn _02_recreate_cache_forces_refetch() {
   assert!(requests.lock().unwrap().len() > after_first);
 }
 
-// 03: feature with no pbf url appears in output with "-" as url.
 #[test]
 fn _03_feature_without_pbf_url_has_dash_url() {
   let (_db_path, db) = sqlite("ls_t03");
@@ -67,7 +62,6 @@ fn _03_feature_without_pbf_url_has_dash_url() {
   assert_eq!(items[0].url, "-");
 }
 
-// 04: resolve_geofabrik_url returns the pbf url for a known id.
 #[test]
 fn _04_resolve_geofabrik_url_returns_url_for_known_id() {
   let (_db_path, db) = sqlite("ls_t04");
@@ -77,7 +71,6 @@ fn _04_resolve_geofabrik_url_returns_url_for_known_id() {
   assert_eq!(result.as_deref(), Some("http://example.com/brazil.osm.pbf"));
 }
 
-// 05: resolve_geofabrik_url returns none for an unknown id.
 #[test]
 fn _05_resolve_geofabrik_url_returns_none_for_unknown_id() {
   let (_db_path, db) = sqlite("ls_t05");
@@ -87,7 +80,6 @@ fn _05_resolve_geofabrik_url_returns_none_for_unknown_id() {
   assert!(result.is_none());
 }
 
-// 06: resolve_geofabrik_url returns none when the entry has no pbf url.
 #[test]
 fn _06_resolve_geofabrik_url_returns_none_for_entry_without_url() {
   let (_db_path, db) = sqlite("ls_t06");
@@ -97,7 +89,6 @@ fn _06_resolve_geofabrik_url_returns_none_for_entry_without_url() {
   assert!(result.is_none());
 }
 
-// 07: list_local returns empty vec when pbf dir does not exist.
 #[test]
 fn _07_list_local_returns_empty_when_no_pbf_dir() {
   let dir = tmp("ls_t07");
@@ -105,7 +96,6 @@ fn _07_list_local_returns_empty_when_no_pbf_dir() {
   assert!(items.is_empty());
 }
 
-// 08: list_local returns pbf files from data_path root sorted by path.
 #[test]
 fn _08_list_local_returns_sorted_pbf_files() {
   let dir = tmp("ls_t08");
@@ -120,7 +110,6 @@ fn _08_list_local_returns_sorted_pbf_files() {
   assert!(Path::new(&items[0].path).exists());
 }
 
-// 09: resolve_geofabrik_url serves a cached url without refetching.
 #[test]
 fn _09_resolve_geofabrik_url_uses_cache_without_refetching() {
   let (_db_path, db) = sqlite("ls_t09");
@@ -133,7 +122,6 @@ fn _09_resolve_geofabrik_url_uses_cache_without_refetching() {
   assert_eq!(requests.lock().unwrap().len(), after_geofabrik);
 }
 
-// 10: list_local returns empty vec when the data_path does not exist.
 #[test]
 fn _10_list_local_returns_empty_for_nonexistent_path() {
   let dir = tmp("ls_t10");
@@ -142,7 +130,6 @@ fn _10_list_local_returns_empty_for_nonexistent_path() {
   assert!(items.is_empty());
 }
 
-// 11: outgoing requests carry the custom user-agent with the binary version.
 #[test]
 fn _11_sends_custom_user_agent_header() {
   let (_db_path, db) = sqlite("ls_t11");

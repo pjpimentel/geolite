@@ -1,8 +1,3 @@
-// how a house number node was attached to its street.
-//
-// `by_name` means the node's street tag matched the street's name; `by_proximity` means it was
-// snapped to the nearest street geometry. the numeric codes are persisted in the `strategy` column
-// of `house_numbers` and are part of the on-disk format, so they must not change.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum link_strategy {
   by_proximity,

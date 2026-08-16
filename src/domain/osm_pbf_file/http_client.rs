@@ -1,6 +1,3 @@
-// the one http agent the slice uses, for the catalogue and for the download alike. a vertical slice
-// owns its own i/o, and reaching geofabrik is this slice's i/o just as sqlite is every other one's.
-
 use std::sync::OnceLock;
 
 use ureq::Agent;

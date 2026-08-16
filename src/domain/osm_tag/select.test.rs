@@ -2,7 +2,6 @@ use super::super::key;
 use super::super::value::{highway_value, place_value};
 use super::*;
 
-// 00: an equality predicate over a closed value set.
 #[test]
 fn _00_builds_an_equality_predicate() {
   assert_eq!(
@@ -11,7 +10,6 @@ fn _00_builds_an_equality_predicate() {
   );
 }
 
-// 01: an exclusion reads a missing tag as empty, so a way with no `place` survives the filter.
 #[test]
 fn _01_treats_a_missing_tag_as_empty_when_excluding() {
   assert_eq!(
@@ -20,7 +18,6 @@ fn _01_treats_a_missing_tag_as_empty_when_excluding() {
   );
 }
 
-// 02: presence and absence.
 #[test]
 fn _02_builds_null_checks() {
   assert_eq!(
@@ -33,7 +30,6 @@ fn _02_builds_null_checks() {
   );
 }
 
-// 03: a single key needs no COALESCE around it.
 #[test]
 fn _03_skips_coalesce_for_a_single_key() {
   assert_eq!(
@@ -42,7 +38,6 @@ fn _03_skips_coalesce_for_a_single_key() {
   );
 }
 
-// 04: several keys fall back in the order given.
 #[test]
 fn _04_falls_back_in_the_order_given() {
   assert_eq!(
@@ -51,7 +46,6 @@ fn _04_falls_back_in_the_order_given() {
   );
 }
 
-// 05: an empty priority list falls back to the plain name tag.
 #[test]
 fn _05_falls_back_to_the_name_tag_when_no_key_is_given() {
   assert_eq!(
@@ -60,7 +54,6 @@ fn _05_falls_back_to_the_name_tag_when_no_key_is_given() {
   );
 }
 
-// 06: the normalised form trims, upper-cases and reads blank as absent.
 #[test]
 fn _06_normalises_an_alias_group() {
   let sql = normalized_coalesce("payload", key::COUNTRY_ISO);
@@ -70,7 +63,6 @@ fn _06_normalises_an_alias_group() {
   assert!(sql.contains("'$.tags.\"ISO3166-1:alpha2\"'"));
 }
 
-// 07: a quote inside a value cannot end the sql literal early.
 #[test]
 fn _07_escapes_a_quote_inside_a_value() {
   assert_eq!(
@@ -79,7 +71,6 @@ fn _07_escapes_a_quote_inside_a_value() {
   );
 }
 
-// 08: every expression is valid sql and reads the value the payload holds.
 #[test]
 fn _08_runs_against_sqlite() {
   let conn = rusqlite::Connection::open_in_memory().expect("failed to open sqlite");

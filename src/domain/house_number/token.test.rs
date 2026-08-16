@@ -77,7 +77,6 @@ fn _04_a_query_that_is_only_the_street_name_has_no_house_number() {
 
 #[test]
 fn _05_only_the_first_remaining_number_is_taken() {
-  // "50" comes first, so the "200" that follows is never considered.
   assert_eq!(
     found("rua oscar freire 50 200", "rua oscar freire", &simple_policy()).as_deref(),
     Some("50")
@@ -109,8 +108,6 @@ fn _08_a_hash_standing_alone_introduces_the_next_token() {
   );
 }
 
-// the whole point of making recognition policy-driven: the same query reads differently in a
-// region that does not write compound numbers.
 #[test]
 fn _09_a_compound_number_is_invisible_where_the_policy_does_not_allow_it() {
   assert_eq!(found("rua x 12-14", "rua x", &simple_policy()), None);

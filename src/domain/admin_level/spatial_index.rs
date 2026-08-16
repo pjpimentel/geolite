@@ -1,7 +1,3 @@
-// the bounding box of every admin level, in a sqlite rtree virtual table, and the pass that
-// fills it. it is a derived index: dropped and rebuilt wholesale from the geometries, never
-// updated in place, which is why the fill lives beside the ddl instead of in a stage.
-
 use geo::BoundingRect;
 use rusqlite::Connection;
 use std::sync::mpsc;

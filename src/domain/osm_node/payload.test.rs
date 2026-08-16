@@ -3,8 +3,6 @@ use super::*;
 use crate::database::jsonb::{TYPE_TEXTRAW, encoder, write_header};
 use crate::domain::osm_node::osm_node;
 
-// sqlite itself is the oracle for the format: a malformed jsonb makes JSON() fail or return
-// something other than what was written.
 fn to_json(payload: &[u8]) -> serde_json::Value {
   let conn = rusqlite::Connection::open_in_memory().expect("failed to open sqlite");
   let text: String = conn
@@ -36,7 +34,6 @@ fn encode_text_object(value: &str) -> serde_json::Value {
   to_json(&out)
 }
 
-// 00: node vira objeto com lat, lon e tags
 #[test]
 fn _00_encodes_node_with_lat_lon_and_tags() {
   let mut enc = encoder::new();
@@ -59,7 +56,6 @@ fn _00_encodes_node_with_lat_lon_and_tags() {
   assert_eq!(json["tags"]["name"], "Marco Zero");
 }
 
-// 01: node sem tags produz um objeto tags vazio, nao ausente
 #[test]
 fn _01_encodes_node_without_tags_as_empty_object() {
   let mut enc = encoder::new();
@@ -79,7 +75,6 @@ fn _01_encodes_node_without_tags_as_empty_object() {
   assert_eq!(to_json(&out)["tags"], serde_json::json!({}));
 }
 
-// 02: payload de ate 11 bytes cabe no cabecalho de 1 byte
 #[test]
 fn _02_writes_single_byte_header_for_short_payloads() {
   let short = "a".repeat(11);
@@ -90,7 +85,6 @@ fn _02_writes_single_byte_header_for_short_payloads() {
   assert_eq!(out, vec![(11u8 << 4) | TYPE_TEXTRAW]);
 }
 
-// 03: payloads from 12 to 255 bytes use class 12 with 1 extra size byte
 #[test]
 fn _03_writes_two_byte_header_for_payloads_up_to_255() {
   let medium = "b".repeat(255);
@@ -101,7 +95,6 @@ fn _03_writes_two_byte_header_for_payloads_up_to_255() {
   assert_eq!(out, vec![(12u8 << 4) | TYPE_TEXTRAW, 0xFF]);
 }
 
-// 04: payloads from 256 to 65535 bytes use class 13 with 2 big-endian bytes
 #[test]
 fn _04_writes_three_byte_header_for_payloads_up_to_65535() {
   let large = "c".repeat(65_535);
@@ -112,7 +105,6 @@ fn _04_writes_three_byte_header_for_payloads_up_to_65535() {
   assert_eq!(out, vec![(13u8 << 4) | TYPE_TEXTRAW, 0xFF, 0xFF]);
 }
 
-// 05: payloads above 65535 bytes use class 14 with 4 big-endian bytes
 #[test]
 fn _05_writes_five_byte_header_for_large_payloads() {
   let huge = "d".repeat(70_000);
@@ -126,8 +118,6 @@ fn _05_writes_five_byte_header_for_large_payloads() {
   );
 }
 
-// 06: o mesmo encoder reutiliza os buffers de scratch entre linhas — o
-// resultado precisa ser identico ao de um encoder novo a cada linha
 #[test]
 fn _06_reuses_scratch_buffers_across_encodes() {
   let nodes: Vec<osm_node> = (0..5)

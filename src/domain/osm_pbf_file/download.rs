@@ -1,6 +1,3 @@
-// acquiring the file: `content-length` up front, one thread per byte range, the parts merged in order
-// and the result checked against the `.md5` the server publishes beside it.
-
 use std::{
   fs,
   io::{Read, Write},

@@ -1,7 +1,3 @@
-// a named administrative area — the `admin_levels` table: a country, a state, a city, a
-// neighborhood, a street. everything the concept needs lives here, from the scale it sits on to
-// the sql that reads and writes it.
-
 pub mod entity;
 pub mod geometry;
 pub mod id;

@@ -3,8 +3,6 @@ use super::*;
 use crate::database::jsonb::encoder;
 use crate::domain::osm_relation::entity::{osm_member_type, osm_relation, osm_relation_member};
 
-// sqlite itself is the oracle for the format: a malformed jsonb makes JSON() fail or return
-// something other than what was written.
 fn to_json(payload: &[u8]) -> serde_json::Value {
   let conn = rusqlite::Connection::open_in_memory().expect("failed to open sqlite");
   let text: String = conn
@@ -20,8 +18,6 @@ fn tags(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
     .collect()
 }
 
-
-// 00: relation carrega os tres tipos de membro, cada um com sua sigla
 #[test]
 fn _00_encodes_relation_with_every_member_type() {
   let mut enc = encoder::new();

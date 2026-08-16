@@ -8,7 +8,6 @@ struct scene {
   conn: rusqlite::Connection,
 }
 
-// escreve um pbf contendo apenas o blob de header informado e indexa os chunks
 fn setup(tag: &str, spec: &header_spec, compression: blob_compression) -> scene {
   let chunk = pbf_fixtures::make_chunk("OSMHeader", &header_blob(spec, compression));
   let temp = pbf_fixtures::temp_scene(tag);
@@ -25,7 +24,6 @@ fn setup(tag: &str, spec: &header_spec, compression: blob_compression) -> scene 
   }
 }
 
-// as colunas de wkt e de features sao gravadas como blob (Vec<u8>), nao como texto
 fn blob_column_as_text(s: &scene, name: &str) -> Option<String> {
   column::<Vec<u8>>(s, name)
     .map(|bytes| String::from_utf8(bytes).expect("coluna deve conter utf-8 valido"))
@@ -41,7 +39,6 @@ fn column<T: rusqlite::types::FromSql>(s: &scene, name: &str) -> Option<T> {
     .expect("failed to read osm_pbf_files")
 }
 
-// 00: bbox e convertida de nanograus para graus nos quatro cantos
 #[test]
 fn _00_returns_bbox_converted_from_nanodegrees() {
   let s = setup(
@@ -58,8 +55,6 @@ fn _00_returns_bbox_converted_from_nanodegrees() {
   assert!((bbox.bottom - 38.5).abs() < 1e-9);
 }
 
-// 01: a bbox e gravada como WKT de poligono fechado, no sentido
-// (left bottom, right bottom, right top, left top, left bottom)
 #[test]
 fn _01_writes_bbox_polygon_wkt_to_osm_pbf_files() {
   let s = setup(
@@ -76,7 +71,6 @@ fn _01_writes_bbox_polygon_wkt_to_osm_pbf_files() {
   );
 }
 
-// 02: header sem bbox devolve None e nao grava wkt
 #[test]
 fn _02_returns_none_bbox_when_header_has_no_bbox() {
   let s = setup(
@@ -93,7 +87,6 @@ fn _02_returns_none_bbox_when_header_has_no_bbox() {
   assert_eq!(column::<String>(&s, "osm_header_bbox_wkt"), None);
 }
 
-// 03: listas de features sao serializadas como array json
 #[test]
 fn _03_serializes_required_and_optional_features_as_json() {
   let s = setup(
@@ -112,7 +105,6 @@ fn _03_serializes_required_and_optional_features_as_json() {
   assert_eq!(optional, r#"["Has_Metadata"]"#);
 }
 
-// 04: listas de features vazias viram NULL em vez de "[]"
 #[test]
 fn _04_stores_null_features_when_lists_are_empty() {
   let s = setup(
@@ -130,7 +122,6 @@ fn _04_stores_null_features_when_lists_are_empty() {
   assert_eq!(column::<String>(&s, "osm_header_optional_features"), None);
 }
 
-// 05: writingprogram, source e os campos osmosis chegam ao retorno e ao banco
 #[test]
 fn _05_propagates_writingprogram_source_and_osmosis_fields() {
   let s = setup(
@@ -166,7 +157,6 @@ fn _05_propagates_writingprogram_source_and_osmosis_fields() {
   );
 }
 
-// 06: sequence number negativo nao cabe em u32 e vira NULL
 #[test]
 fn _06_drops_negative_replication_sequence_number() {
   let s = setup(
@@ -186,7 +176,6 @@ fn _06_drops_negative_replication_sequence_number() {
   );
 }
 
-// 07: blob sem compressao decodifica igual ao blob zlib
 #[test]
 fn _07_decodes_uncompressed_header_blob() {
   let s = setup("hd_00_07", &header_spec::default(), blob_compression::raw);
@@ -196,7 +185,6 @@ fn _07_decodes_uncompressed_header_blob() {
   assert!(out.bbox.is_some());
 }
 
-// 08: sem chunk de header indexado nao ha de onde ler o cabecalho
 #[test]
 #[should_panic(expected = "no header chunk found")]
 fn _08_panics_when_no_header_chunk_is_indexed() {

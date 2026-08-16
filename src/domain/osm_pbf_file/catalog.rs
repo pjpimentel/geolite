@@ -1,9 +1,3 @@
-// where a source file comes from: the geofabrik index of every downloadable region, cached in the
-// table so the http request happens once, and the plain listing of what is already on disk.
-//
-// the connection is passed in rather than opened here — a domain never owns the connection
-// lifecycle, which is the one thing `database` still keeps.
-
 use std::{fs, path::PathBuf};
 
 use rusqlite::Connection;

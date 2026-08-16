@@ -2,10 +2,6 @@ use crate::domain::admin_level::level;
 use super::*;
 use rusqlite::Connection;
 
-// what the number itself means — trimming, canonical suffix, drop values — is covered by pure
-// tests in src/domain/house_number/house_number.test.rs. what belongs here is the adapter's own
-// job: selecting the right tags out of the payload and handing every raw value to the policy.
-
 fn setup_db() -> Connection {
   let conn = crate::database::open_write(":memory:");
   conn
@@ -40,7 +36,6 @@ fn policy(
   }
 }
 
-// inserts the given nodes and returns the candidates produced by the extraction query.
 fn load(
   nodes: &[(u64, &[(&str, &str)])],
   policy: &house_number_policy,
@@ -74,7 +69,6 @@ fn _01_nodes_without_the_number_tag_are_not_candidates() {
 
 #[test]
 fn _02_values_rejected_by_the_policy_are_dropped() {
-  // the drop list and the blank check now run in rust, over every row the query returns.
   let nodes: &[(u64, &[(&str, &str)])] = &[
     (1, &[("addr:housenumber", "s/n")]),
     (2, &[("addr:housenumber", "S/N")]),
@@ -97,10 +91,8 @@ fn _03_drop_values_are_kept_when_the_drop_list_is_empty() {
 #[test]
 fn _04_housenumber_tag_fallback_is_used() {
   let nodes: &[(u64, &[(&str, &str)])] = &[(1, &[("addr:conscriptionnumber", "42")])];
-  // without the fallback tag the node is not a candidate
   let c = load(nodes, &policy(HN, ST, NO_DROPS));
   assert_eq!(c.len(), 0);
-  // with the fallback tag the value is picked up
   const WITH_FALLBACK: &[&str] = &["addr:housenumber", "addr:conscriptionnumber"];
   let c = load(nodes, &policy(WITH_FALLBACK, ST, NO_DROPS));
   assert_eq!(c.len(), 1);
@@ -111,10 +103,8 @@ fn _04_housenumber_tag_fallback_is_used() {
 fn _05_street_tag_fallback_is_used() {
   let nodes: &[(u64, &[(&str, &str)])] =
     &[(1, &[("addr:housenumber", "10"), ("addr:place", "Plaza")])];
-  // without the fallback tag there is no street
   let c = load(nodes, &policy(HN, ST, NO_DROPS));
   assert_eq!(c[0].addr_street, None);
-  // with the fallback tag the place is used as street
   const WITH_FALLBACK: &[&str] = &["addr:street", "addr:place"];
   let c = load(nodes, &policy(HN, WITH_FALLBACK, NO_DROPS));
   assert_eq!(c[0].addr_street.as_deref(), Some("Plaza"));
@@ -139,7 +129,6 @@ fn _06_streets_with_centroid_reads_mbr_center_of_each_street() {
     country_iso_code: None,
     post_code: None,
   };
-  // bbox centers: street_a -> (1, 2); street_b -> (15, 25).
   batch_upsert(
     &conn,
     &[

@@ -11,7 +11,6 @@ const COMPOUND_SHAPES: &[house_number_shape] = &[
 
 const BR_DROPS: &[&str] = &["s/n", "sn", "s/nº", "s/no"];
 
-// the default written forms: a plain number or a number with one trailing letter.
 fn simple_policy() -> house_number_policy {
   house_number_policy {
     number_tags: &["addr:housenumber"],
@@ -30,7 +29,6 @@ fn dropping_policy() -> house_number_policy {
   }
 }
 
-// the colombian written forms: everything above plus the compound pair and the `#` prefix.
 fn compound_policy() -> house_number_policy {
   house_number_policy {
     shapes: COMPOUND_SHAPES,
@@ -42,10 +40,6 @@ fn compound_policy() -> house_number_policy {
 fn stored(raw: &str) -> Option<String> {
   house_number::normalize(raw, &simple_policy()).map(|n| n.stored_form().to_string())
 }
-
-/////////////////////////////////////////////////////////////////////////////////
-// normalize — the ingestion rule, moved out of sql unchanged
-/////////////////////////////////////////////////////////////////////////////////
 
 #[test]
 fn _00_pure_number_is_unchanged() {
@@ -109,15 +103,10 @@ fn _10_drop_values_are_kept_when_drop_list_is_empty() {
 
 #[test]
 fn _11_compound_values_are_stored_untouched() {
-  // colombian nomenclature already reached the database intact; normalisation must not move it.
   assert_eq!(stored("82-52").as_deref(), Some("82-52"));
   assert_eq!(stored("25B-48").as_deref(), Some("25B-48"));
   assert_eq!(stored("16i56").as_deref(), Some("16i56"));
 }
-
-/////////////////////////////////////////////////////////////////////////////////
-// recognize — the query rule
-/////////////////////////////////////////////////////////////////////////////////
 
 fn recognized(token: &str, policy: &house_number_policy) -> Option<String> {
   house_number::recognize(token, policy).map(|n| n.stored_form().to_string())
@@ -146,9 +135,7 @@ fn _14_a_single_trailing_comma_is_tolerated() {
 #[test]
 fn _15_postcodes_are_not_house_numbers() {
   let policy = simple_policy();
-  // eight digits is a brazilian postcode, past the five-digit cap.
   assert_eq!(recognized("01310100", &policy), None);
-  // the hyphenated form is not a compound number either, under a policy that has no compound.
   assert_eq!(recognized("01310-100", &policy), None);
 }
 
@@ -182,16 +169,9 @@ fn _18_hash_prefix_is_stripped_only_where_the_policy_allows() {
 
 #[test]
 fn _19_a_hyphenated_postcode_is_not_a_compound_number() {
-  // the leading zero of a postcode is what tells it apart from colombian nomenclature.
   assert_eq!(recognized("01310-100", &compound_policy()), None);
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-// the invariant that makes the two sides agree
-/////////////////////////////////////////////////////////////////////////////////
-
-// what is written by the ingestion side and what is typed by the user must land on the same
-// comparison key. this is the property that was missing while the rule lived in two languages.
 #[test]
 fn _20_stored_and_typed_forms_of_the_same_number_compare_equal() {
   let policy = compound_policy();
@@ -232,10 +212,6 @@ fn _22_compound_separators_normalize_to_one_key() {
   assert_eq!(key("25b-48"), "25B-48");
   assert_eq!(key("82-52"), "82-52");
 }
-
-/////////////////////////////////////////////////////////////////////////////////
-// shape and leading value
-/////////////////////////////////////////////////////////////////////////////////
 
 #[test]
 fn _23_shape_reflects_the_written_form() {

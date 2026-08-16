@@ -1,7 +1,3 @@
-// member ids are delta-encoded against the previous member, and the role is an index into the
-// block's string table. the three parallel arrays — memids, roles_sid, types — line up by
-// position, so a short or missing entry falls back rather than shifting everything after it.
-
 use super::entity::{osm_member_type, osm_relation, osm_relation_member};
 use crate::pbf::message::relation_msg;
 use crate::pbf::tag_policy::tag_policy;

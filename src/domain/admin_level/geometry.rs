@@ -1,9 +1,3 @@
-// the shape of an admin level, and how it is written to and read from the `wkb` column.
-//
-// the on-disk format is spatialite wkb: a 39-byte header carrying the srid and the minimum
-// bounding rectangle, then the geometry body. the header is what makes `mbr_center` possible
-// without parsing the geometry at all.
-
 use geo::{BoundingRect, Geometry};
 use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
@@ -57,9 +51,6 @@ impl FromSql for admin_geometry {
       );
       return Ok(empty());
     }
-    // spatialite format: use SpatiaLiteWkb on the full blob — geozero's to_spatialite_wkb
-    // omits the byte-order byte from the WKB body and uses 0x69 as sub-geometry separator,
-    // so Wkb (ISO WKB reader) cannot parse it; SpatiaLiteWkb handles the full blob correctly.
     match SpatiaLiteWkb(blob).to_geo() {
       Ok(geometry) => Ok(admin_geometry(geometry)),
       Err(e) => {
@@ -76,9 +67,6 @@ impl FromSql for admin_geometry {
   }
 }
 
-// reads the centroid of a spatialite blob's MBR header without parsing the full geometry.
-// layout: byte 0 = 0x00, byte 1 = endianness, bytes 2-5 = SRID, bytes 6-37 = MBR
-// (min_x, min_y, max_x, max_y as four f64), byte 38 = 0x7C. returns (lon, lat) of the center.
 pub fn mbr_center(blob: &[u8]) -> Option<(f64, f64)> {
   if blob.len() < 38 || blob[0] != 0x00 {
     return None;
@@ -100,9 +88,6 @@ pub fn mbr_center(blob: &[u8]) -> Option<(f64, f64)> {
   Some(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0))
 }
 
-// an axis-aligned geographic envelope. it is the shape the rtree indexes and the shape every
-// spatial pre-filter is expressed in, which is why it belongs here and not in the query layer
-// that happens to build one from a wkt polygon.
 #[derive(Clone, Copy)]
 pub struct bounding_box {
   pub min_lat: f64,

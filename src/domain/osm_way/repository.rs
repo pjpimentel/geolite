@@ -1,9 +1,3 @@
-// the `osm_data.osm_ways` table: the ddl, the chunk index, the bulk insert, and the two queries the
-// admin-level extraction runs over it — which ways a level still wants, and where each one sits.
-//
-// the filters arrive as meaning (`way_filter`) and leave as sql; the vocabulary in between is
-// `osm_tag`, so nothing here writes a tag key by hand.
-
 use rusqlite::Connection;
 
 use super::entity::osm_way_row;
@@ -53,8 +47,6 @@ pub struct way_coord_row {
   pub lat: f64,
 }
 
-// the predicate each filter stands for, over the way's json payload. the meaning is `way_filter`'s
-// and the vocabulary is `osm_tag`'s; all this does is put the two together.
 pub(super) fn filter_sql(filter: &way_filter) -> String {
   use highway_value as hw;
   let p = "payload";

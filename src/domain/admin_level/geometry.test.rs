@@ -4,7 +4,6 @@ use geo::{Coord, LineString};
 #[test]
 fn _00_mbr_center_reads_the_spatialite_bbox_center() {
   use rusqlite::types::{ToSqlOutput, Value};
-  // bbox is min(10,20) -> max(30,40); the MBR center is (20, 30).
   let geom: admin_geometry = Geometry::LineString(LineString(vec![
     Coord { x: 10.0, y: 20.0 },
     Coord { x: 30.0, y: 40.0 },
@@ -24,12 +23,9 @@ fn _00_mbr_center_reads_the_spatialite_bbox_center() {
 fn _01_mbr_center_rejects_short_or_invalid_blobs() {
   assert_eq!(mbr_center(&[]), None);
   assert_eq!(mbr_center(&[0u8; 10]), None);
-  // valid length but wrong start marker.
   assert_eq!(mbr_center(&[0xFFu8; 40]), None);
 }
 
-// a geometry that round-trips through the column must come back as the same shape: the writer
-// and the reader disagree on the spatialite layout easily, and silently.
 #[test]
 fn _02_geometry_round_trips_through_the_column_format() {
   use rusqlite::types::{ToSqlOutput, Value};
@@ -55,8 +51,6 @@ fn _02_geometry_round_trips_through_the_column_format() {
   }
 }
 
-// a blob the reader cannot make sense of degrades to an empty geometry instead of failing the
-// whole query — the row is still countable, it just carries no shape.
 #[test]
 fn _03_unreadable_blob_degrades_to_an_empty_geometry() {
   let read = admin_geometry::column_result(ValueRef::Blob(&[0u8; 8])).expect("column_result");

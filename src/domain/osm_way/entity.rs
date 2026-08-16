@@ -1,6 +1,3 @@
-// a way as the pbf file describes it: an ordered list of node ids, plus tags. the geometry is not
-// here — it only exists once the referenced nodes are looked up.
-
 use crate::database::jsonb;
 
 pub struct osm_way {
@@ -9,20 +6,15 @@ pub struct osm_way {
   pub tags: std::collections::HashMap<String, String>,
 }
 
-// the storage shape of a way: the payload is already encoded.
-//
-// same reasoning as `osm_node_row` — the extraction pipeline builds these in its decoder threads
-// and sizes its write buffer from `payload.capacity()`, so the encoding happens before the insert.
+// encoded up front in the decoder threads, like `osm_node_row` — moving the encoding to insert
+// time would serialise the pipeline.
 pub struct osm_way_row {
   pub id: u64,
   pub osm_pbf_chunk_id: u32,
-  // pre-encoded JSONB binary (sqlite jsonb format) — bound directly as a BLOB
   pub payload: Vec<u8>,
 }
 
 impl osm_way_row {
-  // the only way to build a row: from the way it stores. the encoder is passed in so its scratch
-  // buffers survive across rows.
   pub fn encode(way: &osm_way, osm_pbf_chunk_id: u32, encoder: &mut jsonb::encoder) -> Self {
     let mut payload = Vec::with_capacity(128 + way.refs.len() * 4);
     super::payload::encode(encoder, &mut payload, way);

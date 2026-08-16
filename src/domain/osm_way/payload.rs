@@ -1,7 +1,3 @@
-// how a way is written into the `payload` column: `{refs, tags}`.
-//
-// the id is not in the payload — it is the primary key of the row.
-
 use super::entity::osm_way;
 use crate::database::jsonb::{encoder, write_int, write_text};
 

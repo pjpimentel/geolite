@@ -1,6 +1,3 @@
-// the `osm_data.osm_relations` table: the ddl, the admin-level index, the bulk insert, and the
-// queries that find the relations a level wants and stitch their member ways back into coordinates.
-
 use rusqlite::Connection;
 
 use super::entity::osm_relation_row;

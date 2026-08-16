@@ -1,7 +1,5 @@
 use super::*;
 
-// the codes are persisted; pinning them keeps a future reorder of the enum from silently
-// rewriting the meaning of every stored row.
 #[test]
 fn _00_codes_are_pinned_to_the_stored_format() {
   assert_eq!(link_strategy::by_proximity.code(), 0);

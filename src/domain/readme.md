@@ -65,8 +65,10 @@ path into a table is through its entity. `osm_pbf_file` is the one folder withou
 
 ## the shape every folder holds to
 
-- **the file explains itself before it imports.** the doc comment is the first thing in the file,
-  above the `use` block.
+- **the code carries its own explanation.** a comment is written only for a workaround or where
+  there is real risk of a performance mistake; six blocks in the whole domain meet that bar. what a
+  thing is and what it does belongs in its name and its type, and what a *folder* is belongs here,
+  in this file.
 - **inside a repository, the ddl comes first**: `SQL_CREATE`, `SQL_DROP`, `SQL_CREATE_INDEXES`,
   `SQL_DROP_INDEXES` grouped at the top, then `create_table`, `drop_table`, `create_indexes`,
   `drop_indexes` in that order. **every other `SQL_` const sits immediately above the one function

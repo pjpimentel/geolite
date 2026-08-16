@@ -3,8 +3,6 @@ use super::*;
 use crate::database::jsonb::encoder;
 use crate::domain::osm_way::osm_way;
 
-// sqlite itself is the oracle for the format: a malformed jsonb makes JSON() fail or return
-// something other than what was written.
 fn to_json(payload: &[u8]) -> serde_json::Value {
   let conn = rusqlite::Connection::open_in_memory().expect("failed to open sqlite");
   let text: String = conn
@@ -20,7 +18,6 @@ fn tags(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
     .collect()
 }
 
-// 00: way vira objeto com array de refs e objeto de tags
 #[test]
 fn _00_encodes_way_with_refs_array() {
   let mut enc = encoder::new();

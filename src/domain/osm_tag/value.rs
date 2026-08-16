@@ -1,9 +1,3 @@
-// the tag keys whose values geolite treats as a closed set.
-//
-// most osm tags are free text and stay that way — `name`, `addr:housenumber`, `postal_code`. these
-// three are different: the extraction asks "is this way a suburb?" against a fixed list, and the
-// list is what an enum is for. a value outside it is unrepresentable rather than a string typo.
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum place_value {
   neighbourhood,

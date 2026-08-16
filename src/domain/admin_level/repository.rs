@@ -1,9 +1,3 @@
-// the `admin_levels` table: the ddl, its index, the eight queries the extraction and the query path
-// run over it, and the upsert.
-//
-// a row read back may carry a level this build does not name — see `level_of`, which drops it with a
-// warning rather than failing the whole read.
-
 use rusqlite::Connection;
 
 use super::admin_level_id;
@@ -68,10 +62,6 @@ pub struct admin_level_geom_row {
   pub post_code: Option<String>,
 }
 
-// a level the scale does not name cannot have been written by this pipeline — the extraction side
-// only ever holds an `admin_level`. one showing up means the file was built by another version, so
-// the row is dropped with a warning instead of failing the whole read, matching what
-// `admin_geometry::column_result` does with a blob it cannot parse.
 fn level_of(id: i64, raw: u8) -> Option<level> {
   match level::new(raw) {
     Some(level) => Some(level),
@@ -184,8 +174,6 @@ const SQL_IDS_IN_BOUNDING_BOX: &str = "
     AND min_lat <= ?3 AND max_lat >= ?4
 ";
 
-// todos os ids cuja geometria (bbox) intersecta o envelope. usado para restringir o ranking
-// textual à região no tantivy (espacial-primeiro), em vez de filtrar depois do corte do fts
 pub fn ids_in_bounding_box(conn: &Connection, bbox: bounding_box) -> Vec<i64> {
   let mut stmt = conn
     .prepare(SQL_IDS_IN_BOUNDING_BOX)

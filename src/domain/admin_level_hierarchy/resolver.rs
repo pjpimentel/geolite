@@ -1,9 +1,3 @@
-// the containment algorithm: for every area, the smallest enclosing one, found by point-in-polygon
-// against an in-memory rtree of every candidate's bounding box.
-//
-// levels are resolved in ascending order so a parent is finished before its children read it, and
-// streets — the overwhelming majority — are processed last, in parallel, against the same tree.
-
 use geo::{Area, BoundingRect, Centroid, Geometry};
 
 use super::entity::{self, hierarchy_row};
@@ -92,7 +86,6 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
   let mut batch: Vec<hierarchy_row> = Vec::new();
   let mut processed = 0u64;
 
-  // process levels ASC so parents are resolved before children
   for indices in by_level.values() {
     let chunk_size = indices.len().div_ceil(n_workers).max(1);
     let (tx, rx) = mpsc::channel::<(usize, Vec<i64>, String)>();
@@ -462,7 +455,6 @@ fn point_in_polygons(px: f64, py: f64, polys: &[polygon_entry]) -> bool {
   })
 }
 
-// ray casting: O(n) per ring, returns true if (px, py) is inside
 fn point_in_ring(px: f64, py: f64, ring: &[[f64; 2]]) -> bool {
   let n = ring.len();
   if n < 3 {

@@ -1,25 +1,13 @@
-// sql expressions that read a tag out of an element's `payload` column.
-//
-// every path this crate builds goes through here, so the quoting rule lives in one place. what a
-// combination of tags *means* is not decided here — `osm_way::way_filter` says which ways a level
-// wants, and this module only knows how to write each condition down.
-//
-// `payload_expr` is the qualified column expression, e.g. `osm_data.osm_ways.payload`, or just
-// `payload` where the query has a single table in scope.
-
 use super::key::{json_path_of, osm_tag};
 
 fn extract(payload_expr: &str, tag: osm_tag) -> String {
   format!("JSON_EXTRACT({payload_expr}, '{}')", tag.json_path())
 }
 
-// sql string literals are single-quoted; a value carrying one would end the literal early. every
-// caller passes a compile-time constant today, and this keeps that from being load-bearing.
 fn quote(value: &str) -> String {
   format!("'{}'", value.replace('\'', "''"))
 }
 
-// the first key present wins, over keys given as free text.
 pub fn coalesce_of(payload_expr: &str, keys: &[&str]) -> String {
   let parts: Vec<String> = keys
     .iter()
@@ -32,8 +20,6 @@ pub fn coalesce_of(payload_expr: &str, keys: &[&str]) -> String {
   }
 }
 
-// the first key present wins, trimmed and upper-cased, with blank read as absent. this is how a
-// country code and a post code are lifted off an element into an admin level's columns.
 pub fn normalized_coalesce(payload_expr: &str, tags: &[osm_tag]) -> String {
   let parts: Vec<String> = tags
     .iter()

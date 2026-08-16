@@ -1,7 +1,3 @@
-// the `osm_data.osm_nodes` table: the ddl, the chunk index and the bulk insert. rows arrive with
-// their payload already encoded, in chunks of ten thousand, because the decoding happens in several
-// threads and only the write is serial.
-
 use rusqlite::Connection;
 
 use super::entity::osm_node_row;

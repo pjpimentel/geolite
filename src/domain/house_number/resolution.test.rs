@@ -73,8 +73,6 @@ fn _04_a_letter_suffix_matches_the_stored_canonical_form() {
   assert_eq!(out, house_number_resolution::exact(Point::new(1.0, 1.0)));
 }
 
-// the bug this domain was created for: the compound value reaches the database intact, and the
-// query now recognizes it whole instead of picking up its tail.
 #[test]
 fn _05_a_compound_number_resolves_against_its_stored_value() {
   let policy = compound_policy();
@@ -89,8 +87,6 @@ fn _05_a_compound_number_resolves_against_its_stored_value() {
   }
 }
 
-// a compound number that is not mapped cannot be interpolated: its leading part names a cross
-// street, so the values do not run in order along this one.
 #[test]
 fn _06_an_unmapped_compound_number_is_absent_rather_than_interpolated() {
   let policy = compound_policy();
@@ -99,7 +95,6 @@ fn _06_an_unmapped_compound_number_is_absent_rather_than_interpolated() {
   assert_eq!(out, house_number_resolution::absent);
 }
 
-// numbers that carry no leading digits ("s/n", "Lote 5") take no part in the bracketing.
 #[test]
 fn _07_values_without_a_leading_number_are_ignored_when_interpolating() {
   let street = known(&[("100", 0.0, 0.0), ("s/n", 9.0, 9.0), ("300", 4.0, 4.0)]);

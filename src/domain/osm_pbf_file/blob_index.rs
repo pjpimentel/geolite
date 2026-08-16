@@ -1,10 +1,3 @@
-// the byte layout of a source file — the `osm_data.osm_pbf_blob_chunks` table: one row per blob,
-// recording where it starts, how long it is and whether it carries the header or data.
-//
-// it is a second table subordinate to `osm_pbf_files`, the same arrangement `admin_level` uses for
-// its rtree: a chunk means nothing without the file it indexes, and `file_id` is its owner. the
-// extraction pipeline reads it to know which byte ranges to hand each decoder thread.
-
 use rusqlite::Connection;
 
 #[derive(Clone, Copy)]
@@ -53,8 +46,6 @@ const SQL_CREATE: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_pbf_blob_chunks;";
 
-// the leading DROP retires the name this index carried before it took its table's, so a database
-// built by an earlier version does not keep paying for a duplicate.
 const SQL_CREATE_INDEXES: &str = "
   DROP INDEX IF EXISTS osm_data.blob_chunks_search_by_file_and_type;
   CREATE INDEX IF NOT EXISTS osm_data.osm_pbf_blob_chunks_search_by_file_and_type

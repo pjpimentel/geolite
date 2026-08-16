@@ -108,5 +108,3 @@ fn _01_relation_ids_0_to_10_produce_bit_packed_ids() {
   );
 }
 
-
-
