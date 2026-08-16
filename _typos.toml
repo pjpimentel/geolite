@@ -35,6 +35,7 @@ ser = "ser"
 sinal = "sinal"
 tema = "tema"
 termo = "termo"
+vai = "vai"
 variantes = "variantes"
 
 # spanish street nomenclature carried by the colombia preset abbreviations

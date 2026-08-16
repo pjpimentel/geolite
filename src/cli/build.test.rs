@@ -60,8 +60,8 @@ fn synthetic_index(
     .map(|(i, name)| street_row(name, (i + 1) as u64, i as f64 * 0.0005))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let index = tantivy::build(
     &conn,
     Path::new(&work.index_path),

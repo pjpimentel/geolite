@@ -13,8 +13,13 @@ admin_level/    a named administrative area — the `admin_levels` table
   scale             the closed set of levels, their names and their order
   id                stable identity, packed from the osm way/relation it came from
   geometry          the wkb column codec, its mbr shortcut and the bounding box
-  repository        the ddl, the indexes, the eleven queries and the upsert
-  spatial_index     the rtree of every level's bounding box
+  repository        the ddl, the indexes, the nine queries and the upsert
+  spatial_index     the rtree of every level's bounding box, and the pass that fills it
+admin_level_hierarchy/  which area contains which — the `admin_levels_hierarchy` table
+  entity            the write shape, the read shape, and the ancestor chain's encoding
+  label             the `user_friendly_name` rule: own name, parent's label, post code
+  repository        the ddl, the lookup, the insert and what is still pending
+  resolver          the containment algorithm: point-in-polygon against an in-memory rtree
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the twelve writes and reads
   catalog           the geofabrik index, cached in the table, and the local listing
@@ -103,6 +108,46 @@ is implemented explicitly rather than derived, so that moving a variant cannot s
 
 `u8` survives in exactly two places, both of them edges: the `admin_levels.admin_level` column and
 the `level` field of the json response.
+
+## admin_level_hierarchy
+
+which area contains which, and the label you would read out loud —
+`"Rua Castro Alves, Embaré, Santos, São Paulo, Brasil"`.
+
+### why it is not two columns of `admin_level`
+
+the row is one-to-one with an `admin_levels` row (`admin_level_id INTEGER PRIMARY KEY REFERENCES
+admin_levels(id) ON DELETE CASCADE`) and cannot outlive it, which is the shape of a table extension.
+what makes it a concept of its own is the same test that kept the rtree inside `admin_level` and
+failed here on both halves:
+
+| | `admin_levels_rtree` | `admin_levels_hierarchy` |
+|---|---|---|
+| what it stores | a bounding box, recomputable in milliseconds | `user_friendly_name` — **rendered content**, with regional formatting |
+| who reads it | only `admin_level`'s own coordinate query | the tantivy index, the query path, and `optimize` |
+
+the tantivy document is one per **hierarchy** row, not per admin level — the hierarchy row, not the
+area, is the unit of search.
+
+### the chain points upward
+
+`ancestor_ids` is a json array of admin level ids ordered from the most specific enclosing area to
+the most general — `[bairro, cidade, estado, país]` — denormalised onto the child, because every
+read starts from a leaf and works outward. a directory view would want the opposite traversal and is
+a separate read model; nothing here provides it yet.
+
+the chain is **sparse and not strictly ranked**: a street whose centroid falls inside no
+neighbourhood attaches straight to its city, and an area may sit inside another at the same level
+when that one is larger.
+
+### the label
+
+composed from the parent's *finished* label rather than from the chain of ids, which is what makes
+it a single step — every ancestor's own post code is already inside the string it hands down.
+
+it is not the same thing as `query::render_friendly_name`, which renders a user-supplied template
+(`{admin_level_8_name}`) over the resolved areas at query time. the two diverge, and reconciling
+them is the open `place_label` task; `label` is where it will land.
 
 ## osm_pbf_file
 

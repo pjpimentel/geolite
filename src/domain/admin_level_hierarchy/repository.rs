@@ -1,4 +1,10 @@
+// the `admin_levels_hierarchy` table. the two `pending_*` queries live here rather than with
+// `admin_level` because they ask what this table still owes, not anything about an admin level.
+
 use rusqlite::Connection;
+
+use super::entity::{decode_chain, hierarchy_lookup_row, hierarchy_row};
+use crate::domain::admin_level::level;
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS admin_levels_hierarchy (
@@ -26,17 +32,38 @@ const SQL_INSERT: &str = "
   );
 ";
 
-impl_table_ops!(pub(super), SQL_CREATE, SQL_DROP);
+const SQL_PENDING_TOTAL: &str = "
+  WITH pending AS (
+    SELECT al.id
+    FROM admin_levels al
+    LEFT JOIN admin_levels_hierarchy h ON al.id = h.admin_level_id
+    WHERE h.admin_level_id IS NULL
+  )
+  SELECT COUNT(*) FROM pending
+";
 
-pub struct hierarchy_row {
-  pub admin_level_id: i64,
-  pub ancestor_ids: String,
-  pub user_friendly_name: String,
+const SQL_PENDING_STREET_IDS: &str = "
+  WITH already_indexed AS (
+    SELECT admin_level_id FROM admin_levels_hierarchy
+  )
+  SELECT al.id
+  FROM admin_levels al
+  LEFT JOIN already_indexed ai ON al.id = ai.admin_level_id
+  WHERE al.admin_level = ?1
+    AND ai.admin_level_id IS NULL
+  ORDER BY al.id ASC
+";
+
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create admin_levels_hierarchy");
 }
 
-pub struct hierarchy_lookup_row {
-  pub user_friendly_name: String,
-  pub ancestor_ids: Vec<i64>,
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop admin_levels_hierarchy");
 }
 
 pub fn destroy(conn: &Connection) {
@@ -48,6 +75,23 @@ pub fn count(conn: &Connection) -> i64 {
   conn
     .query_row(SQL_COUNT, [], |row| row.get(0))
     .expect("failed to count admin_levels_hierarchy")
+}
+
+pub fn pending_total(conn: &Connection) -> i64 {
+  conn
+    .query_row(SQL_PENDING_TOTAL, [], |row| row.get::<_, i64>(0))
+    .expect("failed to query pending total")
+}
+
+pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
+  let mut stmt = conn
+    .prepare(SQL_PENDING_STREET_IDS)
+    .expect("failed to prepare pending streets");
+  stmt
+    .query_map([level::street.value()], |row| row.get::<_, i64>(0))
+    .expect("failed to query pending streets")
+    .map(|r| r.expect("failed to read street id"))
+    .collect()
 }
 
 pub fn load_by_ids(
@@ -78,12 +122,11 @@ pub fn load_by_ids(
     .expect("failed to query hierarchy load_by_ids")
     .filter_map(|r| r.ok())
     .map(|(id, name, json_str)| {
-      let ancestor_ids: Vec<i64> = serde_json::from_str(&json_str).unwrap_or_default();
       (
         id,
         hierarchy_lookup_row {
           user_friendly_name: name,
-          ancestor_ids,
+          ancestor_ids: decode_chain(&json_str),
         },
       )
     })

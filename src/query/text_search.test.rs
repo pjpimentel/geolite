@@ -80,8 +80,8 @@ fn _00_text_search_prioritizes_exact_case_match() {
     make_street_row("bbb", 0.003, 4),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out_a = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "AAA", None, None, None, None, true);
@@ -109,8 +109,8 @@ fn _01_text_search_prioritizes_closest_spelling_variant() {
     make_street_row("Brazil", 0.001, 2),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out_brasil = crate::query::run(&conn, &crate::presets::DEFAULT.house_numbers, Some(&index), "brasil", None, None, None, None, true);
@@ -138,8 +138,8 @@ fn _03_text_search_prioritizes_matching_diacritic_variant() {
     make_street_row("Praca", 0.001, 2),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out_praca_diacritico =
@@ -170,8 +170,8 @@ fn _04_text_search_prioritizes_record_with_matching_hierarchy() {
     make_street_row("rua castro alves, embare, santos", 0.002, 3),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let first_match = |input: &str| -> Option<String> {
@@ -208,8 +208,8 @@ fn _05_text_search_prioritizes_matching_word_order() {
     make_street_row("rua castro alves embare", 0.002, 3),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let mut out = crate::query::run(
@@ -249,8 +249,8 @@ fn _06_text_search_finds_street_by_postcode_with_hyphen() {
     make_street_row_with_postcode("rua oscar freire", 0.001, 2, Some("01426-001")),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out = crate::query::run(
@@ -281,8 +281,8 @@ fn _07_text_search_finds_street_by_postcode_without_hyphen() {
     make_street_row_with_postcode("rua oscar freire", 0.001, 2, Some("01426-001")),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out = crate::query::run(
@@ -314,8 +314,8 @@ fn _08_friendly_name_contains_postcode_when_street_has_one() {
     Some("01310-100"),
   )];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out = crate::query::run(
@@ -338,8 +338,8 @@ fn _09_friendly_name_omits_postcode_when_street_has_none() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("av paulista", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out = crate::query::run(
@@ -362,8 +362,8 @@ fn _10_text_search_finds_match_when_input_has_extra_leading_word() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("sehrs", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let output = crate::query::run(
@@ -385,8 +385,8 @@ fn _11_text_search_finds_match_when_input_has_extra_trailing_word() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua oscar freire", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let output = crate::query::run(
@@ -413,8 +413,8 @@ fn _12_text_search_rank_results_as_expected() {
     make_street_row("hot sehrs", 0.004, 4),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let output = crate::query::run(
@@ -444,8 +444,8 @@ fn _13_similarity_reflects_match_quality() {
     make_street_row("Praça da Sé", 0.002, 3),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let outputs = &[
@@ -605,8 +605,8 @@ fn _14_text_search_praca_doutor_hipolito_do_rego_embare_santos() {
     make_street_row("Embaré", 0.005, 6),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out = crate::query::run(
@@ -644,8 +644,8 @@ fn _15_text_search_with_trailing_house_number_resolves_exact_point() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua oscar freire", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua oscar freire");
   insert_house_number(&conn, id, 1, "100", -46.31980, -23.97240);
   insert_house_number(&conn, id, 2, "200", -46.31960, -23.97220);
@@ -680,8 +680,8 @@ fn _16_text_search_with_leading_house_number_resolves_exact_point() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua oscar freire", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua oscar freire");
   insert_house_number(&conn, id, 1, "100", -46.31980, -23.97240);
   insert_house_number(&conn, id, 2, "200", -46.31960, -23.97220);
@@ -711,8 +711,8 @@ fn _17_text_search_with_missing_house_number_interpolates_between_neighbors() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua oscar freire", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua oscar freire");
   insert_house_number(&conn, id, 1, "100", -46.31980, -23.97240);
   insert_house_number(&conn, id, 2, "200", -46.31960, -23.97220);
@@ -747,8 +747,8 @@ fn _18_text_search_with_unbracketable_house_number_marks_absent() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua oscar freire", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua oscar freire");
   insert_house_number(&conn, id, 1, "100", -46.31980, -23.97240);
   insert_house_number(&conn, id, 2, "200", -46.31960, -23.97220);
@@ -782,8 +782,8 @@ fn _19_text_search_by_postcode_does_not_strip_a_house_number() {
     make_street_row_with_postcode("rua oscar freire", 0.001, 2, Some("01426-001")),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   for q in ["01310-100", "01310100"] {
@@ -802,8 +802,8 @@ fn _20_text_search_ignores_a_street_name_number_and_resolves_the_house_number() 
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua 25 de marco", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua 25 de marco");
   insert_house_number(&conn, id, 1, "100", -46.31980, -23.97240);
   let (_index_guard, index) = build_test_index(&conn);
@@ -843,8 +843,8 @@ fn _21_house_number_resolves_the_same_in_the_middle_or_at_the_end() {
     1,
   )];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua castro alves, embare, santos");
   insert_house_number(&conn, id, 1, "35", -46.31980, -23.97240);
   let (_index_guard, index) = build_test_index(&conn);
@@ -871,8 +871,8 @@ fn _22_uses_only_the_first_numeric_occurrence_after_the_street_name() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua oscar freire", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua oscar freire");
   insert_house_number(&conn, id, 1, "200", -46.31960, -23.97220);
   let (_index_guard, index) = build_test_index(&conn);
@@ -902,8 +902,8 @@ fn _23_ignores_every_number_that_belongs_to_the_street_name() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua 25 de marco de 2024", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua 25 de marco de 2024");
   insert_house_number(&conn, id, 1, "100", -46.31980, -23.97240);
   let (_index_guard, index) = build_test_index(&conn);
@@ -957,8 +957,8 @@ fn _24_segment_with_house_number_outranks_the_bare_segment() {
     make_street_row("rua castro alves", 0.001, 2),
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id2 = id_by_way(&conn, 2);
   insert_house_number(&conn, id2, 1, "35", -46.31879, -23.97240);
   let (_index_guard, index) = build_test_index(&conn);
@@ -1011,8 +1011,8 @@ fn _25_resolving_the_house_number_boosts_similarity() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua oscar freire", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua oscar freire");
   insert_house_number(&conn, id, 1, "100", -46.31980, -23.97240);
   let (_index_guard, index) = build_test_index(&conn);
@@ -1063,8 +1063,8 @@ fn _26_admin_level_filter_keeps_only_requested_levels() {
   let mut city = make_street_row("embare", 0.001, 2);
   city.level = level::city;
   batch_upsert(&conn, &[street, city]);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out_city = crate::query::run(
@@ -1100,8 +1100,8 @@ fn _27_house_number_enriched_match_requires_level_30_in_the_filter() {
   let conn = crate::database::open_write(":memory:");
   let rows = vec![make_street_row("rua oscar freire", 0.000, 1)];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua oscar freire");
   insert_house_number(&conn, id, 1, "100", -46.31980, -23.97240);
   let (_index_guard, index) = build_test_index(&conn);
@@ -1146,8 +1146,8 @@ fn _28_admin_level_filter_finds_levels_ranked_beyond_the_fts_limit() {
   city.level = level::city;
   rows.push(city);
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let out = crate::query::run(
@@ -1186,8 +1186,8 @@ fn _30_bounding_wkt_keeps_in_region_match_ranked_beyond_fts_limit() {
     100,
   ));
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let (_index_guard, index) = build_test_index(&conn);
 
   let bounds = crate::http::parse_bounding_wkt(
@@ -1220,8 +1220,8 @@ fn _30_bounding_wkt_keeps_in_region_match_ranked_beyond_fts_limit() {
 fn _31_colombian_compound_house_number_resolves_exactly_under_its_preset() {
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row("calle 82", 0.000, 1)]);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "calle 82");
   insert_house_number(&conn, id, 1, "52-48", -46.31980, -23.97240);
   insert_house_number(&conn, id, 2, "52-60", -46.31960, -23.97220);
@@ -1258,8 +1258,8 @@ fn _31_colombian_compound_house_number_resolves_exactly_under_its_preset() {
 fn _32_a_compound_number_stays_invisible_under_a_simple_preset() {
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row("rua x", 0.000, 1)]);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let id = street_id(&conn, "rua x");
   insert_house_number(&conn, id, 1, "12-14", -46.31980, -23.97240);
   let (_index_guard, index) = build_test_index(&conn);

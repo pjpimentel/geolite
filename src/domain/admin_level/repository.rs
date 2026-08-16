@@ -76,22 +76,6 @@ fn level_of(id: i64, raw: u8) -> Option<level> {
   }
 }
 
-const SQL_PENDING_TOTAL: &str = "
-  WITH pending AS (
-    SELECT al.id
-    FROM admin_levels al
-    LEFT JOIN admin_levels_hierarchy h ON al.id = h.admin_level_id
-    WHERE h.admin_level_id IS NULL
-  )
-  SELECT COUNT(*) FROM pending
-";
-
-pub fn pending_total(conn: &Connection) -> i64 {
-  conn
-    .query_row(SQL_PENDING_TOTAL, [], |row| row.get::<_, i64>(0))
-    .expect("failed to query pending total")
-}
-
 const SQL_LOAD_ALL_BELOW_STREET: &str = "
   SELECT
     id,
@@ -127,29 +111,6 @@ fn map_geom_row(row: &rusqlite::Row) -> rusqlite::Result<Option<admin_level_geom
     wkb: row.get(3)?,
     post_code: row.get(4)?,
   }))
-}
-
-const SQL_PENDING_STREET_IDS: &str = "
-  WITH already_indexed AS (
-    SELECT admin_level_id FROM admin_levels_hierarchy
-  )
-  SELECT al.id
-  FROM admin_levels al
-  LEFT JOIN already_indexed ai ON al.id = ai.admin_level_id
-  WHERE al.admin_level = ?1
-    AND ai.admin_level_id IS NULL
-  ORDER BY al.id ASC
-";
-
-pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
-  let mut stmt = conn
-    .prepare(SQL_PENDING_STREET_IDS)
-    .expect("failed to prepare pending streets");
-  stmt
-    .query_map([level::street.value()], |row| row.get::<_, i64>(0))
-    .expect("failed to query pending streets")
-    .map(|r| r.expect("failed to read street id"))
-    .collect()
 }
 
 pub struct street_query_row {

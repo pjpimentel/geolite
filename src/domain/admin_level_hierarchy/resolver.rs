@@ -1,6 +1,9 @@
 use geo::{Area, BoundingRect, Centroid, Geometry};
 
+use super::entity::{self, hierarchy_row};
+use super::{label, repository};
 use crate::domain::admin_level::level;
+use crate::domain::admin_level::repository as admin_level_repository;
 use rstar::{AABB, RTree, RTreeObject};
 use std::collections::BTreeMap;
 use std::sync::mpsc;
@@ -47,7 +50,7 @@ struct ancestor_entry {
 }
 
 pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
-  let total = crate::domain::admin_level::repository::pending_total(conn) as u64;
+  let total = repository::pending_total(conn) as u64;
   progress(progress_report {
     total: Some(total),
     processed: 0,
@@ -57,7 +60,7 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
     return;
   }
 
-  let raw = crate::domain::admin_level::repository::load_all_below_street(conn);
+  let raw = admin_level_repository::load_all_below_street(conn);
   let mut entries: Vec<ancestor_entry> = raw.iter().map(parse_entry).collect();
 
   let mut by_level: BTreeMap<level, Vec<usize>> = BTreeMap::new();
@@ -80,7 +83,7 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
     .unwrap_or(4)
     .min(MAX_WORKERS);
 
-  let mut batch: Vec<crate::database::admin_levels_hierarchy::hierarchy_row> = Vec::new();
+  let mut batch: Vec<hierarchy_row> = Vec::new();
   let mut processed = 0u64;
 
   // process levels ASC so parents are resolved before children
@@ -136,27 +139,27 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
         let new_ancestors: Vec<i64> = std::iter::once(parent_id)
           .chain(entries[parent_idx].ancestor_ids.iter().copied())
           .collect();
-        let base = format!(
-          "{}, {}",
-          entries[idx].name, entries[parent_idx].user_friendly_name
+        let new_ufn = label::nested(
+          &entries[idx].name,
+          &entries[parent_idx].user_friendly_name,
+          entries[idx].own_post_code.as_deref(),
         );
-        let new_ufn = with_postcode(&base, entries[idx].own_post_code.as_deref());
         entries[idx].ancestor_ids = new_ancestors;
         entries[idx].user_friendly_name = new_ufn;
       }
     }
 
     for &idx in indices.iter() {
-      batch.push(crate::database::admin_levels_hierarchy::hierarchy_row {
+      batch.push(hierarchy_row {
         admin_level_id: entries[idx].id,
-        ancestor_ids: ids_to_json(&entries[idx].ancestor_ids),
+        ancestor_ids: entity::encode_chain(&entries[idx].ancestor_ids),
         user_friendly_name: entries[idx].user_friendly_name.clone(),
       });
       processed += 1;
     }
 
     if batch.len() >= BATCH_SIZE {
-      crate::database::admin_levels_hierarchy::batch_insert(conn, &batch);
+      repository::batch_insert(conn, &batch);
       batch.clear();
       progress(progress_report {
         total: Some(total),
@@ -166,7 +169,7 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
   }
 
   if !batch.is_empty() {
-    crate::database::admin_levels_hierarchy::batch_insert(conn, &batch);
+    repository::batch_insert(conn, &batch);
     batch.clear();
     progress(progress_report {
       total: Some(total),
@@ -174,7 +177,7 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
     });
   }
 
-  let street_ids = crate::domain::admin_level::repository::pending_street_ids(conn);
+  let street_ids = repository::pending_street_ids(conn);
   // conn.path() retorna Some("") para `:memory:` — workers nao conseguem reabrir,
   // entao fallback para o caminho sequencial.
   match conn.path().filter(|p| !p.is_empty()) {
@@ -213,7 +216,7 @@ fn run_streets_parallel(
   n_workers: usize,
   progress: &impl Fn(progress_report),
 ) {
-  type row_t = crate::database::admin_levels_hierarchy::hierarchy_row;
+  type row_t = hierarchy_row;
   let (tx, rx) = mpsc::channel::<Vec<row_t>>();
   let chunk_size = street_ids.len().div_ceil(n_workers).max(1);
 
@@ -231,7 +234,7 @@ fn run_streets_parallel(
           return;
         };
         for sub_chunk in id_chunk.chunks(READ_SIZE) {
-          let rows = crate::domain::admin_level::repository::load_by_ids(&reader, sub_chunk);
+          let rows = admin_level_repository::load_by_ids(&reader, sub_chunk);
           let out: Vec<row_t> = rows
             .iter()
             .map(|db_row| {
@@ -249,7 +252,7 @@ fn run_streets_parallel(
               );
               row_t {
                 admin_level_id: e.id,
-                ancestor_ids: ids_to_json(&ancestor_ids),
+                ancestor_ids: entity::encode_chain(&ancestor_ids),
                 user_friendly_name,
               }
             })
@@ -265,7 +268,7 @@ fn run_streets_parallel(
       *processed += sub_batch.len() as u64;
       batch.extend(sub_batch);
       if batch.len() >= BATCH_SIZE {
-        crate::database::admin_levels_hierarchy::batch_insert(conn, &batch);
+        repository::batch_insert(conn, &batch);
         batch.clear();
         progress(progress_report {
           total: Some(total),
@@ -274,7 +277,7 @@ fn run_streets_parallel(
       }
     }
     if !batch.is_empty() {
-      crate::database::admin_levels_hierarchy::batch_insert(conn, &batch);
+      repository::batch_insert(conn, &batch);
       progress(progress_report {
         total: Some(total),
         processed: *processed,
@@ -292,11 +295,11 @@ fn run_streets_sequential(
   processed: &mut u64,
   progress: &impl Fn(progress_report),
 ) {
-  type row_t = crate::database::admin_levels_hierarchy::hierarchy_row;
+  type row_t = hierarchy_row;
   let mut batch: Vec<row_t> = Vec::new();
 
   for chunk in street_ids.chunks(READ_SIZE) {
-    let rows = crate::domain::admin_level::repository::load_by_ids(conn, chunk);
+    let rows = admin_level_repository::load_by_ids(conn, chunk);
     for db_row in &rows {
       let e = parse_entry(db_row);
       let (ancestor_ids, user_friendly_name) = resolve_hierarchy(
@@ -312,13 +315,13 @@ fn run_streets_sequential(
       );
       batch.push(row_t {
         admin_level_id: e.id,
-        ancestor_ids: ids_to_json(&ancestor_ids),
+        ancestor_ids: entity::encode_chain(&ancestor_ids),
         user_friendly_name,
       });
       *processed += 1;
     }
     if batch.len() >= BATCH_SIZE {
-      crate::database::admin_levels_hierarchy::batch_insert(conn, &batch);
+      repository::batch_insert(conn, &batch);
       batch.clear();
       progress(progress_report {
         total: Some(total),
@@ -328,7 +331,7 @@ fn run_streets_sequential(
   }
 
   if !batch.is_empty() {
-    crate::database::admin_levels_hierarchy::batch_insert(conn, &batch);
+    repository::batch_insert(conn, &batch);
     progress(progress_report {
       total: Some(total),
       processed: *processed,
@@ -336,7 +339,7 @@ fn run_streets_sequential(
   }
 }
 
-fn parse_entry(row: &crate::domain::admin_level::repository::admin_level_geom_row) -> ancestor_entry {
+fn parse_entry(row: &admin_level_repository::admin_level_geom_row) -> ancestor_entry {
   let geometry = row.wkb.as_ref().map(|g| g.geometry().clone());
   let (cx, cy) = geometry
     .as_ref()
@@ -350,7 +353,7 @@ fn parse_entry(row: &crate::domain::admin_level::repository::admin_level_geom_ro
     .map(|r| [r.min().x, r.min().y, r.max().x, r.max().y]);
   let polys = geometry.map(extract_polygons).unwrap_or_default();
   let own_post_code = row.post_code.clone();
-  let user_friendly_name = with_postcode(&row.name, own_post_code.as_deref());
+  let user_friendly_name = label::root(&row.name, own_post_code.as_deref());
   ancestor_entry {
     id: row.id,
     admin_level: row.admin_level,
@@ -363,13 +366,6 @@ fn parse_entry(row: &crate::domain::admin_level::repository::admin_level_geom_ro
     ancestor_ids: vec![],
     user_friendly_name,
     own_post_code,
-  }
-}
-
-fn with_postcode(base: &str, own_post_code: Option<&str>) -> String {
-  match own_post_code.map(str::trim).filter(|s| !s.is_empty()) {
-    Some(pc) => format!("{base}, {pc}"),
-    None => base.to_string(),
   }
 }
 
@@ -437,13 +433,15 @@ fn resolve_hierarchy(
   }
 
   match parent {
-    None => (vec![], with_postcode(name, own_post_code)),
+    None => (vec![], label::root(name, own_post_code)),
     Some(idx) => {
       let p = &entries[idx];
       let mut ancestor_ids = vec![p.id];
       ancestor_ids.extend_from_slice(&p.ancestor_ids);
-      let base = format!("{name}, {}", p.user_friendly_name);
-      (ancestor_ids, with_postcode(&base, own_post_code))
+      (
+        ancestor_ids,
+        label::nested(name, &p.user_friendly_name, own_post_code),
+      )
     }
   }
 }
@@ -489,8 +487,4 @@ fn build_rtree(entries: &[ancestor_entry]) -> RTree<spatial_entry> {
     })
     .collect();
   RTree::bulk_load(objects)
-}
-
-fn ids_to_json(ids: &[i64]) -> String {
-  serde_json::to_string(ids).unwrap_or_else(|_| "[]".to_string())
 }

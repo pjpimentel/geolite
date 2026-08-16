@@ -53,7 +53,7 @@ fn token_coverage(query_tokens: &[String], doc_text: &str) -> f32 {
 
 fn build_match(
   record: &crate::domain::admin_level::repository::admin_area_row,
-  hierarchy: Option<&crate::database::admin_levels_hierarchy::hierarchy_lookup_row>,
+  hierarchy: Option<&crate::domain::admin_level_hierarchy::hierarchy_lookup_row>,
   meta_map: &HashMap<i64, crate::domain::admin_level::repository::admin_meta_row>,
   query_tokens: &[String],
   raw_score: f32,
@@ -174,7 +174,7 @@ pub(crate) fn run(
   let ids: Vec<i64> = hits.iter().map(|(id, _)| *id).collect();
   let scores: HashMap<i64, f32> = hits.into_iter().collect();
 
-  let hierarchies = crate::database::admin_levels_hierarchy::load_by_ids(conn, &ids);
+  let hierarchies = crate::domain::admin_level_hierarchy::repository::load_by_ids(conn, &ids);
   let mut all_ancestor_ids: Vec<i64> = hierarchies
     .values()
     .flat_map(|h| h.ancestor_ids.iter().copied())

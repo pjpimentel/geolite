@@ -16,7 +16,7 @@ fn scene(tag: &str, with_streets: bool, with_hierarchy: bool) -> (tempdir_guard,
     );
   }
   if with_hierarchy {
-    crate::index::hierarchy::run(&conn, |_| {});
+    crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   }
   (guard, db, index)
 }

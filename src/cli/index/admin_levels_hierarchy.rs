@@ -11,7 +11,7 @@ pub fn command_handler_index_admin_levels_hierarchy(sqlite_path: &str) {
   }
   print!("\x1b[1;32mclearing\x1b[0m hierarchy...");
   let _ = std::io::stdout().flush();
-  crate::database::admin_levels_hierarchy::destroy(&conn);
+  crate::domain::admin_level_hierarchy::repository::destroy(&conn);
   println!(" done");
 
   let bar = super::progress_bar();
@@ -27,7 +27,7 @@ pub fn command_handler_index_admin_levels_hierarchy(sqlite_path: &str) {
 
   let start = Instant::now();
 
-  crate::index::hierarchy::run(&conn, |p| {
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |p| {
     if let Some(total) = p.total
       && bar.length().is_none()
     {

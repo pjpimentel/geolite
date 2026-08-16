@@ -226,7 +226,7 @@ fn _00_returns_the_10_closest_records() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -296,7 +296,7 @@ fn _01_results_are_ordered_by_distance_from_coordinates_to_street() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -381,8 +381,8 @@ fn run_hierarchy_case(area_admin_level: level, area_name: &str) {
     },
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -525,8 +525,8 @@ fn run_split_hierarchy_case(area_admin_level: level) {
     },
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -689,8 +689,8 @@ fn run_nested_polygons_case(area_admin_level: level) {
     },
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -750,7 +750,7 @@ fn _05_bounding_box_keeps_only_matches_inside_the_box() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let bbox = crate::query::bounding_box {
     min_lat: -23.97245,
@@ -783,7 +783,7 @@ fn _06_bounding_box_excluding_all_matches_returns_empty_matches() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let bbox = crate::query::bounding_box {
     min_lat: 10.0,
@@ -815,7 +815,7 @@ fn _07_degenerate_bounding_geometry_with_zero_area_does_not_panic() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let bbox = crate::query::bounding_box {
     min_lat: -23.97241,
@@ -848,7 +848,7 @@ fn _08_admin_level_filter_keeps_matches_with_requested_level() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -873,7 +873,7 @@ fn _09_admin_level_filter_with_no_matching_level_returns_empty_matches() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -939,7 +939,7 @@ fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
     post_code: None,
   });
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // interior do triangulo: x+y > 0.06 → contem far (0.10), exclui as 10 near (≤0.02). o envelope
   // [-0.02,0.08]² cobre todas, entao as near passam o rtree e (sem a correcao) truncariam a far fora
@@ -958,7 +958,7 @@ fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
 #[test]
 fn _13_no_candidates_returns_empty() {
   let conn = crate::database::open_write(":memory:");
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let candidates = best_admin_levels(&conn, Point::new(STREETS[0].lon1, STREETS[0].lat1), None);
   assert!(candidates.is_empty());
@@ -968,7 +968,7 @@ fn _13_no_candidates_returns_empty() {
 fn _14_candidate_outside_rtree_delta_is_not_returned() {
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // street_00 sits near (-46.3, -23.97); a query at (0, 0) is far beyond the
   // RTREE_DELTA_DEG (0.1) box, so the rtree pre-filter never surfaces it.
@@ -980,7 +980,7 @@ fn _14_candidate_outside_rtree_delta_is_not_returned() {
 fn _15_candidate_within_delta_is_included_with_distance() {
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // querying exactly on the street's first endpoint → closest point is that
   // vertex → haversine distance is 0.
@@ -999,7 +999,7 @@ fn _16_multiple_candidates_ordered_by_distance_ascending() {
     .map(|i| make_street_row(&STREETS[i], (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // every candidate is admin_level 12 (streets_for_coordinates hardcodes
   // `admin_level = 12`), so the `admin_level DESC` tier of the sort is never
@@ -1019,7 +1019,7 @@ fn _17_empty_linestring_candidate_is_discarded() {
 
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // rewrite the indexed street to an empty linestring. the rtree row (built from
   // the original geometry's bbox) survives, so the candidate is still returned to
@@ -1070,7 +1070,7 @@ fn insert_horizontal_segment(conn: &Connection) {
     post_code: None,
   };
   batch_upsert(conn, &[row]);
-  crate::index::coordinates::run(conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(conn, |_| {});
 }
 
 #[test]

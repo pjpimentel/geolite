@@ -27,7 +27,7 @@ pub fn command_handler_index_coordinates(sqlite_path: &str) {
 
   let start = Instant::now();
 
-  crate::index::coordinates::run(&conn, |p| {
+  crate::domain::admin_level::spatial_index::run(&conn, |p| {
     if let Some(total) = p.total
       && bar.length().is_none()
     {

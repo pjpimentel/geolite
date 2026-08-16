@@ -165,7 +165,7 @@ pub(crate) fn run(
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
 
   // 1 find the pre-computed hierarchy for each possible solution
-  let hierarchies = crate::database::admin_levels_hierarchy::load_by_ids(conn, &candidate_ids);
+  let hierarchies = crate::domain::admin_level_hierarchy::repository::load_by_ids(conn, &candidate_ids);
   let mut all_ancestor_ids: Vec<i64> = hierarchies
     .values()
     .flat_map(|h| h.ancestor_ids.iter().copied())

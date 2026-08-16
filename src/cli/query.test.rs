@@ -18,8 +18,8 @@ fn indexed_scene(tag: &str) -> (tempdir_guard, String, String) {
     &conn,
     &[street_row("Rua Alpha", 1, 0.0), street_row("Rua Beta", 2, 0.0005)],
   );
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   tantivy::build(&conn, Path::new(&index), DEFAULT.index_user_friendly_name.boosts, &[]);
   (guard, db, index)
 }

@@ -8,7 +8,7 @@ pub fn command_handler_optimize_delete_intermediary_data(data_path: &str, sqlite
       eprintln!("\x1b[1;31merror\x1b[0m: admin_levels is empty — run extract first");
       return;
     }
-    if crate::database::admin_levels_hierarchy::count(&conn) == 0 {
+    if crate::domain::admin_level_hierarchy::repository::count(&conn) == 0 {
       eprintln!("\x1b[1;31merror\x1b[0m: admin_levels_hierarchy is empty — run index first");
       return;
     }

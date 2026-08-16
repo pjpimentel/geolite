@@ -13,7 +13,7 @@ pub fn run(
   preset: &crate::presets::index_user_friendly_name_preset,
   progress: impl Fn(progress_report),
 ) -> tantivy_index {
-  let total = crate::database::admin_levels_hierarchy::count(conn);
+  let total = crate::domain::admin_level_hierarchy::repository::count(conn);
   progress(progress_report {
     total: Some(total),
     processed: 0,
