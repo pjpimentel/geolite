@@ -55,7 +55,7 @@ impl buffer_data {
 }
 
 struct raw_blob {
-  chunk: crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk,
+  chunk: crate::domain::osm_pbf_file::osm_pbf_blob_chunk,
   data: Vec<u8>,
 }
 
@@ -129,7 +129,7 @@ pub struct progress {
 
 pub fn run(
   pbf: &str,
-  chunks: Vec<crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk>,
+  chunks: Vec<crate::domain::osm_pbf_file::osm_pbf_blob_chunk>,
   write_conn: rusqlite::Connection,
   opts: data_opts,
   threads: &u8,
@@ -271,7 +271,7 @@ pub fn run(
 /////////////////////////////////////////////////////////////////////////////////
 fn read_blob_bytes(
   file: &mut fs::File,
-  chunk: &crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk,
+  chunk: &crate::domain::osm_pbf_file::osm_pbf_blob_chunk,
 ) -> Vec<u8> {
   use io::Seek;
   file
@@ -294,7 +294,7 @@ fn decode_raw_blob(
   let mut relations = Vec::new();
 
   match raw.chunk.chunk_type {
-    crate::database::osm_pbf_blob_chunks::chunk_type::data => {
+    crate::domain::osm_pbf_file::chunk_type::data => {
       let output = decode_blob(&raw.data, opts);
       for n in output.nodes {
         nodes.push(osm_node_row::encode(&n, raw.chunk.id, encoder));
@@ -306,7 +306,7 @@ fn decode_raw_blob(
         relations.push(osm_relation_row::encode(&r, raw.chunk.id, encoder));
       }
     }
-    crate::database::osm_pbf_blob_chunks::chunk_type::header => {}
+    crate::domain::osm_pbf_file::chunk_type::header => {}
   }
 
   decoded_blob {
@@ -371,7 +371,7 @@ fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
 /////////////////////////////////////////////////////////////////////////////////
 fn reader_thread(
   pbf: String,
-  chunks: Vec<crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk>,
+  chunks: Vec<crate::domain::osm_pbf_file::osm_pbf_blob_chunk>,
   queue: Arc<raw_queue>,
   queue_cap: usize,
 ) -> std::thread::JoinHandle<()> {

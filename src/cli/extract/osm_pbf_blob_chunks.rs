@@ -53,7 +53,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
       .to_string_lossy()
       .into_owned();
 
-    let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, &osm_pbf_file_path);
+    let file_id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, &osm_pbf_file_path);
 
     let bar = ProgressBar::new_spinner();
     bar.set_draw_target(crate::cli::progress_draw_target());
@@ -69,7 +69,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
 
     let start = Instant::now();
 
-    let count = crate::extract::blob_chunks::run(&osm_pbf_file_path, &conn, file_id, |p| {
+    let count = crate::domain::osm_pbf_file::blob_scanner::run(&osm_pbf_file_path, &conn, file_id, |p| {
       if bar.length().is_none() {
         bar.set_length(p.total_bytes);
       }
@@ -82,7 +82,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
     println!("\x1b[1;32mextracted\x1b[0m {count} chunks from {fname} in {elapsed:.1}s");
   }
 
-  crate::database::osm_pbf_blob_chunks::create_indexes(&conn);
+  crate::domain::osm_pbf_file::blob_index::create_indexes(&conn);
 }
 
 #[cfg(test)]

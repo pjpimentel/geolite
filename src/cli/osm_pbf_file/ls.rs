@@ -9,7 +9,9 @@ pub fn command_handler_osm_pbf_file_ls(
 ) {
   match source {
     osm_pbf_file_ls_source::geofabrik => {
-      let items = crate::osm_pbf_file::ls::geofabrik(sqlite_path, *recreate_cache, ls_endpoint);
+      let conn = crate::database::open_write(sqlite_path);
+      let items =
+        crate::domain::osm_pbf_file::catalog::geofabrik(&conn, *recreate_cache, ls_endpoint);
       let id_w = items.iter().map(|i| i.id.len()).max().unwrap_or(0).max(2);
       let name_w = items.iter().map(|i| i.name.len()).max().unwrap_or(0).max(4);
       let url_w = items.iter().map(|i| i.url.len()).max().unwrap_or(0).max(3);
@@ -23,7 +25,7 @@ pub fn command_handler_osm_pbf_file_ls(
       }
     }
     osm_pbf_file_ls_source::local => {
-      let files = crate::osm_pbf_file::ls::list_local(data_path);
+      let files = crate::domain::osm_pbf_file::catalog::list_local(data_path);
       if files.is_empty() {
         println!("no pbf files found in {data_path}/");
         return;

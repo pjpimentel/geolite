@@ -4,7 +4,7 @@ use crate::cli::tests::street_row;
 use crate::domain::admin_level::{admin_level as admin_levels_row, repository::batch_upsert};
 use crate::database::{open_write, osm_data_path};
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
-use crate::osm_pbf_file::http_stubs::start_json_server;
+use crate::domain::osm_pbf_file::http_stubs::start_json_server;
 use crate::presets::{BRAZIL, DEFAULT};
 use crate::query;
 use rusqlite::Connection;

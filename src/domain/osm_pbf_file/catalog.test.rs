@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::osm_pbf_file::http_stubs::{start_json_server, start_recording_json_server};
+use crate::domain::osm_pbf_file::http_stubs::{start_json_server, start_recording_json_server};
 
 use super::{geofabrik, list_local, resolve_geofabrik_url};
 
@@ -11,15 +11,17 @@ fn tmp(name: &str) -> std::path::PathBuf {
   p
 }
 
-fn sqlite(name: &str) -> String {
-  tmp(name).join("test.sqlite3").to_str().unwrap().to_string()
+fn sqlite(name: &str) -> (String, rusqlite::Connection) {
+  let path = tmp(name).join("test.sqlite3").to_str().unwrap().to_string();
+  let conn = crate::database::open_write(&path);
+  (path, conn)
 }
 
 // 00: fetches index from http, persists rows in osm_pbf_files,
 // and returns items sorted by id.
 #[test]
 fn _00_fetches_and_caches_when_no_cache_exists() {
-  let db = sqlite("ls_t00");
+  let (db_path, db) = sqlite("ls_t00");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"europe/germany","name":"Germany","urls":{"pbf":"http://example.com/germany.osm.pbf"}}},{"type":"Feature","properties":{"id":"europe/france","name":"France","urls":{"pbf":"http://example.com/france.osm.pbf"}}}]}"#.to_string();
   let url = start_json_server(json);
   let items = geofabrik(&db, false, &url);
@@ -27,13 +29,13 @@ fn _00_fetches_and_caches_when_no_cache_exists() {
   assert_eq!(items[0].id, "europe/france");
   assert_eq!(items[0].url, "http://example.com/france.osm.pbf");
   assert_eq!(items[1].id, "europe/germany");
-  assert!(Path::new(&db).exists());
+  assert!(Path::new(&db_path).exists());
 }
 
 // 01: second call with recreate_cache=false reads from sqlite, no http.
 #[test]
 fn _01_returns_cached_without_refetching() {
-  let db = sqlite("ls_t01");
+  let (_db_path, db) = sqlite("ls_t01");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"asia/japan","name":"Japan","urls":{"pbf":"http://example.com/japan.osm.pbf"}}}]}"#.to_string();
   let (url, requests) = start_recording_json_server(json);
   geofabrik(&db, false, &url);
@@ -45,7 +47,7 @@ fn _01_returns_cached_without_refetching() {
 // 02: recreate_cache=true forces a new http fetch even when cache exists.
 #[test]
 fn _02_recreate_cache_forces_refetch() {
-  let db = sqlite("ls_t02");
+  let (_db_path, db) = sqlite("ls_t02");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"africa/kenya","name":"Kenya","urls":{"pbf":"http://example.com/kenya.osm.pbf"}}}]}"#.to_string();
   let (url, requests) = start_recording_json_server(json);
   geofabrik(&db, false, &url);
@@ -57,7 +59,7 @@ fn _02_recreate_cache_forces_refetch() {
 // 03: feature with no pbf url appears in output with "-" as url.
 #[test]
 fn _03_feature_without_pbf_url_has_dash_url() {
-  let db = sqlite("ls_t03");
+  let (_db_path, db) = sqlite("ls_t03");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"oceania/australia","name":"Australia"}}]}"#.to_string();
   let url = start_json_server(json);
   let items = geofabrik(&db, false, &url);
@@ -68,7 +70,7 @@ fn _03_feature_without_pbf_url_has_dash_url() {
 // 04: resolve_geofabrik_url returns the pbf url for a known id.
 #[test]
 fn _04_resolve_geofabrik_url_returns_url_for_known_id() {
-  let db = sqlite("ls_t04");
+  let (_db_path, db) = sqlite("ls_t04");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"south-america/brazil","name":"Brazil","urls":{"pbf":"http://example.com/brazil.osm.pbf"}}}]}"#.to_string();
   let url = start_json_server(json);
   let result = resolve_geofabrik_url(&db, "south-america/brazil", &url);
@@ -78,7 +80,7 @@ fn _04_resolve_geofabrik_url_returns_url_for_known_id() {
 // 05: resolve_geofabrik_url returns none for an unknown id.
 #[test]
 fn _05_resolve_geofabrik_url_returns_none_for_unknown_id() {
-  let db = sqlite("ls_t05");
+  let (_db_path, db) = sqlite("ls_t05");
   let json = r#"{"type":"FeatureCollection","features":[]}"#.to_string();
   let url = start_json_server(json);
   let result = resolve_geofabrik_url(&db, "nonexistent/region", &url);
@@ -88,7 +90,7 @@ fn _05_resolve_geofabrik_url_returns_none_for_unknown_id() {
 // 06: resolve_geofabrik_url returns none when the entry has no pbf url.
 #[test]
 fn _06_resolve_geofabrik_url_returns_none_for_entry_without_url() {
-  let db = sqlite("ls_t06");
+  let (_db_path, db) = sqlite("ls_t06");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"oceania/australia","name":"Australia"}}]}"#.to_string();
   let url = start_json_server(json);
   let result = resolve_geofabrik_url(&db, "oceania/australia", &url);
@@ -121,7 +123,7 @@ fn _08_list_local_returns_sorted_pbf_files() {
 // 09: resolve_geofabrik_url serves a cached url without refetching.
 #[test]
 fn _09_resolve_geofabrik_url_uses_cache_without_refetching() {
-  let db = sqlite("ls_t09");
+  let (_db_path, db) = sqlite("ls_t09");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"europe/spain","name":"Spain","urls":{"pbf":"http://example.com/spain.osm.pbf"}}}]}"#.to_string();
   let (url, requests) = start_recording_json_server(json);
   geofabrik(&db, false, &url);
@@ -143,7 +145,7 @@ fn _10_list_local_returns_empty_for_nonexistent_path() {
 // 11: outgoing requests carry the custom user-agent with the binary version.
 #[test]
 fn _11_sends_custom_user_agent_header() {
-  let db = sqlite("ls_t11");
+  let (_db_path, db) = sqlite("ls_t11");
   let json = r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"europe/spain","name":"Spain","urls":{"pbf":"http://example.com/spain.osm.pbf"}}}]}"#.to_string();
   let (url, requests) = start_recording_json_server(json);
   geofabrik(&db, false, &url);

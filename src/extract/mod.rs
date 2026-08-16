@@ -1,6 +1,4 @@
 pub mod admin_levels;
-pub mod blob_chunks;
-pub mod header;
 pub mod house_numbers;
 pub mod osm_data;
 

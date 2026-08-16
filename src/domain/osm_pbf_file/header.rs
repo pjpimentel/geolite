@@ -1,40 +1,15 @@
+// reads the file's first blob — the osm header — and writes what it says into the file's row: the
+// bounding box it covers, the features it needs, the program that wrote it and where its
+// replication stream lives.
+
 use prost::Message;
 use std::{
   fs,
   io::{Read, Seek},
 };
 
-#[derive(prost::Message)]
-struct header_block_msg {
-  #[prost(message, optional, tag = "1")]
-  bbox: Option<header_bbox_msg>,
-  #[prost(string, repeated, tag = "4")]
-  required_features: Vec<String>,
-  #[prost(string, repeated, tag = "5")]
-  optional_features: Vec<String>,
-  #[prost(string, optional, tag = "16")]
-  writingprogram: Option<String>,
-  #[prost(string, optional, tag = "17")]
-  source: Option<String>,
-  #[prost(int64, optional, tag = "32")]
-  osmosis_replication_timestamp: Option<i64>,
-  #[prost(int64, optional, tag = "33")]
-  osmosis_replication_sequence_number: Option<i64>,
-  #[prost(string, optional, tag = "34")]
-  osmosis_replication_base_url: Option<String>,
-}
-
-#[derive(prost::Message)]
-struct header_bbox_msg {
-  #[prost(sint64, tag = "1")]
-  left: i64,
-  #[prost(sint64, tag = "2")]
-  right: i64,
-  #[prost(sint64, tag = "3")]
-  top: i64,
-  #[prost(sint64, tag = "4")]
-  bottom: i64,
-}
+use super::{blob_index, repository};
+use crate::pbf::{blob, message};
 
 pub struct header_bbox {
   pub bottom: f64,
@@ -51,7 +26,7 @@ pub struct header_output {
 }
 
 pub fn run(pbf: &str, conn: &rusqlite::Connection, file_id: u32) -> header_output {
-  let chunk = crate::database::osm_pbf_blob_chunks::get_header_chunk(conn, file_id)
+  let chunk = blob_index::get_header_chunk(conn, file_id)
     .expect("no header chunk found in sqlite — run extract osm-pbf-blob-chunks first");
 
   let mut file = fs::File::open(pbf).expect("failed to open pbf file");
@@ -64,10 +39,10 @@ pub fn run(pbf: &str, conn: &rusqlite::Connection, file_id: u32) -> header_outpu
     .read_exact(&mut blob_buf)
     .expect("failed to read header blob");
 
-  let blob = crate::pbf::message::blob_msg::decode(blob_buf.as_slice()).expect("failed to decode blob");
-  let raw = crate::pbf::blob::decompress(&blob);
+  let blob = message::blob_msg::decode(blob_buf.as_slice()).expect("failed to decode blob");
+  let raw = blob::decompress(&blob);
 
-  let h = header_block_msg::decode(raw.as_slice()).expect("failed to decode header block");
+  let h = message::header_block_msg::decode(raw.as_slice()).expect("failed to decode header block");
 
   const NANO: f64 = 1e-9;
 
@@ -92,7 +67,7 @@ pub fn run(pbf: &str, conn: &rusqlite::Connection, file_id: u32) -> header_outpu
     Some(serde_json::to_vec(&h.optional_features).expect("failed to serialize optional_features"))
   };
 
-  crate::database::osm_pbf_files::update_osm_header(
+  repository::update_osm_header(
     conn,
     pbf,
     bbox_wkt,

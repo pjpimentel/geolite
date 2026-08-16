@@ -15,6 +15,14 @@ admin_level/    a named administrative area — the `admin_levels` table
   geometry          the wkb column codec, its mbr shortcut and the bounding box
   repository        the ddl, the indexes, the eleven queries and the upsert
   spatial_index     the rtree of every level's bounding box
+osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
+  repository        the ddl, the index and the twelve writes and reads
+  catalog           the geofabrik index, cached in the table, and the local listing
+  download          the parallel range download and the md5 verdict
+  header            the file's first blob → the `osm_header_*` columns
+  blob_index        the file's byte layout — the `osm_data.osm_pbf_blob_chunks` table
+  blob_scanner      the pass that walks the file and fills it
+  http_client       the one ureq agent the slice uses
 osm_node/       an openstreetmap node — the `osm_data.osm_nodes` table
   entity            the node itself, and the storage row with its encoded payload
   decoder           the pbf wire form, plain and dense, into nodes
@@ -43,7 +51,8 @@ house_number/   a door number placed on a street — the `house_numbers` table
 
 every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
 objects and services sit alongside. everything a concept needs is in one place, and the only write
-path into a table is through its entity.
+path into a table is through its entity. `osm_pbf_file` is the one folder without an `entity`, for a
+reason given below.
 
 the three osm element folders are where the storage row is public rather than private to the
 repository.
@@ -94,6 +103,50 @@ is implemented explicitly rather than derived, so that moving a variant cannot s
 
 `u8` survives in exactly two places, both of them edges: the `admin_levels.admin_level` column and
 the `level` field of the json response.
+
+## osm_pbf_file
+
+where every build starts: one row per `.osm.pbf` file, from the moment it is found in the geofabrik
+catalogue to the counts left behind after extraction.
+
+### the folder without an entity
+
+the row is a **ledger written in column groups**, each by a different moment of the pipeline:
+
+| columns | written by |
+|---|---|
+| `geofabrik_id`, `geofabrik_name`, `geofabrik_parent`, `geofabrik_url` | `catalog` |
+| `file_path`, `size_bytes`, `md5`, `downloaded_at` | `download` |
+| `osm_header_*` | `header` |
+| `node_count`, `way_count`, `relation_count`, `osm_data_extracted_at` | the osm-data stage |
+| `admin_levels_count`, `house_numbers_count` | the admin-level and house-number stages |
+
+and it is read back only by `file_path`, `geofabrik_url` and `id`. **nothing ever reads the row
+whole** — the struct that could, and the query behind it, sat unused behind `#[allow(dead_code)]`
+until this slice landed and deleted them. the ddl in `repository` is the shape.
+
+### ls
+
+1. fetches the geofabrik GeoJSON index from the configured endpoint
+1. caches all regions in `osm_pbf_files` (upsert by `geofabrik_id`)
+1. subsequent calls read from sqlite — skips http unless `recreate_cache` is set
+
+### download
+
+1. resolves the source: geofabrik id → looks up `geofabrik_url` in sqlite (fetching the index if not cached yet); direct url → used as-is
+1. if the destination file already exists, skips the download but still verifies its md5 and refreshes its metadata (reuses the file)
+1. splits the total size into N byte ranges and fetches them in parallel threads
+1. merges parts in order into the final `.osm.pbf` file
+1. verifies md5 checksum against `<url>.md5` (ok / mismatch / unavailable)
+1. records the result (`file_path`, `size_bytes`, `md5`, `downloaded_at`) in the matching `osm_pbf_files` row
+
+### the byte layout — `blob_index`
+
+`osm_data.osm_pbf_blob_chunks` is a second table subordinate to the first, the same arrangement
+`admin_level` uses for its rtree: a chunk is a byte range **of a file** and means nothing without
+one. `blob_scanner` fills it by walking the file front to back, reading only the length-prefixed
+blob headers and skipping every body — the one pass that never decompresses anything. the extraction
+pipeline then reads it to know which ranges to hand each decoder thread.
 
 ## house_number
 

@@ -22,8 +22,6 @@ pub mod admin_levels_hierarchy;
 pub mod jsonb;
 pub mod name_select;
 pub mod merge;
-pub mod osm_pbf_blob_chunks;
-pub mod osm_pbf_files;
 
 pub fn osm_data_path(main_path: &str) -> String {
   if main_path == ":memory:" {
@@ -92,7 +90,7 @@ pub fn open_write_main(path: &str) -> Connection {
   conn
     .pragma_update(None, "user_version", SCHEMA_VERSION)
     .expect("failed to set user_version");
-  osm_pbf_files::create_table(&conn);
+  crate::domain::osm_pbf_file::repository::create_table(&conn);
   crate::domain::admin_level::repository::create_table(&conn);
   admin_levels_hierarchy::create_table(&conn);
   crate::domain::admin_level::spatial_index::create(&conn);
@@ -113,7 +111,7 @@ pub fn open_write(path: &str) -> Connection {
        PRAGMA osm_data.cache_size=-32768;",
     )
     .expect("failed to set osm_data pragmas");
-  osm_pbf_blob_chunks::create_table(&conn);
+  crate::domain::osm_pbf_file::blob_index::create_table(&conn);
   crate::domain::osm_node::repository::create_table(&conn);
   crate::domain::osm_way::repository::create_table(&conn);
   crate::domain::osm_relation::repository::create_table(&conn);

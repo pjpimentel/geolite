@@ -3,8 +3,8 @@ use crate::extract::pbf_fixtures::{temp_scene, tiny_pbf, write_pbf};
 
 fn chunk_count(db_path: &str, pbf_path: &str) -> i64 {
   let conn = crate::database::open_write(db_path);
-  let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, pbf_path);
-  crate::database::osm_pbf_blob_chunks::count_by_file_id(&conn, file_id)
+  let file_id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, pbf_path);
+  crate::domain::osm_pbf_file::blob_index::count_by_file_id(&conn, file_id)
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn _00_03_resolves_input_from_database_id() {
   write_pbf(&scene.pbf_path, &tiny_pbf());
   let file_id = {
     let conn = crate::database::open_write(&scene.db_path);
-    crate::database::osm_pbf_files::ensure_by_file_path(&conn, &scene.pbf_path)
+    crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, &scene.pbf_path)
   };
   command_handler_extract_osm_pbf_blob_chunks(
     &scene.guard.path.to_string_lossy(),

@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf, sync::Arc};
 
-use crate::osm_pbf_file::http_stubs::{md5_reply, start_file_server};
+use crate::domain::osm_pbf_file::http_stubs::{md5_reply, start_file_server};
 
 use super::{download_event, md5_status, run};
 

@@ -1,41 +1,9 @@
+// the catalogue of source files. every column group here is written by a different moment of the
+// pipeline — the geofabrik columns by `catalog`, the download columns by `download`, the
+// `osm_header_*` columns by `header`, the counts by the extraction stages — and the row is read
+// back only by `file_path`, `geofabrik_url` and `id`.
+
 use rusqlite::Connection;
-
-#[allow(dead_code)]
-pub struct osm_pbf_files {
-  pub id: Option<u32>,
-
-  pub geofabrik_id: Option<String>,
-  pub geofabrik_name: Option<String>,
-  pub geofabrik_parent: Option<String>,
-  pub geofabrik_url: Option<String>,
-  pub geofabrik_wkt: Option<Vec<u8>>,
-
-  pub file_path: Option<String>,
-  pub size_bytes: Option<u64>,
-  pub md5: Option<String>,
-  pub downloaded_at: Option<i64>,
-
-  pub osm_data_extracted_at: Option<i64>,
-
-  pub osm_header_bbox_wkt: Option<Vec<u8>>,
-  pub osm_header_required_features: Option<Vec<String>>,
-  pub osm_header_optional_features: Option<Vec<String>>,
-  pub osm_header_writingprogram: Option<String>,
-  pub osm_header_source: Option<String>,
-  pub osm_header_osmosis_replication_timestamp: Option<i64>,
-  pub osm_header_osmosis_replication_sequence_number: Option<u32>,
-  pub osm_header_osmosis_replication_base_url: Option<String>,
-
-  pub node_count: Option<u64>,
-  pub way_count: Option<u64>,
-  pub relation_count: Option<u64>,
-
-  pub admin_levels_count: Option<i64>,
-  pub house_numbers_count: Option<i64>,
-
-  pub created_at: Option<i64>,
-  pub updated_at: Option<i64>,
-}
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS osm_pbf_files (
@@ -81,9 +49,20 @@ const SQL_CREATE_INDEXES: &str = "
     ON osm_pbf_files(geofabrik_url);
 ";
 
-impl_table_ops!(pub(super), SQL_CREATE, SQL_DROP);
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create osm_pbf_files");
+}
 
-pub(crate) fn create_indexes(conn: &Connection) {
+#[allow(dead_code)]
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop osm_pbf_files");
+}
+
+pub fn create_indexes(conn: &Connection) {
   conn
     .execute_batch(SQL_CREATE_INDEXES)
     .expect("failed to create osm_pbf_files indexes");
@@ -116,7 +95,7 @@ const SQL_UPSERT_GEOFABRIK_BY_ID: &str = "
     geofabrik_url = excluded.geofabrik_url
 ";
 
-pub(crate) fn upsert_geofabrik_index_item(
+pub fn upsert_geofabrik_index_item(
   conn: &Connection,
   geofabrik_id: &str,
   name: &str,
@@ -149,7 +128,7 @@ const SQL_LIST_GEOFABRIK_INDEX: &str = "
   ORDER BY geofabrik_id
 ";
 
-pub(crate) fn list_geofabrik_index(conn: &Connection) -> Vec<(String, String, String)> {
+pub fn list_geofabrik_index(conn: &Connection) -> Vec<(String, String, String)> {
   conn
     .prepare(SQL_LIST_GEOFABRIK_INDEX)
     .expect("failed to prepare list_geofabrik_index")
@@ -172,7 +151,7 @@ const SQL_GET_GEOFABRIK_URL_BY_ID: &str = "
   LIMIT 1
 ";
 
-pub(crate) fn get_geofabrik_url(conn: &Connection, geofabrik_id: &str) -> Option<String> {
+pub fn get_geofabrik_url(conn: &Connection, geofabrik_id: &str) -> Option<String> {
   conn
     .query_row(
       SQL_GET_GEOFABRIK_URL_BY_ID,
@@ -187,7 +166,7 @@ const SQL_ENSURE_FILE_PATH: &str = "INSERT OR IGNORE INTO osm_pbf_files (file_pa
 
 const SQL_GET_ID_BY_FILE_PATH: &str = "SELECT id FROM osm_pbf_files WHERE file_path = ?1";
 
-pub(crate) fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
+pub fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
   conn
     .execute(SQL_ENSURE_FILE_PATH, rusqlite::params![file_path])
     .expect("failed to ensure osm_pbf_files row");
@@ -208,7 +187,7 @@ const SQL_GET_FILE_PATH: &str = "
   LIMIT 1
 ";
 
-pub(crate) fn get_file_path(conn: &Connection, id_or_geofabrik_id: &str) -> Option<String> {
+pub fn get_file_path(conn: &Connection, id_or_geofabrik_id: &str) -> Option<String> {
   conn
     .query_row(
       SQL_GET_FILE_PATH,
@@ -233,7 +212,7 @@ const SQL_UPDATE_OSM_HEADER: &str = "
 ";
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn update_osm_header(
+pub fn update_osm_header(
   conn: &Connection,
   osm_pbf_file_path: &str,
   bbox_wkt: Option<Vec<u8>>,
@@ -273,7 +252,7 @@ const SQL_UPDATE_COUNTS: &str = "
   WHERE id = ?4
 ";
 
-pub(crate) fn update_counts(
+pub fn update_counts(
   conn: &Connection,
   file_id: u32,
   node_count: u64,
@@ -313,7 +292,7 @@ const SQL_INSERT_DOWNLOADED: &str = "
   )
 ";
 
-pub(crate) fn update_downloaded(
+pub fn update_downloaded(
   conn: &Connection,
   url: &str,
   file_path: &str,
@@ -378,7 +357,7 @@ const SQL_UPDATE_ADMIN_LEVELS_COUNT: &str = "
   WHERE file_path IS NOT NULL
 ";
 
-pub(crate) fn update_admin_levels_count(conn: &Connection) {
+pub fn update_admin_levels_count(conn: &Connection) {
   conn
     .execute(SQL_UPDATE_ADMIN_LEVELS_COUNT, [])
     .expect("failed to update osm_pbf_files admin_levels_count");
@@ -426,70 +405,8 @@ const SQL_UPDATE_HOUSE_NUMBERS_COUNT: &str = "
   WHERE file_path IS NOT NULL
 ";
 
-pub(crate) fn update_house_numbers_count(conn: &Connection) {
+pub fn update_house_numbers_count(conn: &Connection) {
   conn
     .execute(SQL_UPDATE_HOUSE_NUMBERS_COUNT, [])
     .expect("failed to update osm_pbf_files house_numbers_count");
-}
-
-#[allow(dead_code)]
-const SQL_LIST_ALL: &str = "
-  SELECT
-    id,
-    geofabrik_id, geofabrik_name, geofabrik_parent, geofabrik_url, geofabrik_wkt,
-    file_path, size_bytes, md5, downloaded_at,
-    osm_data_extracted_at,
-    osm_header_bbox_wkt,
-    osm_header_writingprogram, osm_header_source,
-    osm_header_osmosis_replication_timestamp,
-    osm_header_osmosis_replication_sequence_number,
-    osm_header_osmosis_replication_base_url,
-    node_count, way_count, relation_count,
-    admin_levels_count, house_numbers_count,
-    created_at, updated_at
-  FROM osm_pbf_files
-  ORDER BY id
-";
-
-#[allow(dead_code)]
-fn map_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<osm_pbf_files> {
-  Ok(osm_pbf_files {
-    id: row.get(0)?,
-    geofabrik_id: row.get(1)?,
-    geofabrik_name: row.get(2)?,
-    geofabrik_parent: row.get(3)?,
-    geofabrik_url: row.get(4)?,
-    geofabrik_wkt: row.get(5)?,
-    file_path: row.get(6)?,
-    size_bytes: row.get(7)?,
-    md5: row.get(8)?,
-    downloaded_at: row.get(9)?,
-    osm_data_extracted_at: row.get(10)?,
-    osm_header_bbox_wkt: row.get(11)?,
-    osm_header_required_features: None,
-    osm_header_optional_features: None,
-    osm_header_writingprogram: row.get(12)?,
-    osm_header_source: row.get(13)?,
-    osm_header_osmosis_replication_timestamp: row.get(14)?,
-    osm_header_osmosis_replication_sequence_number: row.get(15)?,
-    osm_header_osmosis_replication_base_url: row.get(16)?,
-    node_count: row.get(17)?,
-    way_count: row.get(18)?,
-    relation_count: row.get(19)?,
-    admin_levels_count: row.get(20)?,
-    house_numbers_count: row.get(21)?,
-    created_at: row.get(22)?,
-    updated_at: row.get(23)?,
-  })
-}
-
-#[allow(dead_code)]
-pub(crate) fn list_all(conn: &Connection) -> Vec<osm_pbf_files> {
-  conn
-    .prepare(SQL_LIST_ALL)
-    .expect("failed to prepare")
-    .query_map([], map_row)
-    .expect("failed to query")
-    .collect::<Result<Vec<_>, _>>()
-    .expect("failed to collect")
 }

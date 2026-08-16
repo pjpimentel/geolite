@@ -7,6 +7,17 @@
 //
 // spec: https://wiki.openstreetmap.org/wiki/PBF_Format
 
+// what precedes every blob: its kind ("OSMHeader" or "OSMData") and how many bytes it occupies.
+// walking these headers is how the file is split into byte ranges without decompressing anything.
+#[derive(prost::Message)]
+pub struct blob_header_msg {
+  #[prost(string, tag = "1")]
+  pub r#type: String,
+  // wire-compatible with int32 for non-negative values; datasize is always >= 0 in practice
+  #[prost(uint32, tag = "3")]
+  pub datasize: u32,
+}
+
 #[derive(prost::Message)]
 pub struct blob_msg {
   #[prost(bytes = "vec", optional, tag = "1")]
@@ -15,6 +26,39 @@ pub struct blob_msg {
   pub raw_size: Option<i32>,
   #[prost(bytes = "vec", optional, tag = "3")]
   pub zlib_data: Option<Vec<u8>>,
+}
+
+// the first blob of every file: the bounding box it covers and how it was produced.
+#[derive(prost::Message)]
+pub struct header_block_msg {
+  #[prost(message, optional, tag = "1")]
+  pub bbox: Option<header_bbox_msg>,
+  #[prost(string, repeated, tag = "4")]
+  pub required_features: Vec<String>,
+  #[prost(string, repeated, tag = "5")]
+  pub optional_features: Vec<String>,
+  #[prost(string, optional, tag = "16")]
+  pub writingprogram: Option<String>,
+  #[prost(string, optional, tag = "17")]
+  pub source: Option<String>,
+  #[prost(int64, optional, tag = "32")]
+  pub osmosis_replication_timestamp: Option<i64>,
+  #[prost(int64, optional, tag = "33")]
+  pub osmosis_replication_sequence_number: Option<i64>,
+  #[prost(string, optional, tag = "34")]
+  pub osmosis_replication_base_url: Option<String>,
+}
+
+#[derive(prost::Message)]
+pub struct header_bbox_msg {
+  #[prost(sint64, tag = "1")]
+  pub left: i64,
+  #[prost(sint64, tag = "2")]
+  pub right: i64,
+  #[prost(sint64, tag = "3")]
+  pub top: i64,
+  #[prost(sint64, tag = "4")]
+  pub bottom: i64,
 }
 
 #[derive(prost::Message)]

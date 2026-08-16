@@ -86,9 +86,9 @@ fn _01_00_dispatches_blob_chunks_and_header() {
   );
 
   let conn = crate::database::open_write(&scene.db_path);
-  let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, &scene.pbf_path);
+  let file_id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, &scene.pbf_path);
   assert!(
-    crate::database::osm_pbf_blob_chunks::count_by_file_id(&conn, file_id) > 0,
+    crate::domain::osm_pbf_file::blob_index::count_by_file_id(&conn, file_id) > 0,
     "blob chunks must be extracted through the dispatcher"
   );
 }

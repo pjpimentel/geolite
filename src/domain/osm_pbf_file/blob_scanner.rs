@@ -1,17 +1,15 @@
+// walks a `.osm.pbf` file front to back, reading only the length-prefixed blob headers and skipping
+// the blob bodies, to record where every blob starts and ends. it is what fills `blob_index`, and it
+// is the only pass over the file that never decompresses anything.
+
 use prost::Message;
 use std::{
   fs,
   io::{self, Read},
 };
 
-#[derive(prost::Message)]
-struct blob_header_msg {
-  #[prost(string, tag = "1")]
-  pub(super) r#type: String,
-  // wire-compatible with int32 for non-negative values; datasize is always >= 0 in practice
-  #[prost(uint32, tag = "3")]
-  pub(super) datasize: u32,
-}
+use super::blob_index::{self, chunk_type, osm_pbf_blob_chunk};
+use crate::pbf::message::blob_header_msg;
 
 pub(crate) struct progress {
   pub(crate) total_bytes: u64,
@@ -28,7 +26,7 @@ pub fn run(
   let total_bytes = file.metadata().expect("failed to read file metadata").len();
   let mut reader = io::BufReader::new(file);
   let mut offset: u64 = 0;
-  let mut chunks: Vec<crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk> = Vec::new();
+  let mut chunks: Vec<osm_pbf_blob_chunk> = Vec::new();
 
   loop {
     let mut len_buf = [0u8; 4];
@@ -51,11 +49,11 @@ pub fn run(
     let chunk_size = 4 + header_len as u64 + blob_size;
     let data_first_byte = offset + 4 + header_len as u64;
     let chunk_type = match bh.r#type.as_str() {
-      "OSMHeader" => crate::database::osm_pbf_blob_chunks::chunk_type::header,
-      _ => crate::database::osm_pbf_blob_chunks::chunk_type::data,
+      "OSMHeader" => chunk_type::header,
+      _ => chunk_type::data,
     };
 
-    chunks.push(crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk {
+    chunks.push(osm_pbf_blob_chunk {
       id: 0,
       file_id,
       first_byte,
@@ -75,6 +73,6 @@ pub fn run(
     });
   }
 
-  crate::database::osm_pbf_blob_chunks::batch_insert(conn, &chunks);
+  blob_index::batch_insert(conn, &chunks);
   chunks.len()
 }

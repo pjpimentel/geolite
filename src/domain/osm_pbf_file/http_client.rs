@@ -1,20 +1,16 @@
+// the one http agent the slice uses, for the catalogue and for the download alike. a vertical slice
+// owns its own i/o, and reaching geofabrik is this slice's i/o just as sqlite is every other one's.
+
 use std::sync::OnceLock;
 
 use ureq::Agent;
 use ureq::tls::{TlsConfig, TlsProvider};
 
-pub mod download;
-pub mod ls;
-
-#[cfg(test)]
-#[path = "http_stubs.test.rs"]
-pub(crate) mod http_stubs;
-
 const USER_AGENT: &str = concat!("geolite/", env!("CARGO_PKG_VERSION"));
 
 static AGENT: OnceLock<Agent> = OnceLock::new();
 
-fn agent() -> &'static Agent {
+pub fn agent() -> &'static Agent {
   AGENT.get_or_init(|| {
     let tls = TlsConfig::builder()
       .provider(TlsProvider::NativeTls)
