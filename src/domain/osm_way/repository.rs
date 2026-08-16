@@ -145,7 +145,7 @@ pub fn way_coords_chunk(
   name_priority: &[&str],
 ) -> Vec<way_coord_row> {
   let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-  let name_select = crate::database::build_name_select("osm_data.osm_ways.payload", name_priority);
+  let name_select = crate::database::name_select::build_name_select("osm_data.osm_ways.payload", name_priority);
   let sql = format!(
     "SELECT
            osm_data.osm_ways.id AS way_id,
@@ -192,7 +192,7 @@ pub fn insert_rows(conn: &Connection, rows: &[osm_way_row]) {
     let sql = build_multi_insert_sql(chunk.len());
     let mut stmt = conn
       .prepare_cached(&sql)
-      .expect("failed to prepare statement");
+      .expect("failed to prepare osm_ways insert");
     let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 3);
     for row in chunk {
       params.push(&row.id);

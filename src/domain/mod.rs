@@ -8,4 +8,5 @@
 pub mod admin_level;
 pub mod house_number;
 pub mod osm_node;
+pub mod osm_relation;
 pub mod osm_way;

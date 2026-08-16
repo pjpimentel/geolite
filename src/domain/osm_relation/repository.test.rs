@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::*;
 use rusqlite::Connection;
 
@@ -10,7 +11,7 @@ fn setup_db() -> Connection {
 }
 
 fn make_row(id: u64, admin_level: &str, name: Option<&str>) -> osm_relation_row {
-  use crate::extract::osm_data::osm_relations::osm_relation;
+  use crate::domain::osm_relation::osm_relation;
   let mut tags = std::collections::HashMap::new();
   tags.insert("admin_level".to_string(), admin_level.to_string());
   if let Some(n) = name {
@@ -22,7 +23,7 @@ fn make_row(id: u64, admin_level: &str, name: Option<&str>) -> osm_relation_row 
     members: vec![],
   };
   let mut payload = Vec::new();
-  crate::extract::osm_data::element_payload::encode_relation(
+  crate::domain::osm_relation::payload::encode(
     &mut crate::database::jsonb::encoder::new(),
     &mut payload,
     &relation,
@@ -108,20 +109,20 @@ fn _02_all_ids_by_admin_level_returns_only_matching_level() {
       make_row(4, "9", None),
     ],
   );
-  let mut ids = all_ids_by_admin_level(&conn, 4);
+  let mut ids = all_ids_by_admin_level(&conn, level::state);
   ids.sort();
   assert_eq!(ids, vec![1, 2]);
-  ids = all_ids_by_admin_level(&conn, 8);
+  ids = all_ids_by_admin_level(&conn, level::city);
   assert_eq!(ids, vec![3]);
-  ids = all_ids_by_admin_level(&conn, 1);
+  ids = all_ids_by_admin_level(&conn, level::continent);
   assert_eq!(ids.len(), 0);
   // sem nome deve ser ignorado
-  ids = all_ids_by_admin_level(&conn, 9);
+  ids = all_ids_by_admin_level(&conn, level::locality);
   assert_eq!(ids.len(), 0);
 }
 
 #[test]
-fn _04_remaining_ids_excludes_relations_already_present_in_admin_levels() {
+fn _03_remaining_ids_excludes_relations_already_present_in_admin_levels() {
   let conn = setup_db();
   insert_rows(
     &conn,
@@ -144,12 +145,12 @@ fn _04_remaining_ids_excludes_relations_already_present_in_admin_levels() {
       rusqlite::params![],
     )
     .expect("failed to insert admin_level");
-  let mut ids = remaining_ids_by_admin_level(&conn, 4);
+  let mut ids = remaining_ids_by_admin_level(&conn, level::state);
   ids.sort();
   assert_eq!(ids, vec![2, 3]);
-  ids = remaining_ids_by_admin_level(&conn, 5);
+  ids = remaining_ids_by_admin_level(&conn, level::district);
   assert_eq!(ids.len(), 0);
-  ids = remaining_ids_by_admin_level(&conn, 6);
+  ids = remaining_ids_by_admin_level(&conn, level::county);
   assert_eq!(ids.len(), 0);
 }
 
@@ -166,26 +167,26 @@ fn _04_remaining_ids_excludes_relations_already_present_in_admin_levels() {
 // }
 
 #[test]
-fn _05_returns_coords_for_single_relation() {
+fn _04_returns_coords_for_single_relation() {
   // todo!()
 }
 
 #[test]
-fn _06_returns_empty_for_unknown_ids() {
+fn _05_returns_empty_for_unknown_ids() {
   // todo!()
 }
 
 #[test]
-fn _07_preserves_node_sequence_order_within_way() {
+fn _06_preserves_node_sequence_order_within_way() {
   // todo!()
 }
 
 #[test]
-fn _08_ignores_non_way_members() {
+fn _07_ignores_non_way_members() {
   // todo!()
 }
 
 #[test]
-fn _09_returns_coords_for_multiple_relations_in_chunk() {
+fn _08_returns_coords_for_multiple_relations_in_chunk() {
   // todo!()
 }

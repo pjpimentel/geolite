@@ -20,9 +20,9 @@ fn tags(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
     .collect()
 }
 
-// 00.02: way vira objeto com array de refs e objeto de tags
+// 00: way vira objeto com array de refs e objeto de tags
 #[test]
-fn _00_02_encodes_way_with_refs_array() {
+fn _00_encodes_way_with_refs_array() {
   let mut enc = encoder::new();
   let mut out = Vec::new();
   encode(

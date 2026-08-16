@@ -88,9 +88,9 @@ pub fn command_handler_extract_osm_admin_levels(
 
         print!("\x1b[1;32midentifying\x1b[0m candidates...");
         let _ = std::io::stdout().flush();
-        let all_ids = crate::database::osm_relations::all_ids_by_admin_level(&conn, level.value());
+        let all_ids = crate::domain::osm_relation::repository::all_ids_by_admin_level(&conn, level);
         let remaining_ids =
-          crate::database::osm_relations::remaining_ids_by_admin_level(&conn, level.value());
+          crate::domain::osm_relation::repository::remaining_ids_by_admin_level(&conn, level);
         println!(" done ({} found)", all_ids.len());
 
         print!("\x1b[1;32mremoving\x1b[0m already processed...");
@@ -127,9 +127,9 @@ pub fn command_handler_extract_osm_admin_levels(
       _ => {
         print!("\x1b[1;32midentifying\x1b[0m candidates...");
         let _ = std::io::stdout().flush();
-        let all_ids = crate::database::osm_relations::all_ids_by_admin_level(&conn, level.value());
+        let all_ids = crate::domain::osm_relation::repository::all_ids_by_admin_level(&conn, level);
         let remaining_ids =
-          crate::database::osm_relations::remaining_ids_by_admin_level(&conn, level.value());
+          crate::domain::osm_relation::repository::remaining_ids_by_admin_level(&conn, level);
         println!(" done ({} found)", all_ids.len());
 
         print!("\x1b[1;32mremoving\x1b[0m already processed...");

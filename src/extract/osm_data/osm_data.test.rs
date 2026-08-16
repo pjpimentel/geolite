@@ -789,7 +789,7 @@ fn _02_01_buffer_row_count_sums_every_queue() {
   });
   data
     .relations
-    .push_back(crate::database::osm_relations::osm_relation_row {
+    .push_back(crate::domain::osm_relation::osm_relation_row {
       id: 3,
       osm_pbf_chunk_id: 1,
       payload: Vec::new(),

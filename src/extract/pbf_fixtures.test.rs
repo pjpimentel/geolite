@@ -773,7 +773,7 @@ pub(crate) fn insert_relation(
   members: &[(i32, i64, &str)],
   tags: &[(&str, &str)],
 ) {
-  use super::osm_data::osm_relations::{osm_member_type, osm_relation, osm_relation_member};
+  use crate::domain::osm_relation::entity::{osm_member_type, osm_relation, osm_relation_member};
 
   let relation = osm_relation {
     id: id as i64,
@@ -792,14 +792,14 @@ pub(crate) fn insert_relation(
       .collect(),
   };
   let mut payload = Vec::new();
-  super::osm_data::element_payload::encode_relation(
+  crate::domain::osm_relation::payload::encode(
     &mut crate::database::jsonb::encoder::new(),
     &mut payload,
     &relation,
   );
-  crate::database::osm_relations::insert_rows(
+  crate::domain::osm_relation::repository::insert_rows(
     conn,
-    &[crate::database::osm_relations::osm_relation_row {
+    &[crate::domain::osm_relation::osm_relation_row {
       id,
       osm_pbf_chunk_id: 0,
       payload,

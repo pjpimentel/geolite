@@ -1,38 +1,19 @@
-#[derive(serde::Serialize, serde::Deserialize)]
-pub(crate) struct osm_relation {
-  #[serde(skip_serializing, default)]
-  pub id: i64,
-  pub tags: std::collections::HashMap<String, String>,
-  pub members: Vec<osm_relation_member>,
-}
+use super::entity::{osm_member_type, osm_relation, osm_relation_member};
+use crate::pbf::message::relation_msg;
+use crate::pbf::tag_policy::tag_policy;
 
-#[derive(serde::Serialize, serde::Deserialize)]
-pub(crate) enum osm_member_type {
-  #[serde(rename = "n")]
-  node = 0,
-  #[serde(rename = "w")]
-  way = 1,
-  #[serde(rename = "r")]
-  relation = 2,
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-pub(crate) struct osm_relation_member {
-  #[serde(rename = "type")]
-  pub osm_member_type: osm_member_type,
-  pub id: i64,
-  pub role: String,
-}
-
-pub(super) fn decode(
-  relations: &[crate::pbf::message::relation_msg],
+// member ids are delta-encoded against the previous member, and the role is an index into the
+// block's string table. the three parallel arrays — memids, roles_sid, types — line up by
+// position, so a short or missing entry falls back rather than shifting everything after it.
+pub fn decode(
+  relations: &[relation_msg],
   strings: &[&str],
-  opts: &super::data_opts,
+  tags: &tag_policy,
 ) -> Vec<osm_relation> {
   let mut elements = Vec::new();
 
   for r in relations {
-    let tags = opts.tags.filter(strings, &r.keys, &r.vals);
+    let kept = tags.filter(strings, &r.keys, &r.vals);
     let mut memid_acc: i64 = 0;
     let members: Vec<osm_relation_member> = r
       .memids
@@ -56,7 +37,7 @@ pub(super) fn decode(
       .collect();
     elements.push(osm_relation {
       id: r.id,
-      tags: tags
+      tags: kept
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect(),
@@ -68,5 +49,5 @@ pub(super) fn decode(
 }
 
 #[cfg(test)]
-#[path = "osm_relations.test.rs"]
-mod decode_osm_relations_test;
+#[path = "decoder.test.rs"]
+mod tests;

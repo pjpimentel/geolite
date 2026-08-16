@@ -146,7 +146,7 @@ fn load_and_send(
   name_priority: &[&str],
   tx: &mpsc::Sender<rel_work>,
 ) -> usize {
-  let raw_rows = crate::database::osm_relations::relation_coords_chunk(conn, chunk, name_priority);
+  let raw_rows = crate::domain::osm_relation::repository::relation_coords_chunk(conn, chunk, name_priority);
 
   let mut relation_order: Vec<u64> = Vec::new();
   let mut relation_metas: std::collections::HashMap<u64, rel_meta> =

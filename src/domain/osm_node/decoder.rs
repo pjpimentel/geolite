@@ -21,7 +21,7 @@ impl block_scale {
 }
 
 // the plain form: one message per node, each carrying its own id and coordinates.
-pub fn decode_nodes(
+pub fn decode(
   nodes: &[node_msg],
   strings: &[&str],
   scale: block_scale,
@@ -48,7 +48,7 @@ pub fn decode_nodes(
 // the dense form, which is how real files store the overwhelming majority of nodes: ids and
 // coordinates are delta-encoded against the previous node, and every node's tags are concatenated
 // into one flat `keys_vals` stream where a 0 closes the current node.
-pub fn decode_dense_nodes(
+pub fn decode_dense(
   dense: &dense_nodes_msg,
   strings: &[&str],
   scale: block_scale,

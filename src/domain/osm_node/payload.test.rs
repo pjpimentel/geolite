@@ -36,9 +36,9 @@ fn encode_text_object(value: &str) -> serde_json::Value {
   to_json(&out)
 }
 
-// 00.00: node vira objeto com lat, lon e tags
+// 00: node vira objeto com lat, lon e tags
 #[test]
-fn _00_00_encodes_node_with_lat_lon_and_tags() {
+fn _00_encodes_node_with_lat_lon_and_tags() {
   let mut enc = encoder::new();
   let mut out = Vec::new();
   encode(
@@ -59,9 +59,9 @@ fn _00_00_encodes_node_with_lat_lon_and_tags() {
   assert_eq!(json["tags"]["name"], "Marco Zero");
 }
 
-// 00.01: node sem tags produz um objeto tags vazio, nao ausente
+// 01: node sem tags produz um objeto tags vazio, nao ausente
 #[test]
-fn _00_01_encodes_node_without_tags_as_empty_object() {
+fn _01_encodes_node_without_tags_as_empty_object() {
   let mut enc = encoder::new();
   let mut out = Vec::new();
   encode(
@@ -79,9 +79,9 @@ fn _00_01_encodes_node_without_tags_as_empty_object() {
   assert_eq!(to_json(&out)["tags"], serde_json::json!({}));
 }
 
-// 00.04: payload de ate 11 bytes cabe no cabecalho de 1 byte
+// 02: payload de ate 11 bytes cabe no cabecalho de 1 byte
 #[test]
-fn _00_04_writes_single_byte_header_for_short_payloads() {
+fn _02_writes_single_byte_header_for_short_payloads() {
   let short = "a".repeat(11);
   assert_eq!(encode_text_object(&short)["tags"]["k"], short);
 
@@ -90,9 +90,9 @@ fn _00_04_writes_single_byte_header_for_short_payloads() {
   assert_eq!(out, vec![(11u8 << 4) | TYPE_TEXTRAW]);
 }
 
-// 00.05: payloads from 12 to 255 bytes use class 12 with 1 extra size byte
+// 03: payloads from 12 to 255 bytes use class 12 with 1 extra size byte
 #[test]
-fn _00_05_writes_two_byte_header_for_payloads_up_to_255() {
+fn _03_writes_two_byte_header_for_payloads_up_to_255() {
   let medium = "b".repeat(255);
   assert_eq!(encode_text_object(&medium)["tags"]["k"], medium);
 
@@ -101,9 +101,9 @@ fn _00_05_writes_two_byte_header_for_payloads_up_to_255() {
   assert_eq!(out, vec![(12u8 << 4) | TYPE_TEXTRAW, 0xFF]);
 }
 
-// 00.06: payloads from 256 to 65535 bytes use class 13 with 2 big-endian bytes
+// 04: payloads from 256 to 65535 bytes use class 13 with 2 big-endian bytes
 #[test]
-fn _00_06_writes_three_byte_header_for_payloads_up_to_65535() {
+fn _04_writes_three_byte_header_for_payloads_up_to_65535() {
   let large = "c".repeat(65_535);
   assert_eq!(encode_text_object(&large)["tags"]["k"], large);
 
@@ -112,9 +112,9 @@ fn _00_06_writes_three_byte_header_for_payloads_up_to_65535() {
   assert_eq!(out, vec![(13u8 << 4) | TYPE_TEXTRAW, 0xFF, 0xFF]);
 }
 
-// 00.07: payloads above 65535 bytes use class 14 with 4 big-endian bytes
+// 05: payloads above 65535 bytes use class 14 with 4 big-endian bytes
 #[test]
-fn _00_07_writes_five_byte_header_for_large_payloads() {
+fn _05_writes_five_byte_header_for_large_payloads() {
   let huge = "d".repeat(70_000);
   assert_eq!(encode_text_object(&huge)["tags"]["k"], huge);
 
@@ -126,10 +126,10 @@ fn _00_07_writes_five_byte_header_for_large_payloads() {
   );
 }
 
-// 00.10: o mesmo encoder reutiliza os buffers de scratch entre linhas — o
+// 06: o mesmo encoder reutiliza os buffers de scratch entre linhas — o
 // resultado precisa ser identico ao de um encoder novo a cada linha
 #[test]
-fn _00_10_reuses_scratch_buffers_across_encodes() {
+fn _06_reuses_scratch_buffers_across_encodes() {
   let nodes: Vec<osm_node> = (0..5)
     .map(|i| osm_node {
       id: i,

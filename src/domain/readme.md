@@ -20,6 +20,11 @@ osm_node/       an openstreetmap node — the `osm_data.osm_nodes` table
   decoder           the pbf wire form, plain and dense, into nodes
   payload           the jsonb written into the `payload` column
   repository        the ddl, the index and the bulk insert
+osm_relation/   an openstreetmap relation — the `osm_data.osm_relations` table
+  entity            the relation, its members, and the storage row with its payload
+  decoder           the pbf wire form, with its delta-encoded member ids
+  payload           the jsonb written into the `payload` column
+  repository        the ddl, the index, the bulk insert and the candidate queries
 osm_way/        an openstreetmap way — the `osm_data.osm_ways` table
   entity            the way itself, and the storage row with its encoded payload
   decoder           the pbf wire form, with its delta-encoded node references
@@ -40,8 +45,8 @@ every folder follows the same shape: `entity` is the row, `repository` is its sq
 objects and services sit alongside. everything a concept needs is in one place, and the only write
 path into a table is through its entity.
 
-`osm_node` and `osm_way` are the two places where the storage row is public rather than private to
-the repository.
+the three osm element folders are where the storage row is public rather than private to the
+repository.
 the extraction pipeline builds rows in several decoder threads at once and sizes its write buffer
 from the encoded payload, so the encoding has to happen before the insert — `encode` is still the
 only way to build a row, and it takes the element.

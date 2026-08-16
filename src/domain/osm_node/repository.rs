@@ -67,7 +67,7 @@ pub fn insert_rows(conn: &Connection, rows: &[osm_node_row]) {
     let sql = build_multi_insert_sql(chunk.len());
     let mut stmt = conn
       .prepare_cached(&sql)
-      .expect("failed to prepare statement");
+      .expect("failed to prepare osm_nodes insert");
     let mut params: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() * 3);
     for row in chunk {
       params.push(&row.id);

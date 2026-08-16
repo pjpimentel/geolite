@@ -1,9 +1,7 @@
 use super::*;
 
 use crate::database::jsonb::encoder;
-use crate::extract::osm_data::osm_relations::{
-  osm_member_type, osm_relation, osm_relation_member,
-};
+use crate::domain::osm_relation::entity::{osm_member_type, osm_relation, osm_relation_member};
 
 // sqlite itself is the oracle for the format: a malformed jsonb makes JSON() fail or return
 // something other than what was written.
@@ -23,13 +21,12 @@ fn tags(pairs: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
 }
 
 
-// 00.03: relation carrega os tres tipos de membro, cada um com sua sigla
+// 00: relation carrega os tres tipos de membro, cada um com sua sigla
 #[test]
-fn _00_03_encodes_relation_with_every_member_type() {
+fn _00_encodes_relation_with_every_member_type() {
   let mut enc = encoder::new();
   let mut out = Vec::new();
-  encode_relation(
-
+  encode(
     &mut enc,
     &mut out,
     &osm_relation {

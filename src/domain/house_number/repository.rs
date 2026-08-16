@@ -174,8 +174,8 @@ pub fn load_all_candidates(
   policy: &house_number_policy,
 ) -> Vec<candidate_row> {
   debug_assert!(!policy.number_tags.is_empty(), "number_tags must not be empty");
-  let number_select = crate::database::build_name_select("payload", policy.number_tags);
-  let street_select = crate::database::build_name_select("payload", policy.street_tags);
+  let number_select = crate::database::name_select::build_name_select("payload", policy.number_tags);
+  let street_select = crate::database::name_select::build_name_select("payload", policy.street_tags);
   let sql = SQL_LOAD_ALL_CANDIDATES
     .replace("{number_select}", &number_select)
     .replace("{street_select}", &street_select);

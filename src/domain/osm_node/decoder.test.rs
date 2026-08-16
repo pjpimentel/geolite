@@ -37,7 +37,7 @@ fn has_tag(n: &osm_node, key: &str) -> Option<String> {
 #[test]
 fn _00_accumulates_delta_encoded_node_ids() {
   let dense = make_dense(vec![1, 1, 1], vec![0, 0, 0], vec![0, 0, 0], vec![0, 0, 0]);
-  let result = decode_dense_nodes(&dense, &[""], scale(100, 0, 0), &default_opts());
+  let result = decode_dense(&dense, &[""], scale(100, 0, 0), &default_opts());
   assert_eq!(result.len(), 3);
   assert_eq!(result[0].id, 1);
   assert_eq!(result[1].id, 2);
@@ -50,7 +50,7 @@ fn _00_accumulates_delta_encoded_node_ids() {
 #[test]
 fn _01_decodes_lat_lon_with_granularity() {
   let dense = make_dense(vec![1], vec![450_000_000], vec![90_000_000], vec![0]);
-  let result = decode_dense_nodes(&dense, &[""], scale(100, 0, 0), &default_opts());
+  let result = decode_dense(&dense, &[""], scale(100, 0, 0), &default_opts());
   assert!((result[0].lat - 45.0).abs() < 1e-9);
   assert!((result[0].lon - 9.0).abs() < 1e-9);
 }
@@ -61,7 +61,7 @@ fn _01_decodes_lat_lon_with_granularity() {
 #[test]
 fn _02_applies_lat_lon_offsets() {
   let dense = make_dense(vec![1], vec![0], vec![0], vec![0]);
-  let result = decode_dense_nodes(
+  let result = decode_dense(
     &dense,
     &[""],
     scale(100, 1_000_000_000, 2_000_000_000),
@@ -77,7 +77,7 @@ fn _02_applies_lat_lon_offsets() {
 fn _03_resolves_node_tags_from_string_table() {
   let dense = make_dense(vec![1], vec![0], vec![0], vec![1, 2, 3, 4, 0]);
   let strings = ["", "name", "Test", "amenity", "cafe"];
-  let result = decode_dense_nodes(&dense, &strings, scale(100, 0, 0), &default_opts());
+  let result = decode_dense(&dense, &strings, scale(100, 0, 0), &default_opts());
   assert_eq!(has_tag(&result[0], "name"), Some("Test".into()));
   assert_eq!(has_tag(&result[0], "amenity"), Some("cafe".into()));
 }
@@ -88,7 +88,7 @@ fn _03_resolves_node_tags_from_string_table() {
 fn _04_keeps_nodes_with_and_without_tags() {
   let dense = make_dense(vec![1, 1], vec![0, 0], vec![0, 0], vec![1, 2, 0, 0]);
   let strings = ["", "name", "Test"];
-  let result = decode_dense_nodes(&dense, &strings, scale(100, 0, 0), &default_opts());
+  let result = decode_dense(&dense, &strings, scale(100, 0, 0), &default_opts());
   assert_eq!(result.len(), 2);
   assert_eq!(has_tag(&result[0], "name"), Some("Test".into()));
   assert!(result[1].tags.is_empty());
@@ -104,7 +104,7 @@ fn _05_tags_include_keeps_only_listed_tags() {
     include: Some(vec!["name".to_string()]),
     ignore: None,
   };
-  let result = decode_dense_nodes(&dense, &strings, scale(100, 0, 0), &opts);
+  let result = decode_dense(&dense, &strings, scale(100, 0, 0), &opts);
   assert_eq!(result[0].tags.len(), 1);
   assert_eq!(has_tag(&result[0], "name"), Some("Test".into()));
 }
@@ -119,7 +119,7 @@ fn _06_tags_ignore_drops_listed_tags() {
     include: None,
     ignore: Some(vec!["amenity".to_string()]),
   };
-  let result = decode_dense_nodes(&dense, &strings, scale(100, 0, 0), &opts);
+  let result = decode_dense(&dense, &strings, scale(100, 0, 0), &opts);
   assert_eq!(result[0].tags.len(), 1);
   assert_eq!(has_tag(&result[0], "name"), Some("Test".into()));
 }

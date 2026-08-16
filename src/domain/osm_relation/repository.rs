@@ -1,20 +1,7 @@
 use rusqlite::Connection;
-use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
-impl ToSql for crate::extract::osm_data::osm_relations::osm_relation {
-  fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-    let json = serde_json::to_string(self)
-      .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    Ok(ToSqlOutput::Owned(rusqlite::types::Value::Text(json)))
-  }
-}
-
-impl FromSql for crate::extract::osm_data::osm_relations::osm_relation {
-  fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-    let text = value.as_str()?;
-    serde_json::from_str(text).map_err(|e| FromSqlError::Other(Box::new(e)))
-  }
-}
+use super::entity::osm_relation_row;
+use crate::domain::admin_level::level;
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS osm_data.osm_relations (
@@ -30,8 +17,6 @@ const SQL_CREATE_INDEXES: &str = "
 ";
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_relations;";
-
-impl_table_ops!(pub(super), SQL_CREATE, SQL_DROP);
 
 const SQL_ALL_IDS_BY_ADMIN_LEVEL: &str = "
   SELECT id
@@ -78,32 +63,27 @@ fn build_multi_insert_sql(n: usize) -> String {
   sql
 }
 
-pub(crate) struct osm_relation_row {
-  pub id: u64,
-  pub osm_pbf_chunk_id: u32,
-  // pre-encoded JSONB binary (sqlite jsonb format) — bound diretamente como BLOB
-  pub payload: Vec<u8>,
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create osm_relations");
 }
 
-pub(crate) struct relation_coord_row {
-  pub relation_id: u64,
-  pub relation_name: String,
-  pub country_iso_code: Option<String>,
-  pub post_code: Option<String>,
-  pub way_order: u32,
-  pub way_id: u64,
-  pub lon: f64,
-  pub lat: f64,
+#[allow(dead_code)]
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop osm_relations");
 }
 
-pub(crate) fn create_indexes(conn: &Connection) {
+pub fn create_indexes(conn: &Connection) {
   conn
     .execute_batch(SQL_CREATE_INDEXES)
     .expect("failed to create osm_relations indexes");
 }
 
-pub(crate) fn all_ids_by_admin_level(conn: &Connection, level: u8) -> Vec<u64> {
-  let level_str = level.to_string();
+pub fn all_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
+  let level_str = level.value().to_string();
   let mut stmt = conn
     .prepare(SQL_ALL_IDS_BY_ADMIN_LEVEL)
     .expect("failed to prepare all relation ids");
@@ -114,13 +94,13 @@ pub(crate) fn all_ids_by_admin_level(conn: &Connection, level: u8) -> Vec<u64> {
     .collect()
 }
 
-pub(crate) fn remaining_ids_by_admin_level(conn: &Connection, level: u8) -> Vec<u64> {
-  let level_str = level.to_string();
+pub fn remaining_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
+  let level_str = level.value().to_string();
   let mut stmt = conn
     .prepare(SQL_REMAINING_IDS_BY_ADMIN_LEVEL)
     .expect("failed to prepare remaining relation ids");
   stmt
-    .query_map(rusqlite::params![level_str, level], |row| {
+    .query_map(rusqlite::params![level_str, level.value()], |row| {
       row.get::<_, u64>(0)
     })
     .expect("failed to query remaining relation ids")
@@ -128,13 +108,24 @@ pub(crate) fn remaining_ids_by_admin_level(conn: &Connection, level: u8) -> Vec<
     .collect()
 }
 
-pub(crate) fn relation_coords_chunk(
+pub struct relation_coord_row {
+  pub relation_id: u64,
+  pub relation_name: String,
+  pub country_iso_code: Option<String>,
+  pub post_code: Option<String>,
+  pub way_order: u32,
+  pub way_id: u64,
+  pub lon: f64,
+  pub lat: f64,
+}
+
+pub fn relation_coords_chunk(
   conn: &Connection,
   ids: &[u64],
   name_priority: &[&str],
 ) -> Vec<relation_coord_row> {
   let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-  let name_select = super::build_name_select("osm_data.osm_relations.payload", name_priority);
+  let name_select = crate::database::name_select::build_name_select("osm_data.osm_relations.payload", name_priority);
   let sql = format!(
     "WITH way_members AS (
        SELECT
@@ -194,7 +185,7 @@ pub(crate) fn relation_coords_chunk(
     .collect()
 }
 
-pub(crate) fn insert_rows(conn: &Connection, rows: &[osm_relation_row]) {
+pub fn insert_rows(conn: &Connection, rows: &[osm_relation_row]) {
   if rows.is_empty() {
     return;
   }
@@ -216,5 +207,5 @@ pub(crate) fn insert_rows(conn: &Connection, rows: &[osm_relation_row]) {
 }
 
 #[cfg(test)]
-#[path = "osm_relations.test.rs"]
+#[path = "repository.test.rs"]
 mod tests;
