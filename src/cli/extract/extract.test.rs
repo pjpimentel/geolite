@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::*;
 use crate::extract::pbf_fixtures::{
   blob_compression, block_spec, data_chunk, header_chunk, node, stored_admin_levels, temp_scene,
@@ -127,13 +128,14 @@ fn _01_01_dispatches_osm_pbf_data_and_admin_levels_with_explicit_options() {
     &false,
     &DEFAULT,
   );
-  // "x" is dropped by the level parser and the duplicated 12 keeps the level list explicit.
+  // the duplicated 12 keeps the level list explicit; a malformed entry no longer reaches here,
+  // it is refused by the parser (see _02_01 below).
   command_handler_extract(
     &data_path,
     &1,
     &scene.db_path,
     extract_commands::osm_admin_levels {
-      admin_level: Some("12, x, 12".to_string()),
+      admin_level: Some("12, 12".to_string()),
       recreate: false,
       name_priority: Some(" name ".to_string()),
     },
@@ -214,4 +216,59 @@ fn _02_00_invalid_name_priority_exits_one() {
   );
   assert_eq!(out.status.code(), Some(1), "stderr: {}", crate::cli::tests::stderr_of(&out));
   assert!(crate::cli::tests::stderr_of(&out).contains("invalid --name-priority"));
+}
+
+#[test]
+fn _00_05_parse_admin_levels_accepts_a_list_with_spaces() {
+  assert_eq!(
+    parse_admin_levels(" 2 , 8 , 12 "),
+    Ok(vec![level::country, level::city, level::street])
+  );
+}
+
+#[test]
+fn _00_06_parse_admin_levels_rejects_a_level_outside_the_named_scale() {
+  let err = parse_admin_levels("11,12").expect_err("unnamed level must be rejected");
+  assert!(err.contains("level 11 is not supported"), "got: {err}");
+}
+
+#[test]
+fn _00_07_parse_admin_levels_rejects_a_non_numeric_entry() {
+  let err = parse_admin_levels("12,x").expect_err("garbage must be rejected");
+  assert!(err.contains("is not a level number"), "got: {err}");
+}
+
+#[test]
+fn _00_08_parse_admin_levels_rejects_empty_input() {
+  assert!(parse_admin_levels(" , ").is_err());
+}
+
+// an unnamed level used to be dropped in silence, extracting a partial set without saying so.
+#[test]
+#[ignore] // executed only as a child of _02_01
+fn _90_admin_levels_unsupported_level() {
+  let scene = temp_scene("cli_bad_admin_level");
+  command_handler_extract(
+    &scene.guard.path.to_string_lossy(),
+    &1,
+    &scene.db_path,
+    extract_commands::osm_admin_levels {
+      admin_level: Some("11,12".to_string()),
+      recreate: false,
+      name_priority: None,
+    },
+    &false,
+    &DEFAULT,
+  );
+}
+
+#[test]
+fn _02_01_unsupported_admin_level_exits_one() {
+  let out = crate::cli::tests::respawn(
+    "cli::extract::tests::_90_admin_levels_unsupported_level",
+    &[],
+    &[],
+  );
+  assert_eq!(out.status.code(), Some(1), "stderr: {}", crate::cli::tests::stderr_of(&out));
+  assert!(crate::cli::tests::stderr_of(&out).contains("invalid --admin-level"));
 }

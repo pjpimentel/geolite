@@ -1,9 +1,11 @@
 use geo::Geometry;
 use rusqlite::Connection;
 
-use super::admin_levels::admin_geometry;
-use crate::domain::house_number::house_number;
-use crate::domain::house_number::{house_number_link, house_number_policy};
+use super::entity::house_number_link;
+use super::policy::house_number_policy;
+use super::value::house_number;
+use crate::domain::admin_level::geometry::admin_geometry;
+use crate::domain::admin_level::level;
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS house_numbers (
@@ -22,12 +24,22 @@ const SQL_CREATE_INDEXES: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS house_numbers;";
 
-impl_table_ops!(pub(super), SQL_CREATE, SQL_DROP);
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create house_numbers");
+}
+
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop house_numbers");
+}
 
 const SQL_STREETS_WITH_GEOMETRY: &str = "
   SELECT id, name, wkb
   FROM admin_levels
-  WHERE admin_level = 12
+  WHERE admin_level = ?1
   AND wkb IS NOT NULL;
 ";
 
@@ -63,7 +75,9 @@ const SQL_INSERT: &str = "
   );
 ";
 
-pub struct house_numbers {
+// the storage shape of a placed number: the identity unpacked into its integer key, the number
+// in its stored form and the point encoded as spatialite wkb.
+struct house_numbers {
   pub node_id: u64,
   pub admin_level_id: i64,
   pub number: String,
@@ -101,7 +115,7 @@ pub fn streets_with_centroid(conn: &Connection) -> Vec<street_meta_row> {
     .prepare(SQL_STREETS_WITH_GEOMETRY)
     .expect("failed to prepare streets with geometry");
   stmt
-    .query_map([], |row| {
+    .query_map([level::street.value()], |row| {
       let id: i64 = row.get(0)?;
       let name: String = row.get(1)?;
       let blob: Vec<u8> = row.get(2)?;
@@ -110,7 +124,7 @@ pub fn streets_with_centroid(conn: &Connection) -> Vec<street_meta_row> {
     .expect("failed to query streets")
     .filter_map(|r| {
       let (id, name, blob) = r.expect("failed to read street meta row");
-      let (cx, cy) = super::admin_levels::mbr_center(&blob)?;
+      let (cx, cy) = crate::domain::admin_level::geometry::mbr_center(&blob)?;
       Some(street_meta_row { id, name, cx, cy })
     })
     .collect()
@@ -160,8 +174,8 @@ pub fn load_all_candidates(
   policy: &house_number_policy,
 ) -> Vec<candidate_row> {
   debug_assert!(!policy.number_tags.is_empty(), "number_tags must not be empty");
-  let number_select = super::build_name_select("payload", policy.number_tags);
-  let street_select = super::build_name_select("payload", policy.street_tags);
+  let number_select = crate::database::build_name_select("payload", policy.number_tags);
+  let street_select = crate::database::build_name_select("payload", policy.street_tags);
   let sql = SQL_LOAD_ALL_CANDIDATES
     .replace("{number_select}", &number_select)
     .replace("{street_select}", &street_select);
@@ -245,7 +259,7 @@ pub fn batch_insert_links(conn: &Connection, links: &[house_number_link]) -> i64
   batch_insert(conn, &rows)
 }
 
-pub fn batch_insert(conn: &Connection, rows: &[house_numbers]) -> i64 {
+fn batch_insert(conn: &Connection, rows: &[house_numbers]) -> i64 {
   if rows.is_empty() {
     return 0;
   }
@@ -275,5 +289,5 @@ pub fn batch_insert(conn: &Connection, rows: &[house_numbers]) -> i64 {
 }
 
 #[cfg(test)]
-#[path = "house_numbers.test.rs"]
+#[path = "repository.test.rs"]
 mod tests;

@@ -1,5 +1,6 @@
 use super::osm_pbf_file::osm_pbf_file_ls_source;
 use super::*;
+use crate::domain::admin_level::level;
 use clap::Parser;
 use std::path::PathBuf;
 
@@ -76,12 +77,12 @@ pub(crate) fn street_row(
   name: &str,
   way_id: u64,
   lon_offset: f64,
-) -> crate::database::admin_levels::admin_levels {
+) -> crate::domain::admin_level::admin_level {
   use geo::{Coord, Geometry, LineString};
-  crate::database::admin_levels::admin_levels {
+  crate::domain::admin_level::admin_level {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(LineString(vec![
       Coord { x: -46.3198 + lon_offset, y: -23.9724 },
       Coord { x: -46.3197 + lon_offset, y: -23.9724 },
@@ -379,7 +380,10 @@ fn _02_07_query_parses_every_option() {
       );
       assert_eq!(min_quality, Some(0.5));
       assert!(bounding_wkt.is_some());
-      assert_eq!(last_admin_levels, Some(vec![8, 12]));
+      assert_eq!(
+        last_admin_levels,
+        Some(vec![level::city, level::street])
+      );
       assert!(!include_wkt);
     }
     _ => panic!("expected query command"),

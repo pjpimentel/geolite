@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::*;
 
 use crate::extract::pbf_fixtures;
@@ -92,27 +93,8 @@ fn _00_04_override_for_another_level_is_ignored() {
   assert_eq!(exclude.len(), 5, "nivel 12 mantem o default_exclude");
 }
 
-// 01.00: todos os 13 valores mapeados de u8 para osm_admin_level
-#[test]
-fn _01_00_maps_every_valid_level_value() {
-  for level in [1u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 30] {
-    let parsed = osm_admin_level::try_from(level)
-      .map(|l| l as u8)
-      .unwrap_or_else(|_| panic!("level {level} deveria ser valido"));
-    assert_eq!(parsed, level);
-  }
-}
-
-// 01.01: valores fora da tabela retornam Err carregando o valor original
-#[test]
-fn _01_01_unknown_level_value_returns_error_with_input() {
-  for level in [0u8, 11, 13, 15, 29, 31, 255] {
-    assert!(
-      matches!(osm_admin_level::try_from(level), Err(v) if v == level),
-      "level {level} deveria ser invalido"
-    );
-  }
-}
+// the level scale and its names now live in the admin_level domain; see
+// src/domain/admin_level/scale.test.rs
 
 // 02.00: coordenadas identicas sao aproximadamente iguais
 #[test]
@@ -210,7 +192,7 @@ fn _03_05_disjoint_ways_become_separate_rings() {
 // 04.00: relation cujas ways estao todas vazias e descartada
 #[test]
 fn _04_00_relation_with_only_empty_ways_is_skipped() {
-  let result = process_one_relation(1, &meta(), &[ls(&[]), ls(&[])], osm_admin_level::city);
+  let result = process_one_relation(1, &meta(), &[ls(&[]), ls(&[])], level::city);
   assert!(result.is_none());
 }
 
@@ -226,7 +208,7 @@ fn _04_01_closed_ring_becomes_clockwise_multipolygon() {
     (0.0, 1.0),
     (0.0, 0.0),
   ])];
-  let row = process_one_relation(7, &meta(), &ways, osm_admin_level::city)
+  let row = process_one_relation(7, &meta(), &ways, level::city)
     .expect("anel fechado deve produzir uma linha");
 
   match row.wkb.geometry() {
@@ -245,7 +227,7 @@ fn _04_01_closed_ring_becomes_clockwise_multipolygon() {
 #[test]
 fn _04_02_open_ring_becomes_multilinestring() {
   let ways = [ls(&[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)])];
-  let row = process_one_relation(8, &meta(), &ways, osm_admin_level::city)
+  let row = process_one_relation(8, &meta(), &ways, level::city)
     .expect("anel aberto ainda produz uma linha");
 
   assert!(
@@ -258,7 +240,7 @@ fn _04_02_open_ring_becomes_multilinestring() {
 #[test]
 fn _04_03_closed_ring_with_too_few_points_is_not_a_polygon() {
   let ways = [ls(&[(0.0, 0.0), (1.0, 0.0), (0.0, 0.0)])];
-  let row = process_one_relation(9, &meta(), &ways, osm_admin_level::city)
+  let row = process_one_relation(9, &meta(), &ways, level::city)
     .expect("deve produzir linha mesmo sem virar poligono");
 
   assert!(
@@ -271,12 +253,12 @@ fn _04_03_closed_ring_with_too_few_points_is_not_a_polygon() {
 #[test]
 fn _04_04_propagates_metadata_and_admin_level() {
   let ways = [ls(&[(0.0, 0.0), (1.0, 0.0)])];
-  let row = process_one_relation(42, &meta(), &ways, osm_admin_level::municipality)
+  let row = process_one_relation(42, &meta(), &ways, level::municipality)
     .expect("deve produzir uma linha");
 
   assert_eq!(row.relation_id, Some(42));
   assert_eq!(row.way_id, None);
-  assert_eq!(row.admin_level, 7);
+  assert_eq!(row.level, level::municipality);
   assert_eq!(row.name, "Lisboa");
   assert_eq!(row.country_iso_code.as_deref(), Some("PT"));
   assert_eq!(row.post_code.as_deref(), Some("1000-001"));
@@ -328,7 +310,7 @@ fn _05_00_returns_early_when_the_id_list_is_empty() {
   run_with_ids(
     &conn,
     Vec::new(),
-    osm_admin_level::city,
+    level::city,
     1,
     NAME_PRIORITY,
     |p| seen.borrow_mut().push((p.total, p.processed)),
@@ -349,7 +331,7 @@ fn _05_01_upserts_a_multipolygon_for_a_closed_relation() {
   run_with_ids(
     &conn,
     vec![500],
-    osm_admin_level::city,
+    level::city,
     1,
     NAME_PRIORITY,
     |p| seen.borrow_mut().push((p.total, p.processed)),
@@ -384,9 +366,9 @@ fn _05_02_falls_back_to_multilinestring_for_open_relations() {
   pbf_fixtures::insert_way(&conn, 10, &[1, 2, 3], &[("name", "Trecho aberto")]);
   pbf_fixtures::insert_relation(&conn, 500, &[(1, 10, "outer")], &[("name", "Aberta")]);
 
-  run_with_ids(&conn, vec![500], osm_admin_level::city, 1, NAME_PRIORITY, |_| {});
+  run_with_ids(&conn, vec![500], level::city, 1, NAME_PRIORITY, |_| {});
 
-  let wkb: crate::database::admin_levels::admin_geometry = conn
+  let wkb: crate::domain::admin_level::geometry::admin_geometry = conn
     .query_row(
       "SELECT wkb FROM admin_levels WHERE relation_id = 500",
       [],
@@ -412,7 +394,7 @@ fn _05_03_ignores_relation_members_that_are_not_ways() {
     &[("name", "So membros nao-way")],
   );
 
-  run_with_ids(&conn, vec![501], osm_admin_level::city, 1, NAME_PRIORITY, |_| {});
+  run_with_ids(&conn, vec![501], level::city, 1, NAME_PRIORITY, |_| {});
 
   assert!(
     stored_levels(&conn).is_empty(),
@@ -434,7 +416,7 @@ fn _05_04_processes_several_relations_and_accumulates_progress() {
   run_with_ids(
     &conn,
     vec![500, 501],
-    osm_admin_level::city,
+    level::city,
     1,
     NAME_PRIORITY,
     |p| seen.borrow_mut().push(p.processed),
@@ -450,7 +432,7 @@ fn _05_05_produces_the_same_rows_with_multiple_threads() {
   let conn = pbf_fixtures::memory_db();
   setup_square_relation(&conn);
 
-  run_with_ids(&conn, vec![500], osm_admin_level::city, 4, NAME_PRIORITY, |_| {});
+  run_with_ids(&conn, vec![500], level::city, 4, NAME_PRIORITY, |_| {});
 
   assert_eq!(stored_levels(&conn).len(), 1);
 }

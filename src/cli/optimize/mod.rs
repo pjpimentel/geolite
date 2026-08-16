@@ -78,7 +78,7 @@ pub fn command_handler_optimize(
       crate::cli::require_sqlite(sqlite_path);
       {
         let conn = crate::database::open_write(sqlite_path);
-        if crate::database::admin_levels::count_with_geometry(&conn) == 0 {
+        if crate::domain::admin_level::repository::count_with_geometry(&conn) == 0 {
           eprintln!("\x1b[1;31merror\x1b[0m: admin_levels is empty — run extract first");
           return;
         }

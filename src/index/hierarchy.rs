@@ -1,4 +1,6 @@
 use geo::{Area, BoundingRect, Centroid, Geometry};
+
+use crate::domain::admin_level::level;
 use rstar::{AABB, RTree, RTreeObject};
 use std::collections::BTreeMap;
 use std::sync::mpsc;
@@ -32,7 +34,7 @@ struct polygon_entry {
 
 struct ancestor_entry {
   id: i64,
-  admin_level: u8,
+  admin_level: level,
   name: String,
   bbox: Option<[f64; 4]>,
   polys: Vec<polygon_entry>,
@@ -45,7 +47,7 @@ struct ancestor_entry {
 }
 
 pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
-  let total = crate::database::admin_levels::pending_total(conn) as u64;
+  let total = crate::domain::admin_level::repository::pending_total(conn) as u64;
   progress(progress_report {
     total: Some(total),
     processed: 0,
@@ -55,10 +57,10 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
     return;
   }
 
-  let raw = crate::database::admin_levels::load_all_below_street(conn);
+  let raw = crate::domain::admin_level::repository::load_all_below_street(conn);
   let mut entries: Vec<ancestor_entry> = raw.iter().map(parse_entry).collect();
 
-  let mut by_level: BTreeMap<u8, Vec<usize>> = BTreeMap::new();
+  let mut by_level: BTreeMap<level, Vec<usize>> = BTreeMap::new();
   for (idx, e) in entries.iter().enumerate() {
     by_level.entry(e.admin_level).or_default().push(idx);
   }
@@ -172,7 +174,7 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
     });
   }
 
-  let street_ids = crate::database::admin_levels::pending_street_ids(conn);
+  let street_ids = crate::domain::admin_level::repository::pending_street_ids(conn);
   // conn.path() retorna Some("") para `:memory:` — workers nao conseguem reabrir,
   // entao fallback para o caminho sequencial.
   match conn.path().filter(|p| !p.is_empty()) {
@@ -229,7 +231,7 @@ fn run_streets_parallel(
           return;
         };
         for sub_chunk in id_chunk.chunks(READ_SIZE) {
-          let rows = crate::database::admin_levels::load_by_ids(&reader, sub_chunk);
+          let rows = crate::domain::admin_level::repository::load_by_ids(&reader, sub_chunk);
           let out: Vec<row_t> = rows
             .iter()
             .map(|db_row| {
@@ -294,7 +296,7 @@ fn run_streets_sequential(
   let mut batch: Vec<row_t> = Vec::new();
 
   for chunk in street_ids.chunks(READ_SIZE) {
-    let rows = crate::database::admin_levels::load_by_ids(conn, chunk);
+    let rows = crate::domain::admin_level::repository::load_by_ids(conn, chunk);
     for db_row in &rows {
       let e = parse_entry(db_row);
       let (ancestor_ids, user_friendly_name) = resolve_hierarchy(
@@ -334,7 +336,7 @@ fn run_streets_sequential(
   }
 }
 
-fn parse_entry(row: &crate::database::admin_levels::admin_level_geom_row) -> ancestor_entry {
+fn parse_entry(row: &crate::domain::admin_level::repository::admin_level_geom_row) -> ancestor_entry {
   let geometry = row.wkb.as_ref().map(|g| g.geometry().clone());
   let (cx, cy) = geometry
     .as_ref()
@@ -397,12 +399,12 @@ fn resolve_hierarchy(
   id: i64,
   name: &str,
   own_post_code: Option<&str>,
-  current_level: u8,
+  current_level: level,
   current_area: f64,
   tree: &RTree<spatial_entry>,
   entries: &[ancestor_entry],
 ) -> (Vec<i64>, String) {
-  let mut by_level: BTreeMap<u8, Vec<usize>> = BTreeMap::new();
+  let mut by_level: BTreeMap<level, Vec<usize>> = BTreeMap::new();
   for se in tree.locate_in_envelope_intersecting(&AABB::from_point([cx, cy])) {
     let idx = se.idx;
     let c = &entries[idx];

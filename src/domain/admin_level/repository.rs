@@ -1,88 +1,9 @@
-use geo::{BoundingRect, Geometry};
-use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
 use rusqlite::Connection;
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
-use crate::domain::kernel::admin_area_id::admin_area_id;
-
-pub struct admin_geometry(pub Geometry<f64>);
-
-impl admin_geometry {
-  pub fn geometry(&self) -> &Geometry<f64> {
-    &self.0
-  }
-
-  pub fn into_geometry(self) -> Geometry<f64> {
-    self.0
-  }
-}
-
-impl From<Geometry<f64>> for admin_geometry {
-  fn from(geometry: Geometry<f64>) -> Self {
-    Self(geometry)
-  }
-}
-
-impl ToSql for admin_geometry {
-  fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
-    let bbox = self.0.bounding_rect().ok_or_else(|| {
-      rusqlite::Error::ToSqlConversionFailure(Box::<dyn std::error::Error + Send + Sync>::from(
-        "admin_geometry has no bounding rect",
-      ))
-    })?;
-    let envelope = vec![bbox.min().x, bbox.min().y, bbox.max().x, bbox.max().y];
-    let blob = self
-      .0
-      .to_spatialite_wkb(CoordDimensions::default(), Some(4326), envelope)
-      .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    Ok(ToSqlOutput::from(blob))
-  }
-}
-
-impl FromSql for admin_geometry {
-  fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-    let blob = value.as_blob()?;
-    let empty = || {
-      admin_geometry(Geometry::GeometryCollection(geo::GeometryCollection(
-        vec![],
-      )))
-    };
-    if blob.len() <= 40 {
-      eprintln!(
-        "warn: admin_geometry: blob too short ({} bytes); returning empty sentinel",
-        blob.len()
-      );
-      return Ok(empty());
-    }
-    // spatialite format: use SpatiaLiteWkb on the full blob — geozero's to_spatialite_wkb
-    // omits the byte-order byte from the WKB body and uses 0x69 as sub-geometry separator,
-    // so Wkb (ISO WKB reader) cannot parse it; SpatiaLiteWkb handles the full blob correctly.
-    match SpatiaLiteWkb(blob).to_geo() {
-      Ok(geometry) => Ok(admin_geometry(geometry)),
-      Err(e) => {
-        let preview: Vec<String> = blob.iter().take(16).map(|b| format!("{:02x}", b)).collect();
-        eprintln!(
-          "warn: admin_geometry: WKB parse failed ({} bytes, head=[{}]): {:?}",
-          blob.len(),
-          preview.join(" "),
-          e
-        );
-        Ok(empty())
-      }
-    }
-  }
-}
-
-pub struct admin_levels {
-  pub relation_id: Option<u64>,
-  pub way_id: Option<u64>,
-  pub admin_level: u8,
-  pub wkb: admin_geometry,
-  pub name: String,
-  // country_iso_code: ISO 3166-1 alpha-2 (2 chars, e.g. 'BR', 'US')
-  pub country_iso_code: Option<String>,
-  pub post_code: Option<String>,
-}
+use super::admin_level_id;
+use super::entity::admin_level;
+use super::geometry::{admin_geometry, bounding_box};
+use super::scale::level;
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS admin_levels (
@@ -100,7 +21,17 @@ const SQL_CREATE: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS admin_levels;";
 
-impl_table_ops!(pub(super), SQL_CREATE, SQL_DROP);
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create admin_levels");
+}
+
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop admin_levels");
+}
 
 const SQL_CREATE_INDEXES: &str = "
   CREATE INDEX IF NOT EXISTS admin_levels_search_by_level
@@ -123,41 +54,27 @@ pub fn drop_indexes(conn: &Connection) {
     .expect("failed to drop admin_levels indexes");
 }
 
-// reads the centroid of a spatialite blob's MBR header without parsing the full geometry.
-// layout: byte 0 = 0x00, byte 1 = endianness, bytes 2-5 = SRID, bytes 6-37 = MBR
-// (min_x, min_y, max_x, max_y as four f64), byte 38 = 0x7C. returns (lon, lat) of the center.
-pub fn mbr_center(blob: &[u8]) -> Option<(f64, f64)> {
-  if blob.len() < 38 || blob[0] != 0x00 {
-    return None;
-  }
-  let little_endian = blob[1] == 0x01;
-  let read = |offset: usize| -> f64 {
-    let mut buf = [0u8; 8];
-    buf.copy_from_slice(&blob[offset..offset + 8]);
-    if little_endian {
-      f64::from_le_bytes(buf)
-    } else {
-      f64::from_be_bytes(buf)
-    }
-  };
-  let min_x = read(6);
-  let min_y = read(14);
-  let max_x = read(22);
-  let max_y = read(30);
-  Some(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0))
-}
-
 pub struct admin_level_geom_row {
   pub id: i64,
-  pub admin_level: u8,
+  pub admin_level: level,
   pub name: String,
   pub wkb: Option<admin_geometry>,
   pub post_code: Option<String>,
 }
 
-// street = 12; levels with lower numbers are ancestors (countries, states, cities)
-// loaded into memory for hierarchy resolution
-const STREET_LEVEL: u8 = 12;
+// a level the scale does not name cannot have been written by this pipeline — the extraction side
+// only ever holds an `admin_level`. one showing up means the file was built by another version, so
+// the row is dropped with a warning instead of failing the whole read, matching what
+// `admin_geometry::column_result` does with a blob it cannot parse.
+fn level_of(id: i64, raw: u8) -> Option<level> {
+  match level::new(raw) {
+    Some(level) => Some(level),
+    None => {
+      eprintln!("warn: admin_levels: row {id} has unknown admin_level {raw}; skipping");
+      None
+    }
+  }
+}
 
 const SQL_PENDING_TOTAL: &str = "
   WITH pending AS (
@@ -192,18 +109,24 @@ pub fn load_all_below_street(conn: &Connection) -> Vec<admin_level_geom_row> {
     .prepare(SQL_LOAD_ALL_BELOW_STREET)
     .expect("failed to prepare load ancestors");
   stmt
-    .query_map([STREET_LEVEL], |row| {
-      Ok(admin_level_geom_row {
-        id: row.get(0)?,
-        admin_level: row.get(1)?,
-        name: row.get(2)?,
-        wkb: row.get(3)?,
-        post_code: row.get(4)?,
-      })
-    })
+    .query_map([level::street.value()], map_geom_row)
     .expect("failed to query ancestors")
-    .map(|r| r.expect("failed to read ancestor row"))
+    .filter_map(|r| r.expect("failed to read ancestor row"))
     .collect()
+}
+
+fn map_geom_row(row: &rusqlite::Row) -> rusqlite::Result<Option<admin_level_geom_row>> {
+  let id: i64 = row.get(0)?;
+  let Some(level) = level_of(id, row.get(1)?) else {
+    return Ok(None);
+  };
+  Ok(Some(admin_level_geom_row {
+    id,
+    admin_level: level,
+    name: row.get(2)?,
+    wkb: row.get(3)?,
+    post_code: row.get(4)?,
+  }))
 }
 
 const SQL_PENDING_STREET_IDS: &str = "
@@ -223,7 +146,7 @@ pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
     .prepare(SQL_PENDING_STREET_IDS)
     .expect("failed to prepare pending streets");
   stmt
-    .query_map([STREET_LEVEL], |row| row.get::<_, i64>(0))
+    .query_map([level::street.value()], |row| row.get::<_, i64>(0))
     .expect("failed to query pending streets")
     .map(|r| r.expect("failed to read street id"))
     .collect()
@@ -231,7 +154,7 @@ pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
 
 pub struct street_query_row {
   pub id: i64,
-  pub admin_level: u8,
+  pub admin_level: level,
   pub wkb: Option<admin_geometry>,
 }
 
@@ -246,7 +169,7 @@ const SQL_STREETS_FOR_COORDINATES: &str = "
     AND rt.min_lat <= ?3 AND rt.max_lat >= ?4
     AND rt.min_lon <= ?5 AND rt.max_lon >= ?6
     AND rt.min_lat <= ?7 AND rt.max_lat >= ?8
-    AND al.admin_level = 12
+    AND al.admin_level = ?9
 ";
 
 pub fn streets_for_coordinates(
@@ -254,14 +177,15 @@ pub fn streets_for_coordinates(
   lon: f64,
   lat: f64,
   delta: f64,
-  bbox: crate::query::bounding_box,
+  bbox: bounding_box,
 ) -> Vec<street_query_row> {
   let map_row = |row: &rusqlite::Row| {
-    Ok(street_query_row {
-      id: row.get(0)?,
-      admin_level: row.get(1)?,
-      wkb: row.get(2)?,
-    })
+    let id: i64 = row.get(0)?;
+    Ok(level_of(id, row.get(1)?).map(|level| street_query_row {
+      id,
+      admin_level: level,
+      wkb: row.get(2).ok().flatten(),
+    }))
   };
   let mut stmt = conn
     .prepare(SQL_STREETS_FOR_COORDINATES)
@@ -276,12 +200,13 @@ pub fn streets_for_coordinates(
         bbox.max_lon,
         bbox.min_lon,
         bbox.max_lat,
-        bbox.min_lat
+        bbox.min_lat,
+        level::street.value()
       ],
       map_row,
     )
     .expect("failed to query streets for coordinates")
-    .map(|r| r.expect("failed to read street row"))
+    .filter_map(|r| r.expect("failed to read street row"))
     .collect()
 }
 
@@ -294,7 +219,7 @@ const SQL_IDS_IN_BOUNDING_BOX: &str = "
 
 // todos os ids cuja geometria (bbox) intersecta o envelope. usado para restringir o ranking
 // textual à região no tantivy (espacial-primeiro), em vez de filtrar depois do corte do fts
-pub fn ids_in_bounding_box(conn: &Connection, bbox: crate::query::bounding_box) -> Vec<i64> {
+pub fn ids_in_bounding_box(conn: &Connection, bbox: bounding_box) -> Vec<i64> {
   let mut stmt = conn
     .prepare(SQL_IDS_IN_BOUNDING_BOX)
     .expect("failed to prepare ids_in_bounding_box");
@@ -331,38 +256,34 @@ pub fn load_by_ids(conn: &Connection, ids: &[i64]) -> Vec<admin_level_geom_row> 
     .collect();
   let mut stmt = conn.prepare(&sql).expect("failed to prepare load by ids");
   stmt
-    .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-      Ok(admin_level_geom_row {
-        id: row.get(0)?,
-        admin_level: row.get(1)?,
-        name: row.get(2)?,
-        wkb: row.get(3)?,
-        post_code: row.get(4)?,
-      })
-    })
+    .query_map(rusqlite::params_from_iter(params.iter()), map_geom_row)
     .expect("failed to query by ids")
-    .map(|r| r.expect("failed to read row by id"))
+    .filter_map(|r| r.expect("failed to read row by id"))
     .collect()
 }
 
 pub struct admin_area_row {
   pub id: i64,
   pub name: String,
-  pub admin_level: u8,
+  pub admin_level: level,
   pub relation_id: Option<u64>,
   pub way_id: Option<u64>,
   pub wkb: Option<admin_geometry>,
 }
 
-fn map_admin_area_row(row: &rusqlite::Row) -> rusqlite::Result<admin_area_row> {
-  Ok(admin_area_row {
-    id: row.get(0)?,
+fn map_admin_area_row(row: &rusqlite::Row) -> rusqlite::Result<Option<admin_area_row>> {
+  let id: i64 = row.get(0)?;
+  let Some(level) = level_of(id, row.get(2)?) else {
+    return Ok(None);
+  };
+  Ok(Some(admin_area_row {
+    id,
     name: row.get(1)?,
-    admin_level: row.get(2)?,
+    admin_level: level,
     relation_id: row.get(3)?,
     way_id: row.get(4)?,
     wkb: row.get(5)?,
-  })
+  }))
 }
 
 const SQL_LOAD_FULL_BY_IDS_PREFIX: &str = "
@@ -390,14 +311,14 @@ pub fn load_full_by_ids(conn: &Connection, ids: &[i64]) -> Vec<admin_area_row> {
       map_admin_area_row,
     )
     .expect("failed to query load_full_by_ids")
-    .map(|r| r.expect("failed to read load_full_by_ids row"))
+    .filter_map(|r| r.expect("failed to read load_full_by_ids row"))
     .collect()
 }
 
 pub struct admin_meta_row {
   pub id: i64,
   pub name: String,
-  pub admin_level: u8,
+  pub admin_level: level,
   pub relation_id: Option<u64>,
   pub way_id: Option<u64>,
   pub country_iso_code: Option<String>,
@@ -431,18 +352,22 @@ pub fn load_metadata_by_ids(
     .expect("failed to prepare load_metadata_by_ids");
   stmt
     .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-      Ok(admin_meta_row {
-        id: row.get(0)?,
+      let id: i64 = row.get(0)?;
+      let Some(level) = level_of(id, row.get(2)?) else {
+        return Ok(None);
+      };
+      Ok(Some(admin_meta_row {
+        id,
         name: row.get(1)?,
-        admin_level: row.get(2)?,
+        admin_level: level,
         relation_id: row.get(3)?,
         way_id: row.get(4)?,
         country_iso_code: row.get(5)?,
         post_code: row.get(6)?,
-      })
+      }))
     })
     .expect("failed to query load_metadata_by_ids")
-    .map(|r| r.expect("failed to read admin_meta_row"))
+    .filter_map(|r| r.expect("failed to read admin_meta_row"))
     .map(|r| (r.id, r))
     .collect()
 }
@@ -501,83 +426,6 @@ pub fn load_wkb_page(
     .collect()
 }
 
-const SQL_CREATE_RTREE: &str = "
-  CREATE VIRTUAL TABLE IF NOT EXISTS admin_levels_rtree
-  USING rtree(id, min_lon, max_lon, min_lat, max_lat);
-";
-
-const SQL_DROP_RTREE: &str = "DROP TABLE IF EXISTS admin_levels_rtree;";
-
-const SQL_INSERT_RTREE: &str = "
-  INSERT INTO admin_levels_rtree (
-    id,
-    min_lon,
-    max_lon,
-    min_lat,
-    max_lat
-  ) VALUES (
-    ?1,
-    ?2,
-    ?3,
-    ?4,
-    ?5
-  );
-";
-
-pub struct rtree_row {
-  pub id: i64,
-  pub min_lon: f64,
-  pub max_lon: f64,
-  pub min_lat: f64,
-  pub max_lat: f64,
-}
-
-pub(super) fn create_rtree(conn: &Connection) {
-  conn
-    .execute_batch(SQL_CREATE_RTREE)
-    .expect("failed to create admin_levels_rtree");
-}
-
-pub(super) fn drop_rtree(conn: &Connection) {
-  conn
-    .execute_batch(SQL_DROP_RTREE)
-    .expect("failed to drop admin_levels_rtree");
-}
-
-pub fn recreate_rtree(conn: &Connection) {
-  drop_rtree(conn);
-  create_rtree(conn);
-}
-
-pub fn batch_insert_rtree(conn: &Connection, rows: &[rtree_row]) {
-  if rows.is_empty() {
-    return;
-  }
-  let tx = conn
-    .unchecked_transaction()
-    .expect("failed to begin transaction");
-  {
-    let mut stmt = tx
-      .prepare(SQL_INSERT_RTREE)
-      .expect("failed to prepare rtree insert");
-    rows
-      .iter()
-      .try_for_each(|row| {
-        stmt
-          .execute(rusqlite::params![
-            row.id,
-            row.min_lon,
-            row.max_lon,
-            row.min_lat,
-            row.max_lat
-          ])
-          .map(|_| ())
-      })
-      .expect("failed to insert rtree row");
-  }
-  tx.commit().expect("failed to commit rtree batch");
-}
-
 const SQL_UPSERT: &str = "
   INSERT INTO admin_levels (
     id,
@@ -606,7 +454,7 @@ const SQL_UPSERT: &str = "
     wkb              = excluded.wkb
 ";
 
-pub fn batch_upsert(conn: &Connection, rows: &[admin_levels]) -> i64 {
+pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
   let tx = conn
     .unchecked_transaction()
     .expect("failed to begin transaction");
@@ -615,12 +463,13 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_levels]) -> i64 {
     let mut stmt = tx.prepare(SQL_UPSERT).expect("failed to prepare upsert");
     for row in rows {
       let id: u64 = match (row.relation_id, row.way_id) {
-        (Some(rel), _) => admin_area_id::from_relation(rel).raw(),
-        (None, Some(w)) => admin_area_id::from_way(w).raw(),
+        (Some(rel), _) => admin_level_id::from_relation(rel).raw(),
+        (None, Some(w)) => admin_level_id::from_way(w).raw(),
         (None, None) => panic!(
           "admin_levels row has neither way_id nor relation_id; \
            cannot derive a stable id (admin_level={}, name={:?})",
-          row.admin_level, row.name,
+          row.level.value(),
+          row.name,
         ),
       };
       let changes = stmt
@@ -628,7 +477,7 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_levels]) -> i64 {
           id,
           row.relation_id,
           row.way_id,
-          row.admin_level,
+          row.level.value(),
           row.name,
           row.country_iso_code,
           row.post_code,
@@ -643,5 +492,5 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_levels]) -> i64 {
 }
 
 #[cfg(test)]
-#[path = "admin_levels.test.rs"]
+#[path = "repository.test.rs"]
 mod tests;

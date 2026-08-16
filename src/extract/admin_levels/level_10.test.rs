@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::*;
 
 fn coords(points: &[(f64, f64)]) -> Vec<Coord<f64>> {
@@ -12,7 +13,7 @@ fn work(way_id: u64, points: &[(f64, f64)]) -> way_work {
       post_code: Some("1700-001".to_string()),
     },
     coords: coords(points),
-    admin_level: super::super::osm_admin_level::neighborhood,
+    level: super::super::level::neighborhood,
   }
 }
 
@@ -80,7 +81,7 @@ fn _00_03_closed_ring_with_too_few_points_is_not_a_polygon() {
 fn _00_04_row_is_identified_by_way_id() {
   let row = process_one_way(work(99, &[(0.0, 0.0), (1.0, 1.0)])).expect("deve produzir uma linha");
 
-  pbf_fixtures::assert_admin_row(&row, 99, 10, "Alvalade", Some("1700-001"));
+  pbf_fixtures::assert_admin_row(&row, 99, level::neighborhood, "Alvalade", Some("1700-001"));
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -186,7 +187,7 @@ fn _01_05_load_chunk_groups_coordinates_by_way_in_order() {
   let works = load_chunk(
     &conn,
     &[10],
-    super::super::osm_admin_level::neighborhood,
+    super::super::level::neighborhood,
     NAME_PRIORITY,
   );
 

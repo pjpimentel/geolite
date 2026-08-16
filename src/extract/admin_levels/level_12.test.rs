@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::*;
 
 fn coords(points: &[(f64, f64)]) -> Vec<Coord<f64>> {
@@ -65,7 +66,7 @@ fn _00_03_row_is_identified_by_way_id_at_level_12() {
   )
   .expect("deve produzir uma linha");
 
-  pbf_fixtures::assert_admin_row(&row, 77, 12, "Rua do Ouro", Some("1100-060"));
+  pbf_fixtures::assert_admin_row(&row, 77, level::street, "Rua do Ouro", Some("1100-060"));
 }
 
 // 00.04: post_code ausente e propagado como None

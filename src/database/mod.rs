@@ -18,9 +18,7 @@ macro_rules! impl_table_ops {
 // stamped into every writable database via PRAGMA user_version and checked by `geolite merge`.
 pub const SCHEMA_VERSION: u32 = 1;
 
-pub mod admin_levels;
 pub mod admin_levels_hierarchy;
-pub mod house_numbers;
 pub mod merge;
 pub mod osm_nodes;
 pub mod osm_pbf_blob_chunks;
@@ -81,13 +79,13 @@ pub fn destroy_data(
   }
   let conn = open_write_main(path);
   if house_numbers {
-    house_numbers::drop_table(&conn);
+    crate::domain::house_number::repository::drop_table(&conn);
   }
   if admin_levels {
     admin_levels_hierarchy::drop_table(&conn);
-    admin_levels::drop_rtree(&conn);
-    admin_levels::drop_table(&conn);
-    house_numbers::drop_table(&conn);
+    crate::domain::admin_level::spatial_index::drop_table(&conn);
+    crate::domain::admin_level::repository::drop_table(&conn);
+    crate::domain::house_number::repository::drop_table(&conn);
   }
   conn.execute_batch("VACUUM;").expect("failed to vacuum");
 }
@@ -111,10 +109,10 @@ pub fn open_write_main(path: &str) -> Connection {
     .pragma_update(None, "user_version", SCHEMA_VERSION)
     .expect("failed to set user_version");
   osm_pbf_files::create_table(&conn);
-  admin_levels::create_table(&conn);
+  crate::domain::admin_level::repository::create_table(&conn);
   admin_levels_hierarchy::create_table(&conn);
-  admin_levels::create_rtree(&conn);
-  house_numbers::create_table(&conn);
+  crate::domain::admin_level::spatial_index::create(&conn);
+  crate::domain::house_number::repository::create_table(&conn);
   conn
 }
 

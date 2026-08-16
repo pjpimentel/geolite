@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::domain::house_number::{house_number_link, link_strategy};
-use crate::domain::kernel::admin_area_id::admin_area_id;
+use crate::domain::admin_level::admin_level_id;
 
 const TILE_SIZE: f64 = 2.0;
 // approximates the legacy 3x3 grid filter at 0.05° per cell —
@@ -50,7 +50,7 @@ pub struct progress_report {
 
 struct tile_data {
   streets: Vec<Arc<street>>,
-  candidates: Vec<crate::database::house_numbers::candidate_row>,
+  candidates: Vec<crate::domain::house_number::repository::candidate_row>,
 }
 
 fn geometry_to_multilinestring(geom: &Geometry<f64>) -> Option<MultiLineString<f64>> {
@@ -150,7 +150,7 @@ fn process_tile(tile: tile_data) -> Vec<house_number_link> {
     {
       results.push(house_number_link {
         node_id: c.id,
-        street_id: admin_area_id::from_raw(s.id as u64),
+        street_id: admin_level_id::from_raw(s.id as u64),
         number: c.number,
         point: cp,
         strategy,
@@ -165,7 +165,7 @@ pub fn run(
   policy: crate::domain::house_number::house_number_policy,
   progress: impl Fn(progress_report),
 ) {
-  let all_candidates = crate::database::house_numbers::load_all_candidates(conn, &policy);
+  let all_candidates = crate::domain::house_number::repository::load_all_candidates(conn, &policy);
   let total = all_candidates.len() as u64;
 
   progress(progress_report {
@@ -176,13 +176,13 @@ pub fn run(
     return;
   }
 
-  let street_meta_rows = crate::database::house_numbers::streets_with_centroid(conn);
+  let street_meta_rows = crate::domain::house_number::repository::streets_with_centroid(conn);
   let mut meta_map: HashMap<i64, (String, f64, f64)> = HashMap::new();
   for m in &street_meta_rows {
     meta_map.insert(m.id, (m.name.clone(), m.cx, m.cy));
   }
 
-  let mut by_tile: HashMap<(i64, i64), Vec<crate::database::house_numbers::candidate_row>> =
+  let mut by_tile: HashMap<(i64, i64), Vec<crate::domain::house_number::repository::candidate_row>> =
     HashMap::new();
   for c in all_candidates {
     let gx = (c.lon / TILE_SIZE).floor() as i64;
@@ -208,7 +208,7 @@ pub fn run(
   let all_ids: Vec<i64> = all_needed_ids.into_iter().collect();
   let mut street_map: HashMap<i64, Arc<street>> = HashMap::new();
   for chunk in all_ids.chunks(WKB_BATCH) {
-    let wkb_rows = crate::database::house_numbers::streets_wkb_by_ids(conn, chunk);
+    let wkb_rows = crate::domain::house_number::repository::streets_wkb_by_ids(conn, chunk);
     for r in wkb_rows {
       let Some(mls) = geometry_to_multilinestring(r.wkb.geometry()) else {
         continue;
@@ -279,7 +279,7 @@ pub fn run(
 
   let mut processed: u64 = 0;
   for chunk in all_links.chunks(CHUNK_SIZE) {
-    processed += crate::database::house_numbers::batch_insert_links(conn, chunk) as u64;
+    processed += crate::domain::house_number::repository::batch_insert_links(conn, chunk) as u64;
     progress(progress_report { total, processed });
   }
 }

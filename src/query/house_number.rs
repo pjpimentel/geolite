@@ -5,13 +5,13 @@ use std::collections::HashMap;
 use super::{house_number_match, query_house_number};
 use crate::domain::house_number::house_number;
 use crate::domain::house_number::{house_number_policy, house_number_resolution, resolution, token};
-use crate::extract::admin_levels::osm_admin_level;
+use crate::domain::admin_level::level;
 
 // house numbers are precise points; 50m is intentionally tighter than the 100m used for
 // streets, which are lines with a broader snap area
 const MATCH_MAX_DISTANCE_IN_METERS: f64 = 50.0;
 
-fn point_of(wkb: Option<&crate::database::admin_levels::admin_geometry>) -> Option<Point<f64>> {
+fn point_of(wkb: Option<&crate::domain::admin_level::geometry::admin_geometry>) -> Option<Point<f64>> {
   match wkb.map(|g| g.geometry()) {
     Some(Geometry::Point(p)) => Some(*p),
     _ => None,
@@ -26,7 +26,7 @@ fn numbers_by_street(
   admin_level_ids: &[i64],
 ) -> HashMap<i64, Vec<(house_number, Point<f64>)>> {
   let mut by_street: HashMap<i64, Vec<(house_number, Point<f64>)>> = HashMap::new();
-  for row in crate::database::house_numbers::by_admin_level_ids(conn, admin_level_ids) {
+  for row in crate::domain::house_number::repository::by_admin_level_ids(conn, admin_level_ids) {
     if let Some(point) = point_of(row.wkb.as_ref()) {
       by_street
         .entry(row.admin_level_id)
@@ -59,8 +59,8 @@ fn append_house_number_level(
   number: &str,
   friendly_name_format: Option<&str>,
 ) {
-  m.admin_levels.push(super::admin_level {
-    level: osm_admin_level::house_numbers as u8,
+  m.admin_levels.push(super::query_admin_level {
+    level: level::house_number.value(),
     name: number.to_string(),
     osm_relation_id: None,
     osm_way_id: None,
@@ -126,7 +126,7 @@ pub fn enrich_house_number_from_query(
 }
 
 fn street_name_of(m: &super::query_match) -> String {
-  let street = osm_admin_level::street as u8;
+  let street = level::street.value();
   m.admin_levels
     .iter()
     .find(|a| a.level == street)

@@ -1,4 +1,5 @@
-use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
+use crate::domain::admin_level::level;
+use crate::domain::admin_level::{admin_level as admin_levels_row, repository::batch_upsert};
 use crate::index::admin_levels_hierarchy_tantivy::testing::build_test_index;
 use geo::{Coord, Geometry, LineString, Point};
 
@@ -25,7 +26,7 @@ fn make_street_row_with_postcode(
   admin_levels_row {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(ls).into(),
     name: name.to_string(),
     country_iso_code: None,
@@ -59,14 +60,14 @@ fn insert_house_number(
   lon: f64,
   lat: f64,
 ) {
-  let row = crate::database::house_numbers::house_numbers {
+  let link = crate::domain::house_number::house_number_link {
     node_id,
-    admin_level_id,
-    number: number.to_string(),
-    wkb: Geometry::Point(Point::new(lon, lat)).into(),
-    strategy: 0,
+    street_id: crate::domain::admin_level::admin_level_id::from_raw(admin_level_id as u64),
+    number: crate::domain::house_number::house_number::from_stored(number),
+    point: Point::new(lon, lat),
+    strategy: crate::domain::house_number::link_strategy::by_proximity,
   };
-  crate::database::house_numbers::batch_insert(conn, &[row]);
+  crate::domain::house_number::repository::batch_insert_links(conn, &[link]);
 }
 
 #[test]
@@ -1060,7 +1061,7 @@ fn _26_admin_level_filter_keeps_only_requested_levels() {
   let conn = crate::database::open_write(":memory:");
   let street = make_street_row("embare", 0.000, 1);
   let mut city = make_street_row("embare", 0.001, 2);
-  city.admin_level = 8;
+  city.level = level::city;
   batch_upsert(&conn, &[street, city]);
   crate::index::coordinates::run(&conn, |_| {});
   crate::index::hierarchy::run(&conn, |_| {});
@@ -1074,7 +1075,7 @@ fn _26_admin_level_filter_keeps_only_requested_levels() {
     None,
     None,
     None,
-    Some(vec![8]),
+    Some(vec![level::city]),
     true,
   );
   assert_eq!(out_city.matches.len(), 1);
@@ -1088,7 +1089,7 @@ fn _26_admin_level_filter_keeps_only_requested_levels() {
     None,
     None,
     None,
-    Some(vec![8, 12]),
+    Some(vec![level::city, level::street]),
     true,
   );
   assert_eq!(out_both.matches.len(), 2);
@@ -1113,7 +1114,7 @@ fn _27_house_number_enriched_match_requires_level_30_in_the_filter() {
     None,
     None,
     None,
-    Some(vec![12]),
+    Some(vec![level::street]),
     true,
   );
   assert!(out_street_only.matches.is_empty());
@@ -1126,7 +1127,7 @@ fn _27_house_number_enriched_match_requires_level_30_in_the_filter() {
     None,
     None,
     None,
-    Some(vec![12, 30]),
+    Some(vec![level::street, level::house_number]),
     true,
   );
   assert_eq!(out_with_30.matches.len(), 1);
@@ -1142,7 +1143,7 @@ fn _28_admin_level_filter_finds_levels_ranked_beyond_the_fts_limit() {
     .map(|i| make_street_row("santos", 0.0001 * i as f64, i as u64))
     .collect();
   let mut city = make_street_row("santos", 0.01, 1000);
-  city.admin_level = 8;
+  city.level = level::city;
   rows.push(city);
   batch_upsert(&conn, &rows);
   crate::index::coordinates::run(&conn, |_| {});
@@ -1157,7 +1158,7 @@ fn _28_admin_level_filter_finds_levels_ranked_beyond_the_fts_limit() {
     None,
     None,
     None,
-    Some(vec![8]),
+    Some(vec![level::city]),
     true,
   );
   assert_eq!(out.matches.len(), 1);

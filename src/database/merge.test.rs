@@ -1,9 +1,10 @@
-use crate::database::admin_levels::{
-  admin_geometry, admin_levels as admin_levels_row, batch_upsert,
-};
-use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
+use crate::domain::admin_level::level;
+use crate::domain::admin_level::{admin_level as admin_levels_row, repository::batch_upsert};
+use crate::domain::admin_level::geometry::admin_geometry;
+use crate::domain::admin_level::admin_level_id;
+use crate::domain::house_number::repository::batch_insert_links;
+use crate::domain::house_number::{house_number, house_number_link, link_strategy};
 use crate::database::open_write_main;
-use crate::domain::kernel::admin_area_id::admin_area_id;
 use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 
@@ -19,7 +20,7 @@ fn make_way(way_id: u64) -> admin_levels_row {
   admin_levels_row {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: make_geometry(),
     name: format!("way_{way_id}"),
     country_iso_code: None,
@@ -27,13 +28,13 @@ fn make_way(way_id: u64) -> admin_levels_row {
   }
 }
 
-fn make_house(node_id: u64, admin_level_id: i64, number: &str) -> house_numbers_row {
-  house_numbers_row {
+fn make_house(node_id: u64, street_id: i64, number: &str) -> house_number_link {
+  house_number_link {
     node_id,
-    admin_level_id,
-    number: number.to_string(),
-    wkb: make_geometry(),
-    strategy: 0,
+    street_id: admin_level_id::from_raw(street_id as u64),
+    number: house_number::from_stored(number),
+    point: geo::Point::new(0.0, 0.0),
+    strategy: link_strategy::by_proximity,
   }
 }
 
@@ -55,10 +56,10 @@ fn cleanup(path: &str) {
 }
 
 // builds a source database file and checkpoints the WAL so it can be attached read-only.
-fn build_source(path: &str, admins: &[admin_levels_row], houses: &[house_numbers_row]) {
+fn build_source(path: &str, admins: &[admin_levels_row], houses: &[house_number_link]) {
   let conn = open_write_main(path);
   batch_upsert(&conn, admins);
-  batch_insert(&conn, houses);
+  batch_insert_links(&conn, houses);
   conn
     .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
     .expect("failed to checkpoint source");
@@ -85,7 +86,7 @@ fn _00_merge_combines_admin_levels_without_id_collision() {
   // ways {1, 2, 3} → exactly three rows; way 2 upserted, not duplicated.
   assert_eq!(count(&conn, "SELECT COUNT(*) FROM admin_levels"), 3);
 
-  let way3_id = admin_area_id::from_way(3).raw() as i64;
+  let way3_id = admin_level_id::from_way(3).raw() as i64;
   assert_eq!(
     count(&conn, &format!("SELECT COUNT(*) FROM admin_levels WHERE id = {way3_id}")),
     1,
@@ -103,7 +104,7 @@ fn _01_merge_house_numbers_dedupes_by_node_id() {
   let source_path = temp_path("houses_source");
 
   // both databases reference admin_level way 1 (id = 2). node 100 overlaps; node 200 is new.
-  let way1_id = admin_area_id::from_way(1).raw() as i64;
+  let way1_id = admin_level_id::from_way(1).raw() as i64;
   build_source(&base_path, &[make_way(1)], &[make_house(100, way1_id, "10")]);
   build_source(
     &source_path,

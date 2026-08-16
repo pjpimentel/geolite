@@ -1,6 +1,6 @@
 use super::command_handler_query;
 use crate::cli::tests::street_row;
-use crate::database::admin_levels::batch_upsert;
+use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::open_write;
 use crate::extract::pbf_fixtures::tempdir_guard;
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
@@ -53,7 +53,7 @@ fn _00_01_applies_every_optional_filter() {
     Some("{admin_level_12_name}"),
     Some(0.1),
     Some(bounding),
-    Some(vec![12]),
+    Some(vec![crate::domain::admin_level::level::street]),
     false,
     DEFAULT.index_user_friendly_name.boosts,
     DEFAULT.house_numbers,

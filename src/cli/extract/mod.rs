@@ -6,6 +6,8 @@ pub mod osm_pbf_header;
 
 use clap::Subcommand;
 
+use crate::domain::admin_level::level;
+
 #[derive(Subcommand)]
 pub enum extract_commands {
   #[command(name = "osm-pbf-blob-chunks")]
@@ -98,6 +100,25 @@ fn parse_name_priority(raw: &str) -> Result<Vec<&str>, String> {
   Ok(tags)
 }
 
+// levels arrive as a comma-separated list. one that the scale does not name is rejected right
+// here, instead of travelling downstream as a number that would silently extract nothing.
+fn parse_admin_levels(raw: &str) -> Result<Vec<level>, String> {
+  let mut levels: Vec<level> = Vec::new();
+  for part in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+    let value: u8 = part
+      .parse()
+      .map_err(|_| format!("'{part}' is not a level number"))?;
+    match level::new(value) {
+      Some(level) => levels.push(level),
+      None => return Err(format!("level {value} is not supported")),
+    }
+  }
+  if levels.is_empty() {
+    return Err("at least one level required".to_string());
+  }
+  Ok(levels)
+}
+
 pub fn command_handler_extract(
   data_path: &str,
   threads: &u8,
@@ -162,11 +183,14 @@ pub fn command_handler_extract(
       recreate,
       name_priority,
     } => {
-      let levels: Vec<u8> = match admin_level.as_deref() {
-        Some(raw) => raw
-          .split(',')
-          .filter_map(|s| s.trim().parse().ok())
-          .collect(),
+      let levels: Vec<level> = match admin_level.as_deref() {
+        Some(raw) => match parse_admin_levels(raw) {
+          Ok(v) => v,
+          Err(e) => {
+            eprintln!("\x1b[1;31merror\x1b[0m: invalid --admin-level: {e}");
+            std::process::exit(1);
+          }
+        },
         None => preset.extract_osm_admin_levels.admin_levels.to_vec(),
       };
       let names: Vec<&str> = match name_priority.as_deref() {

@@ -1,21 +1,77 @@
 # domain
 
-> the model itself, free of i/o
+> one folder per concept, each owning everything that concept needs
 
-nothing under `domain` imports rusqlite, geozero, tantivy, ureq, tiny_http, clap or prost. the only
-external crate allowed here is `geo`, which is a geometry model rather than an i/o concern. the
-adapters around this layer do the talking to sqlite, to the full-text index and to the network.
+the domain is organised as vertical slices. a concept's folder holds its model and methods, its
+policy, its services and — as each slice lands — its own persistence. the technical modules that
+came before (`extract`, `index`, `query`, `optimize`, `database`) are being emptied into these
+folders and disappear as the concepts arrive.
 
 ```
-kernel/         concepts more than one context needs with the same meaning
-  admin_area_id     stable identity of an admin area, packed from the osm way/relation it came from
-house_number/   what a door number is, on both sides of the pipeline
+admin_level/    a named administrative area — the `admin_levels` table
+  entity            the row as it is written: osm element, level, shape, name, codes
+  scale             the closed set of levels, their names and their order
+  id                stable identity, packed from the osm way/relation it came from
+  geometry          the wkb column codec, its mbr shortcut and the bounding box
+  repository        the ddl, the indexes, the eleven queries and the upsert
+  spatial_index     the rtree of every level's bounding box
+house_number/   a door number placed on a street — the `house_numbers` table
+  entity            the row as it is written: node, street, number, point, strategy
   value             the value object: normalize (ingestion) / recognize (query) / compare
   policy            per-region rules: tags, non-values, digit cap, written forms, `#` prefix
+  strategy          how the number was attached: by_proximity | by_name
   token             finding the number inside a free-text query
   resolution        placing it on a street: exact | interpolated | absent
-  link              a number attached to a street, and how it got there
+  repository        the ddl, the indexes, the candidate scan and the insert
 ```
+
+both folders follow the same shape: `entity` is the row, `repository` is its sql, and the value
+objects and services sit alongside. everything a concept needs is in one place, and the only write
+path into a table is through its entity.
+
+what stays outside the domain is what belongs to no concept in particular: the sqlite connection
+lifecycle, the cli and the http server.
+
+## admin_level
+
+the `admin_levels` table and everything around it: a country, a state, a city, a neighborhood, a
+street — each one a named area with a shape, sitting somewhere on a scale.
+
+it is the first slice to carry its own persistence. `src/database/admin_levels.rs` no longer exists;
+the ddl, the queries and the upsert live in `repository`, and the connection lifecycle in
+`src/database/mod.rs` calls into it to create and drop the table.
+
+### the scale — `level`
+
+the scale every named area sits on. osm tags levels 1..11 on boundary relations; geolite extends it
+with 12 for streets, which are mapped as ways rather than boundaries, and 30 for house numbers,
+which are synthesized while answering a query and never stored as an area.
+
+| level | name | | level | name |
+|---:|---|---|---:|---|
+| 1 | continent | | 8 | city |
+| 2 | country | | 9 | locality |
+| 3 | region | | 10 | neighborhood |
+| 4 | state | | 12 | street |
+| 5 | district | | 14 | address |
+| 6 | county | | 30 | house_number |
+| 7 | municipality | | | |
+
+**the set is closed.** `new` accepts only the levels above, so a level the scale does not name never
+travels through the pipeline as a bare integer that quietly matches nothing. two consequences worth
+knowing:
+
+- `name()` returns `&'static str`, not an `Option` — there is no "unknown" to return, because an
+  unnamed level cannot be constructed.
+- a level outside the scale is refused where it is read: `--admin-level 11`, `--last-admin-levels 11`
+  and `?last_admin_levels=11` all answer with an error instead of extracting or filtering nothing.
+
+ordering is by the level value — a higher level is more specific, so a street sorts after the city
+that contains it. this is what the hierarchy resolution and the friendly name both rely on, and it
+is implemented explicitly rather than derived, so that moving a variant cannot silently change it.
+
+`u8` survives in exactly two places, both of them edges: the `admin_levels.admin_level` column and
+the `level` field of the json response.
 
 ## house_number
 

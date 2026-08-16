@@ -2,23 +2,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::time::Instant;
 
-fn level_name(level: u8) -> &'static str {
-  match level {
-    1 => "continent",
-    2 => "country",
-    3 => "region",
-    4 => "state",
-    5 => "district",
-    6 => "county",
-    7 => "municipality",
-    8 => "city",
-    9 => "locality",
-    10 => "neighborhood",
-    12 => "street",
-    14 => "address",
-    _ => "unknown",
-  }
-}
+use crate::domain::admin_level::level;
 
 fn print_stage_header(label: &str) {
   println!("\x1b[2m{label}\x1b[0m");
@@ -71,7 +55,7 @@ fn extract_stage(
 
 pub fn command_handler_extract_osm_admin_levels(
   sqlite_path: &str,
-  admin_levels: &[u8],
+  admin_levels: &[level],
   threads: &u8,
   recreate: bool,
   name_priority: &[&str],
@@ -92,18 +76,21 @@ pub fn command_handler_extract_osm_admin_levels(
       println!();
     }
 
-    let name = level_name(level);
-    println!("\x1b[1;32mlevel\x1b[0m {level} ({name})");
+    println!(
+      "\x1b[1;32mlevel\x1b[0m {} ({})",
+      level.value(),
+      level.name()
+    );
 
     match level {
-      10 => {
+      level::neighborhood => {
         print_stage_header("stage 1/2: relations");
 
         print!("\x1b[1;32midentifying\x1b[0m candidates...");
         let _ = std::io::stdout().flush();
-        let all_ids = crate::database::osm_relations::all_ids_by_admin_level(&conn, level);
+        let all_ids = crate::database::osm_relations::all_ids_by_admin_level(&conn, level.value());
         let remaining_ids =
-          crate::database::osm_relations::remaining_ids_by_admin_level(&conn, level);
+          crate::database::osm_relations::remaining_ids_by_admin_level(&conn, level.value());
         println!(" done ({} found)", all_ids.len());
 
         print!("\x1b[1;32mremoving\x1b[0m already processed...");
@@ -114,7 +101,7 @@ pub fn command_handler_extract_osm_admin_levels(
           ext::run_with_ids(
             &conn,
             remaining_ids,
-            ext::osm_admin_level::neighborhood,
+            level::neighborhood,
             threads,
             name_priority,
             on_progress,
@@ -129,36 +116,31 @@ pub fn command_handler_extract_osm_admin_levels(
         });
       }
 
-      12 => {
+      level::street => {
         extract_stage("street", |on_progress| {
           ext::level_12::run(&conn, overrides, name_priority, on_progress);
         });
       }
 
+      // every other level is an osm boundary relation carrying the admin_level tag. an unnamed
+      // level cannot reach here: `admin_level` is validated where it is parsed.
       _ => {
         print!("\x1b[1;32midentifying\x1b[0m candidates...");
         let _ = std::io::stdout().flush();
-        let all_ids = crate::database::osm_relations::all_ids_by_admin_level(&conn, level);
+        let all_ids = crate::database::osm_relations::all_ids_by_admin_level(&conn, level.value());
         let remaining_ids =
-          crate::database::osm_relations::remaining_ids_by_admin_level(&conn, level);
+          crate::database::osm_relations::remaining_ids_by_admin_level(&conn, level.value());
         println!(" done ({} found)", all_ids.len());
 
         print!("\x1b[1;32mremoving\x1b[0m already processed...");
         let _ = std::io::stdout().flush();
         println!(" done ({} remaining)", remaining_ids.len());
 
-        let level_enum = match ext::osm_admin_level::try_from(level) {
-          Ok(l) => l,
-          Err(_) => {
-            eprintln!("\x1b[1;31merror\x1b[0m: level {level} not supported");
-            continue;
-          }
-        };
-        extract_stage(name, |on_progress| {
+        extract_stage(level.name(), |on_progress| {
           ext::run_with_ids(
             &conn,
             remaining_ids,
-            level_enum,
+            level,
             threads,
             name_priority,
             on_progress,
@@ -168,7 +150,7 @@ pub fn command_handler_extract_osm_admin_levels(
     }
   }
 
-  crate::database::admin_levels::create_indexes(&conn);
+  crate::domain::admin_level::repository::create_indexes(&conn);
 
   crate::database::osm_pbf_files::update_admin_levels_count(&conn);
 }

@@ -1,4 +1,4 @@
-// stable identity of an admin area, derived from the osm element that produced it.
+// stable identity of an admin level, derived from the osm element that produced it.
 //
 // ways and relations number their elements in separate namespaces, so the same numeric osm id may
 // name both a way and a relation. the low bit carries the element kind and the remaining bits carry
@@ -7,7 +7,7 @@
 // the packing is part of the on-disk format (`admin_levels.id`) and must not change.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct admin_area_id(u64);
+pub struct admin_level_id(u64);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum osm_element_kind {
@@ -15,7 +15,7 @@ pub enum osm_element_kind {
   relation,
 }
 
-impl admin_area_id {
+impl admin_level_id {
   pub fn from_way(osm_id: u64) -> Self {
     Self(osm_id << 1)
   }
@@ -49,5 +49,5 @@ impl admin_area_id {
 }
 
 #[cfg(test)]
-#[path = "admin_area_id.test.rs"]
+#[path = "id.test.rs"]
 mod tests;

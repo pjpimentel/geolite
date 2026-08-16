@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use utoipa::ToSchema;
 
-use crate::extract::admin_levels::osm_admin_level;
+use crate::domain::admin_level::level;
 
 pub mod address;
 pub mod coordinates;
@@ -17,7 +17,7 @@ pub(crate) enum query_service {
 }
 
 #[derive(Serialize, ToSchema)]
-pub(crate) struct admin_level {
+pub(crate) struct query_admin_level {
   pub(crate) level: u8,
   pub(crate) name: String,
   pub(crate) osm_relation_id: Option<u64>,
@@ -47,7 +47,7 @@ pub(crate) struct query_house_number {
 
 #[derive(Serialize, ToSchema)]
 pub(crate) struct query_match {
-  pub(crate) admin_levels: Vec<admin_level>,
+  pub(crate) admin_levels: Vec<query_admin_level>,
   pub(crate) latitude: f64,
   pub(crate) longitude: f64,
   pub(crate) coordinates_distance_in_meters: Option<u32>,
@@ -68,14 +68,9 @@ pub(crate) struct query_output {
   pub(crate) matches: Vec<query_match>,
 }
 
-// axis-aligned box. tipo interno: envelope de um bounding_geometry e params do rtree.
-#[derive(Clone, Copy)]
-pub(crate) struct bounding_box {
-  pub(crate) min_lat: f64,
-  pub(crate) max_lat: f64,
-  pub(crate) min_lon: f64,
-  pub(crate) max_lon: f64,
-}
+// the envelope belongs to the admin_level domain — it is what the rtree indexes. re-exported
+// here so the query layer keeps naming it without reaching through the module path.
+pub(crate) use crate::domain::admin_level::geometry::bounding_box;
 
 // filtro espacial arbitrario: a geometria (poligono/multipoligono) faz a contencao exata
 // do ponto; o envelope (aabb) alimenta o pre-filtro grosso do rtree.
@@ -119,7 +114,7 @@ pub(crate) fn load_wkt_by_ids(
   if !include_wkt {
     return HashMap::new();
   }
-  crate::database::admin_levels::load_full_by_ids(conn, ids)
+  crate::domain::admin_level::repository::load_full_by_ids(conn, ids)
     .into_iter()
     .filter_map(|r| Some((r.id, r.wkb.as_ref()?.geometry().to_wkt().ok()?)))
     .collect()
@@ -140,7 +135,7 @@ pub(crate) fn run(
   friendly_name_format: Option<&str>,
   min_quality: Option<f64>,
   bounding_wkt: Option<bounding_geometry>,
-  last_admin_levels: Option<Vec<u8>>,
+  last_admin_levels: Option<Vec<level>>,
   include_wkt: bool,
 ) -> query_output {
   if let Some((lat, lon)) = try_parse_coordinates(query) {
@@ -178,7 +173,7 @@ pub(crate) fn apply_filters_and_truncate(
   matches: &mut Vec<query_match>,
   min_quality: Option<f64>,
   bounding_wkt: Option<&bounding_geometry>,
-  last_admin_levels: Option<&[u8]>,
+  last_admin_levels: Option<&[level]>,
 ) {
   if let Some(threshold) = min_quality {
     matches.retain(|m| match_quality(m) >= threshold);
@@ -189,7 +184,7 @@ pub(crate) fn apply_filters_and_truncate(
     matches.retain(|m| b.contains(m.latitude, m.longitude));
   }
   if let Some(levels) = last_admin_levels {
-    matches.retain(|m| m.admin_levels.last().is_some_and(|a| levels.contains(&a.level)));
+    matches.retain(|m| m.admin_levels.last().is_some_and(|a| levels.iter().any(|l| l.value() == a.level)));
   }
   matches.truncate(MAX_RESULTS as usize);
 }
@@ -227,10 +222,10 @@ pub(crate) fn try_parse_coordinates(s: &str) -> Option<(f64, f64)> {
 // builds friendly_name from admin_levels; street comes first, house number second,
 // remaining levels ordered from most specific to least (higher level = more specific).
 // used as fallback when no friendly_name_format template is provided
-fn default_friendly_name(admin_levels: &[admin_level]) -> String {
-  let street_level = osm_admin_level::street as u8;
-  let house_level = osm_admin_level::house_numbers as u8;
-  let mut sorted: Vec<&admin_level> = admin_levels.iter().collect();
+fn default_friendly_name(admin_levels: &[query_admin_level]) -> String {
+  let street_level = level::street.value();
+  let house_level = level::house_number.value();
+  let mut sorted: Vec<&query_admin_level> = admin_levels.iter().collect();
   sorted.sort_by_key(|a| {
     if a.level == street_level {
       (0u8, 0u8)
@@ -273,7 +268,7 @@ fn parse_template(format: &str) -> Result<Vec<template_segment>, String> {
       };
       let inner = &format[i + 1..i + rel_close];
       let level = if inner == "house_number" {
-        osm_admin_level::house_numbers as u8
+        level::house_number.value()
       } else {
         match inner
           .strip_prefix("admin_level_")
@@ -318,7 +313,7 @@ pub(crate) fn validate_friendly_name_format(s: &str) -> Result<String, String> {
 // missing placeholders are dropped together with the literal that immediately follows
 // them (so `"{a}, {b}, {c}"` with `b` missing renders as `"a, c"`, not `"a, , c"`).
 // trailing/leading commas and whitespace left over after substitution are trimmed.
-pub(crate) fn render_friendly_name(format: &str, admin_levels: &[admin_level]) -> String {
+pub(crate) fn render_friendly_name(format: &str, admin_levels: &[query_admin_level]) -> String {
   let segments = parse_template(format)
     .expect("friendly_name_format must be validated at the parse boundary before render");
   let mut out = String::new();

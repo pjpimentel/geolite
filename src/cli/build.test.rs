@@ -1,7 +1,7 @@
 use crate::cli::index::command_handler_index;
 use crate::cli::optimize::command_handler_optimize;
 use crate::cli::tests::street_row;
-use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
+use crate::domain::admin_level::{admin_level as admin_levels_row, repository::batch_upsert};
 use crate::database::{open_write, osm_data_path};
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
 use crate::osm_pbf_file::http_stubs::start_json_server;
@@ -233,7 +233,7 @@ fn _03_full_pipeline_from_local_pbf_fixture_runs_every_stage() {
 
   let conn = crate::database::open_readonly(&work.sqlite_path);
   assert!(
-    crate::database::admin_levels::count_with_geometry(&conn) >= 1,
+    crate::domain::admin_level::repository::count_with_geometry(&conn) >= 1,
     "the street way must land in admin_levels"
   );
   assert!(

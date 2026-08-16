@@ -10,7 +10,7 @@ struct way_work {
   way_id: u64,
   meta: way_meta,
   coords: Vec<Coord<f64>>,
-  admin_level: super::osm_admin_level,
+  level: super::level,
 }
 
 pub fn run(
@@ -19,7 +19,7 @@ pub fn run(
   name_priority: &[&str],
   progress: impl Fn(super::progress_report),
 ) {
-  let level = super::osm_admin_level::neighborhood as u8;
+  let level = super::level::neighborhood.value();
   let (include, _) = super::resolve_rules(10, rules);
   let mut candidate_ids: Vec<u64> = Vec::new();
   for filter in include {
@@ -48,16 +48,16 @@ pub fn run(
     let works = load_chunk(
       conn,
       chunk,
-      super::osm_admin_level::neighborhood,
+      super::level::neighborhood,
       name_priority,
     );
-    let mut batch: Vec<crate::database::admin_levels::admin_levels> = Vec::new();
+    let mut batch: Vec<crate::domain::admin_level::admin_level> = Vec::new();
     for w in works {
       if let Some(row) = process_one_way(w) {
         batch.push(row);
       }
     }
-    processed += crate::database::admin_levels::batch_upsert(conn, &batch) as u64;
+    processed += crate::domain::admin_level::repository::batch_upsert(conn, &batch) as u64;
     progress(super::progress_report {
       total: Some(total),
       processed,
@@ -68,7 +68,7 @@ pub fn run(
 fn load_chunk(
   conn: &Connection,
   chunk: &[u64],
-  admin_level: super::osm_admin_level,
+  level: super::level,
   name_priority: &[&str],
 ) -> Vec<way_work> {
   let raw_rows = crate::database::osm_ways::way_coords_chunk(conn, chunk, name_priority);
@@ -101,13 +101,13 @@ fn load_chunk(
       way_id,
       meta,
       coords,
-      admin_level,
+      level,
     });
   }
   works
 }
 
-fn process_one_way(w: way_work) -> Option<crate::database::admin_levels::admin_levels> {
+fn process_one_way(w: way_work) -> Option<crate::domain::admin_level::admin_level> {
   if w.coords.is_empty() {
     return None;
   }
@@ -123,10 +123,10 @@ fn process_one_way(w: way_work) -> Option<crate::database::admin_levels::admin_l
       Geometry::LineString(ls)
     };
 
-  Some(crate::database::admin_levels::admin_levels {
+  Some(crate::domain::admin_level::admin_level {
     relation_id: None,
     way_id: Some(w.way_id),
-    admin_level: w.admin_level as u8,
+    level: w.level,
     name: w.meta.name,
     country_iso_code: None,
     post_code: w.meta.post_code,

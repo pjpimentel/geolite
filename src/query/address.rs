@@ -2,7 +2,7 @@ use geo::Centroid;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
 
-use crate::extract::admin_levels::osm_admin_level;
+use crate::domain::admin_level::level;
 use crate::index::admin_levels_hierarchy_tantivy::{
   build_entity_text, tantivy_index, tokenize,
 };
@@ -13,7 +13,7 @@ use crate::index::admin_levels_hierarchy_tantivy::{
 fn search_hits(
   tantivy_index: &tantivy_index,
   query: &str,
-  last_admin_levels: Option<&[u8]>,
+  last_admin_levels: Option<&[level]>,
   allowed_ids: Option<&[i64]>,
 ) -> Vec<(i64, f32)> {
   tantivy_index.search(query, super::MAX_FTS_HITS as usize, last_admin_levels, allowed_ids)
@@ -25,7 +25,7 @@ fn search_hits(
 fn doc_text(
   own_name: &str,
   own_post_code: Option<&str>,
-  ancestors: &[&crate::database::admin_levels::admin_meta_row],
+  ancestors: &[&crate::domain::admin_level::repository::admin_meta_row],
 ) -> String {
   let mut out = build_entity_text(own_name, own_post_code);
   for a in ancestors {
@@ -52,9 +52,9 @@ fn token_coverage(query_tokens: &[String], doc_text: &str) -> f32 {
 }
 
 fn build_match(
-  record: &crate::database::admin_levels::admin_area_row,
+  record: &crate::domain::admin_level::repository::admin_area_row,
   hierarchy: Option<&crate::database::admin_levels_hierarchy::hierarchy_lookup_row>,
-  meta_map: &HashMap<i64, crate::database::admin_levels::admin_meta_row>,
+  meta_map: &HashMap<i64, crate::domain::admin_level::repository::admin_meta_row>,
   query_tokens: &[String],
   raw_score: f32,
   friendly_name_format: Option<&str>,
@@ -65,24 +65,24 @@ fn build_match(
   let centroid = geom.centroid()?;
 
   let ancestor_ids = hierarchy.map(|h| h.ancestor_ids.as_slice()).unwrap_or(&[]);
-  let mut ancestors: Vec<&crate::database::admin_levels::admin_meta_row> = ancestor_ids
+  let mut ancestors: Vec<&crate::domain::admin_level::repository::admin_meta_row> = ancestor_ids
     .iter()
     .filter_map(|id| meta_map.get(id))
     .collect();
   ancestors.sort_by_key(|a| a.admin_level);
 
-  let mut admin_levels: Vec<super::admin_level> = ancestors
+  let mut admin_levels: Vec<super::query_admin_level> = ancestors
     .iter()
-    .map(|a| super::admin_level {
-      level: a.admin_level,
+    .map(|a| super::query_admin_level {
+      level: a.admin_level.value(),
       name: a.name.clone(),
       osm_relation_id: a.relation_id,
       osm_way_id: a.way_id,
       wkt: wkt_by_id.get(&a.id).cloned(),
     })
     .collect();
-  admin_levels.push(super::admin_level {
-    level: record.admin_level,
+  admin_levels.push(super::query_admin_level {
+    level: record.admin_level.value(),
     name: record.name.clone(),
     osm_relation_id: record.relation_id,
     osm_way_id: record.way_id,
@@ -100,7 +100,7 @@ fn build_match(
     .iter()
     .copied()
     .chain(meta_map.get(&record.id))
-    .find(|a| a.admin_level == osm_admin_level::country as u8)
+    .find(|a| a.admin_level == level::country)
     .and_then(|a| a.country_iso_code.clone());
   let post_code = ancestors
     .iter()
@@ -108,7 +108,7 @@ fn build_match(
     .max_by_key(|a| a.admin_level)
     .and_then(|a| a.post_code.clone());
 
-  let is_street = record.admin_level == osm_admin_level::street as u8;
+  let is_street = record.admin_level.is_street();
   let admin_level_id = if is_street { Some(record.id) } else { None };
 
   let record_post_code = meta_map
@@ -142,7 +142,7 @@ pub(crate) fn run(
   tantivy_index: &tantivy_index,
   query: &str,
   friendly_name_format: Option<&str>,
-  last_admin_levels: Option<&[u8]>,
+  last_admin_levels: Option<&[level]>,
   bounding_wkt: Option<&super::bounding_geometry>,
   min_quality: Option<f64>,
   include_wkt: bool,
@@ -155,7 +155,7 @@ pub(crate) fn run(
   // regiao ranqueados abaixo do teto global nao se perdem. a contencao exata do poligono fica
   // no apply_filters_and_truncate (refina envelope → poligono)
   let region_ids =
-    bounding_wkt.map(|b| crate::database::admin_levels::ids_in_bounding_box(conn, b.envelope));
+    bounding_wkt.map(|b| crate::domain::admin_level::repository::ids_in_bounding_box(conn, b.envelope));
   if region_ids.as_ref().is_some_and(|r| r.is_empty()) {
     return super::query_output {
       service: super::query_service::text_to_address,
@@ -186,11 +186,11 @@ pub(crate) fn run(
   meta_ids.extend(all_ancestor_ids);
   meta_ids.sort_unstable();
   meta_ids.dedup();
-  let meta_map = crate::database::admin_levels::load_metadata_by_ids(conn, &meta_ids);
+  let meta_map = crate::domain::admin_level::repository::load_metadata_by_ids(conn, &meta_ids);
   let wkt_by_id = super::load_wkt_by_ids(conn, &meta_ids, include_wkt);
 
-  let records = crate::database::admin_levels::load_full_by_ids(conn, &ids);
-  let record_map: HashMap<i64, &crate::database::admin_levels::admin_area_row> =
+  let records = crate::domain::admin_level::repository::load_full_by_ids(conn, &ids);
+  let record_map: HashMap<i64, &crate::domain::admin_level::repository::admin_area_row> =
     records.iter().map(|r| (r.id, r)).collect();
 
   // ordem é a do tantivy (BM25 desc da query que efetivamente achou os docs:

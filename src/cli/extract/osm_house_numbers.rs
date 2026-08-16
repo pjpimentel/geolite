@@ -33,7 +33,7 @@ pub fn command_handler_extract_osm_house_numbers(
   });
 
   bar.finish();
-  crate::database::house_numbers::create_indexes(&conn);
+  crate::domain::house_number::repository::create_indexes(&conn);
 
   let count = bar.position();
   let elapsed = start.elapsed().as_secs_f64();

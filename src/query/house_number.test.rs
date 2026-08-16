@@ -1,7 +1,10 @@
+use crate::domain::admin_level::level;
 use super::enrich_house_numbers;
-use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
-use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
-use crate::query::{admin_level, query_match, query_match_attributes};
+use crate::domain::admin_level::{admin_level as admin_levels_row, repository::batch_upsert};
+use crate::domain::admin_level::admin_level_id;
+use crate::domain::house_number::repository::batch_insert_links;
+use crate::domain::house_number::{house_number, house_number_link, link_strategy};
+use crate::query::{query_admin_level, query_match, query_match_attributes};
 use geo::{Coord, Geometry, LineString, Point};
 use rusqlite::Connection;
 
@@ -14,7 +17,7 @@ fn setup() -> (Connection, i64) {
   let street = admin_levels_row {
     relation_id: None,
     way_id: Some(1),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(ls).into(),
     name: "rua x".to_string(),
     country_iso_code: None,
@@ -25,19 +28,19 @@ fn setup() -> (Connection, i64) {
   (conn, 2)
 }
 
-fn insert_hn(conn: &Connection, admin_level_id: i64, node_id: u64, number: &str, lon: f64, lat: f64) {
-  let row = house_numbers_row {
+fn insert_hn(conn: &Connection, street_id: i64, node_id: u64, number: &str, lon: f64, lat: f64) {
+  let link = house_number_link {
     node_id,
-    admin_level_id,
-    number: number.to_string(),
-    wkb: Geometry::Point(Point::new(lon, lat)).into(),
-    strategy: 0,
+    street_id: admin_level_id::from_raw(street_id as u64),
+    number: house_number::from_stored(number),
+    point: Point::new(lon, lat),
+    strategy: link_strategy::by_proximity,
   };
-  batch_insert(conn, &[row]);
+  batch_insert_links(conn, &[link]);
 }
 
-fn al(level: u8, name: &str) -> admin_level {
-  admin_level {
+fn al(level: u8, name: &str) -> query_admin_level {
+  query_admin_level {
     level,
     name: name.to_string(),
     osm_relation_id: None,
@@ -46,7 +49,7 @@ fn al(level: u8, name: &str) -> admin_level {
   }
 }
 
-fn make_match(admin_level_id: i64, admin_levels: Vec<admin_level>, friendly_name: &str) -> query_match {
+fn make_match(admin_level_id: i64, admin_levels: Vec<query_admin_level>, friendly_name: &str) -> query_match {
   query_match {
     admin_levels,
     latitude: 0.0,

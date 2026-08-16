@@ -91,7 +91,7 @@ fn status() {}
     crate::query::query_output,
     crate::query::query_service,
     crate::query::query_match,
-    crate::query::admin_level,
+    crate::query::query_admin_level,
     crate::query::query_match_attributes,
     crate::query::query_house_number,
     crate::query::house_number_match,

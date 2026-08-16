@@ -1,4 +1,6 @@
-use super::{admin_levels as admin_levels_row, batch_upsert};
+use crate::domain::admin_level::level;
+use super::batch_upsert;
+use crate::domain::admin_level::admin_level as admin_levels_row;
 use geo::{Coord, Geometry, LineString};
 
 const SQL_SELECT_WAY_PAIRS: &str = "
@@ -27,7 +29,7 @@ fn make_way_row(way_id: u64) -> admin_levels_row {
   admin_levels_row {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: make_geometry(),
     name: format!("way_{}", way_id),
     country_iso_code: None,
@@ -39,7 +41,7 @@ fn make_relation_row(relation_id: u64) -> admin_levels_row {
   admin_levels_row {
     relation_id: Some(relation_id),
     way_id: None,
-    admin_level: 4,
+    level: level::state,
     wkb: make_geometry(),
     name: format!("rel_{}", relation_id),
     country_iso_code: None,
@@ -106,34 +108,5 @@ fn _01_relation_ids_0_to_10_produce_bit_packed_ids() {
   );
 }
 
-// the packing rule itself now lives in the shared kernel; see
-// src/domain/kernel/admin_area_id.test.rs. what stays here is that batch_upsert derives the
-// stored id from it (_00 and _01 above).
 
-#[test]
-fn _05_mbr_center_reads_the_spatialite_bbox_center() {
-  use rusqlite::types::{ToSql, ToSqlOutput, Value, ValueRef};
-  // bbox is min(10,20) -> max(30,40); the MBR center is (20, 30).
-  let geom: super::admin_geometry = Geometry::LineString(LineString(vec![
-    Coord { x: 10.0, y: 20.0 },
-    Coord { x: 30.0, y: 40.0 },
-  ]))
-  .into();
-  let blob: Vec<u8> = match geom.to_sql().expect("to_sql") {
-    ToSqlOutput::Owned(Value::Blob(b)) => b,
-    ToSqlOutput::Borrowed(ValueRef::Blob(b)) => b.to_vec(),
-    _ => panic!("expected a blob"),
-  };
-  let (cx, cy) = super::mbr_center(&blob).expect("mbr center");
-  assert!((cx - 20.0).abs() < 1e-9, "cx={cx}");
-  assert!((cy - 30.0).abs() < 1e-9, "cy={cy}");
-}
-
-#[test]
-fn _06_mbr_center_rejects_short_or_invalid_blobs() {
-  assert_eq!(super::mbr_center(&[]), None);
-  assert_eq!(super::mbr_center(&[0u8; 10]), None);
-  // valid length but wrong start marker.
-  assert_eq!(super::mbr_center(&[0xFFu8; 40]), None);
-}
 

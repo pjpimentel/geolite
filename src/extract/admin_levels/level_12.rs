@@ -14,7 +14,7 @@ pub fn run(
   name_priority: &[&str],
   progress: impl Fn(super::progress_report),
 ) {
-  let level = super::osm_admin_level::street as u8;
+  let level = super::level::street.value();
   let (_, exclude) = super::resolve_rules(12, rules);
   let candidate_ids = crate::database::osm_ways::remaining_ids_by_tags(conn, level, exclude);
 
@@ -33,13 +33,13 @@ pub fn run(
   let mut processed: u64 = 0;
   for chunk in candidate_ids.chunks(super::CHUNK_SIZE) {
     let works = load_chunk(conn, chunk, name_priority);
-    let mut batch: Vec<crate::database::admin_levels::admin_levels> = Vec::new();
+    let mut batch: Vec<crate::domain::admin_level::admin_level> = Vec::new();
     for w in works {
       if let Some(row) = process_one_way(w.way_id, &w.coords, &w.name, w.post_code.as_deref()) {
         batch.push(row);
       }
     }
-    processed += crate::database::admin_levels::batch_upsert(conn, &batch) as u64;
+    processed += crate::domain::admin_level::repository::batch_upsert(conn, &batch) as u64;
     progress(super::progress_report {
       total: Some(total),
       processed,
@@ -89,7 +89,7 @@ fn process_one_way(
   coords: &[Coord<f64>],
   name: &str,
   post_code: Option<&str>,
-) -> Option<crate::database::admin_levels::admin_levels> {
+) -> Option<crate::domain::admin_level::admin_level> {
   if coords.is_empty() {
     return None;
   }
@@ -97,10 +97,10 @@ fn process_one_way(
   // streets are always lines — never polygon, even if the ring is closed
   let ls = LineString(coords.to_vec());
 
-  Some(crate::database::admin_levels::admin_levels {
+  Some(crate::domain::admin_level::admin_level {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: super::osm_admin_level::street as u8,
+    level: super::level::street,
     name: name.to_owned(),
     country_iso_code: None,
     post_code: post_code.map(str::to_owned),

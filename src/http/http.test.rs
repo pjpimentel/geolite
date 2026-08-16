@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::{parse_bounding_wkt, parse_last_admin_levels, query_param, url_decode};
 
 #[test]
@@ -101,12 +102,18 @@ fn _03_04_contains_inner_point_and_excludes_outer_point() {
 
 #[test]
 fn _04_00_single_level_parses() {
-  assert_eq!(parse_last_admin_levels("10").unwrap(), vec![10]);
+  assert_eq!(
+    parse_last_admin_levels("10").unwrap(),
+    vec![level::neighborhood]
+  );
 }
 
 #[test]
 fn _04_01_multiple_levels_parse() {
-  assert_eq!(parse_last_admin_levels("8,10,12").unwrap(), vec![8, 10, 12]);
+  assert_eq!(
+    parse_last_admin_levels("8,10,12").unwrap(),
+    vec![level::city, level::neighborhood, level::street]
+  );
 }
 
 #[test]
@@ -126,7 +133,20 @@ fn _04_04_level_above_u8_range_errors() {
   assert!(parse_last_admin_levels("300").is_err());
 }
 
+// a level the scale does not name is refused here instead of filtering every match away and
+// answering an empty list without saying why.
+#[test]
+fn _04_06_level_outside_the_named_scale_errors() {
+  for raw in ["0", "11", "13", "29"] {
+    let err = parse_last_admin_levels(raw).expect_err("unnamed level must be rejected");
+    assert!(err.contains("is not supported"), "raw={raw} err={err}");
+  }
+}
+
 #[test]
 fn _04_05_whitespace_around_values_is_tolerated() {
-  assert_eq!(parse_last_admin_levels(" 8 , 10 ").unwrap(), vec![8, 10]);
+  assert_eq!(
+    parse_last_admin_levels(" 8 , 10 ").unwrap(),
+    vec![level::city, level::neighborhood]
+  );
 }

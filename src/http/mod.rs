@@ -322,7 +322,13 @@ pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::query::bounding_geome
   Ok(crate::query::bounding_geometry { geometry, envelope })
 }
 
-fn parse_last_admin_levels(s: &str) -> Result<Vec<u8>, String> {
+// a level outside the named scale is rejected here rather than accepted as a number that would
+// filter every match away and answer an empty list without saying why.
+fn parse_last_admin_levels(
+  s: &str,
+) -> Result<Vec<crate::domain::admin_level::level>, String> {
+  use crate::domain::admin_level::level;
+
   let parts: Vec<&str> = s.split(',').map(str::trim).collect();
   if parts.iter().all(|p| p.is_empty()) {
     return Err("last_admin_levels must be a comma-separated list of levels".to_string());
@@ -330,8 +336,11 @@ fn parse_last_admin_levels(s: &str) -> Result<Vec<u8>, String> {
   parts
     .iter()
     .map(|p| {
-      p.parse::<u8>()
-        .map_err(|_| format!("last_admin_levels: invalid level '{p}'"))
+      let value = p
+        .parse::<u8>()
+        .map_err(|_| format!("last_admin_levels: invalid level '{p}'"))?;
+      level::new(value)
+        .ok_or_else(|| format!("last_admin_levels: level {value} is not supported"))
     })
     .collect()
 }

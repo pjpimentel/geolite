@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::*;
 
 use geo::{Coord, MultiPolygon, Polygon};
@@ -27,8 +28,8 @@ fn candidate(
   addr_street: Option<&str>,
   lon: f64,
   lat: f64,
-) -> crate::database::house_numbers::candidate_row {
-  crate::database::house_numbers::candidate_row {
+) -> crate::domain::house_number::repository::candidate_row {
+  crate::domain::house_number::repository::candidate_row {
     id,
     number: crate::domain::house_number::house_number::normalize(number, &policy())
       .expect("number must normalize"),
@@ -303,12 +304,12 @@ fn setup_db() -> rusqlite::Connection {
 }
 
 fn insert_street(conn: &rusqlite::Connection, id: u64, name: &str, points: &[(f64, f64)]) {
-  crate::database::admin_levels::batch_upsert(
+  crate::domain::admin_level::repository::batch_upsert(
     conn,
-    &[crate::database::admin_levels::admin_levels {
+    &[crate::domain::admin_level::admin_level {
       relation_id: None,
       way_id: Some(id),
-      admin_level: 12,
+      level: level::street,
       name: name.to_string(),
       country_iso_code: None,
       post_code: None,
@@ -473,12 +474,12 @@ fn _01_03_skips_linestrings_without_a_segment() {
 fn _04_06_skips_streets_whose_geometry_is_not_linear() {
   let conn = setup_db();
   // rua gravada como ponto: geometry_to_multilinestring devolve None
-  crate::database::admin_levels::batch_upsert(
+  crate::domain::admin_level::repository::batch_upsert(
     &conn,
-    &[crate::database::admin_levels::admin_levels {
+    &[crate::domain::admin_level::admin_level {
       relation_id: None,
       way_id: Some(1),
-      admin_level: 12,
+      level: level::street,
       name: "Rua Pontual".to_string(),
       country_iso_code: None,
       post_code: None,

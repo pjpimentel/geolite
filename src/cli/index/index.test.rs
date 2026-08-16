@@ -1,6 +1,6 @@
 use super::*;
 use crate::cli::tests::street_row;
-use crate::database::admin_levels::batch_upsert;
+use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::open_write;
 use crate::extract::pbf_fixtures::tempdir_guard;
 use crate::presets::DEFAULT;

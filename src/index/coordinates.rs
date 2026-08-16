@@ -11,9 +11,9 @@ const BATCH_SIZE: usize = 50_000;
 const MAX_WORKERS: usize = 8;
 
 pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
-  crate::database::admin_levels::recreate_rtree(conn);
+  crate::domain::admin_level::spatial_index::recreate(conn);
 
-  let total = crate::database::admin_levels::count_with_geometry(conn) as u64;
+  let total = crate::domain::admin_level::repository::count_with_geometry(conn) as u64;
   progress(progress_report {
     total: Some(total),
     processed: 0,
@@ -23,7 +23,7 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
     return;
   }
 
-  let (min_id, max_id) = crate::database::admin_levels::id_range_with_geometry(conn);
+  let (min_id, max_id) = crate::domain::admin_level::repository::id_range_with_geometry(conn);
 
   // conn.path() retorna Some("") para `:memory:` — nesse caso a versao parallel falha
   // porque os workers tentam reabrir um path vazio. tratamos como sequential.
@@ -34,15 +34,15 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
 }
 
 fn make_batch(
-  page: Vec<(i64, crate::database::admin_levels::admin_geometry)>,
-) -> Vec<crate::database::admin_levels::rtree_row> {
+  page: Vec<(i64, crate::domain::admin_level::geometry::admin_geometry)>,
+) -> Vec<crate::domain::admin_level::spatial_index::rtree_row> {
   page
     .into_iter()
     .filter_map(|(id, geom)| {
       geom
         .geometry()
         .bounding_rect()
-        .map(|bbox| crate::database::admin_levels::rtree_row {
+        .map(|bbox| crate::domain::admin_level::spatial_index::rtree_row {
           id,
           min_lon: bbox.min().x,
           max_lon: bbox.max().x,
@@ -67,7 +67,7 @@ fn run_parallel(
     .min(MAX_WORKERS);
   let range_size = (max_id - min_id) / n_workers as i64 + 1;
 
-  let (tx, rx) = mpsc::channel::<Vec<crate::database::admin_levels::rtree_row>>();
+  let (tx, rx) = mpsc::channel::<Vec<crate::domain::admin_level::spatial_index::rtree_row>>();
 
   thread::scope(|s| {
     for i in 0..n_workers {
@@ -91,7 +91,7 @@ fn run_parallel(
         let mut last_id = range_start - 1;
         loop {
           let page =
-            crate::database::admin_levels::load_wkb_page(&reader, last_id, range_end, BATCH_SIZE);
+            crate::domain::admin_level::repository::load_wkb_page(&reader, last_id, range_end, BATCH_SIZE);
           if page.is_empty() {
             break;
           }
@@ -107,7 +107,7 @@ fn run_parallel(
     let mut processed = 0u64;
     for batch in rx {
       processed += batch.len() as u64;
-      crate::database::admin_levels::batch_insert_rtree(conn, &batch);
+      crate::domain::admin_level::spatial_index::batch_insert(conn, &batch);
       progress(progress_report {
         total: Some(total),
         processed,
@@ -127,14 +127,14 @@ fn run_sequential(
   let mut processed = 0u64;
 
   loop {
-    let page = crate::database::admin_levels::load_wkb_page(conn, last_id, max_id, BATCH_SIZE);
+    let page = crate::domain::admin_level::repository::load_wkb_page(conn, last_id, max_id, BATCH_SIZE);
     if page.is_empty() {
       break;
     }
     last_id = page.last().unwrap().0;
     let batch = make_batch(page);
     processed += batch.len() as u64;
-    crate::database::admin_levels::batch_insert_rtree(conn, &batch);
+    crate::domain::admin_level::spatial_index::batch_insert(conn, &batch);
     progress(progress_report {
       total: Some(total),
       processed,

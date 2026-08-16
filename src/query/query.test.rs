@@ -1,7 +1,7 @@
 use super::*;
 
-fn al(level: u8, name: &str) -> admin_level {
-  admin_level {
+fn al(level: u8, name: &str) -> query_admin_level {
+  query_admin_level {
     level,
     name: name.to_string(),
     osm_relation_id: None,
@@ -143,7 +143,7 @@ fn _20_value_already_at_five_decimals_is_unchanged() {
   assert_eq!(round5(1.12346), 1.12346);
 }
 
-fn match_at(id: u64, lat: f64, lon: f64, admin_levels: Vec<admin_level>) -> query_match {
+fn match_at(id: u64, lat: f64, lon: f64, admin_levels: Vec<query_admin_level>) -> query_match {
   query_match {
     admin_levels,
     latitude: lat,
@@ -182,7 +182,7 @@ fn _21_bounding_box_and_last_admin_levels_apply_as_and() {
     match_at(4, 5.0, 5.0, vec![al(8, "d")]),
   ];
 
-  apply_filters_and_truncate(&mut matches, None, Some(&bounds), Some(&[12]));
+  apply_filters_and_truncate(&mut matches, None, Some(&bounds), Some(&[crate::domain::admin_level::level::street]));
 
   let surviving: Vec<u64> = matches.iter().map(|m| m.id).collect();
   assert_eq!(surviving, vec![1]);

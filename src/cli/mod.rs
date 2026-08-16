@@ -54,6 +54,14 @@ fn default_data_dir() -> String {
     .unwrap_or_else(|_| "./.geolite-data".to_string())
 }
 
+// a level outside the named scale would filter every match away without saying why, so it is
+// refused at the flag instead.
+fn parse_admin_level(s: &str) -> Result<crate::domain::admin_level::level, String> {
+  let value: u8 = s.parse().map_err(|e| format!("not a level: {e}"))?;
+  crate::domain::admin_level::level::new(value)
+    .ok_or_else(|| format!("level {value} is not supported"))
+}
+
 fn parse_min_quality(s: &str) -> Result<f64, String> {
   let v: f64 = s.parse().map_err(|e| format!("not a number: {e}"))?;
   if !(0.0..=1.0).contains(&v) {
@@ -124,8 +132,8 @@ enum commands {
     min_quality: Option<f64>,
     #[arg(long, allow_hyphen_values = true, value_parser = crate::http::parse_bounding_wkt)]
     bounding_wkt: Option<crate::query::bounding_geometry>,
-    #[arg(long, value_delimiter = ',')]
-    last_admin_levels: Option<Vec<u8>>,
+    #[arg(long, value_delimiter = ',', value_parser = parse_admin_level)]
+    last_admin_levels: Option<Vec<crate::domain::admin_level::level>>,
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_wkt: bool,
   },

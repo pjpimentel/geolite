@@ -1,6 +1,8 @@
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+use crate::domain::admin_level::level;
 use tantivy::{
   Index, IndexReader, TantivyDocument,
   collector::TopDocs,
@@ -366,7 +368,7 @@ impl tantivy_index {
     &self,
     query: &str,
     limit: usize,
-    last_admin_levels: Option<&[u8]>,
+    last_admin_levels: Option<&[level]>,
     allowed_ids: Option<&[i64]>,
   ) -> Vec<(i64, f32)> {
     let tokens = tokenize(query);
@@ -384,7 +386,7 @@ impl tantivy_index {
         let shoulds: Vec<(Occur, Box<dyn Query>)> = levels
           .iter()
           .map(|level| {
-            let term = tantivy::Term::from_field_u64(self.admin_level_field, *level as u64);
+            let term = tantivy::Term::from_field_u64(self.admin_level_field, level.value() as u64);
             (
               Occur::Should,
               Box::new(TermQuery::new(term, IndexRecordOption::Basic)) as Box<dyn Query>,

@@ -1,8 +1,9 @@
-// the domain layer: the model itself, free of i/o.
+// the domain layer, organised as vertical slices: one folder per concept, each owning everything
+// that concept needs — its model and methods, its policy, its services, and its own persistence.
 //
-// nothing under `domain` may import rusqlite, geozero, tantivy, ureq, tiny_http, clap, prost or
-// serde. the only external crate allowed here is `geo`, which is a geometry model rather than an
-// i/o concern. everything else belongs to the adapters that surround this layer.
+// the technical modules that came before (`extract`, `index`, `query`, `optimize`, `database`) are
+// being emptied into these folders and disappear as each concept lands. what stays outside is only
+// what belongs to no concept in particular: the connection lifecycle, the cli and the http server.
 
+pub mod admin_level;
 pub mod house_number;
-pub mod kernel;

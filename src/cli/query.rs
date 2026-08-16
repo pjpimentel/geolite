@@ -8,7 +8,7 @@ pub fn command_handler_query(
   friendly_name_format: Option<&str>,
   min_quality: Option<f64>,
   bounding_wkt: Option<crate::query::bounding_geometry>,
-  last_admin_levels: Option<Vec<u8>>,
+  last_admin_levels: Option<Vec<crate::domain::admin_level::level>>,
   include_wkt: bool,
   boosts: crate::index::admin_levels_hierarchy_tantivy::tantivy_boosts,
   house_numbers: crate::domain::house_number::house_number_policy,
