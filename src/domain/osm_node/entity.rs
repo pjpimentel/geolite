@@ -1,6 +1,7 @@
+// a node as the pbf file describes it: a point with tags. the id is the osm node id.
+
 use crate::database::jsonb;
 
-// a node as the pbf file describes it: a point with tags. the id is the osm node id.
 pub struct osm_node {
   pub id: i64,
   pub lat: f64,

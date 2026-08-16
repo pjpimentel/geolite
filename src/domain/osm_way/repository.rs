@@ -1,3 +1,9 @@
+// the `osm_data.osm_ways` table: the ddl, the chunk index, the bulk insert, and the two queries the
+// admin-level extraction runs over it — which ways a level still wants, and where each one sits.
+//
+// the filters arrive as meaning (`way_filter`) and leave as sql; the vocabulary in between is
+// `osm_tag`, so nothing here writes a tag key by hand.
+
 use rusqlite::Connection;
 
 use super::entity::osm_way_row;
@@ -14,35 +20,11 @@ const SQL_CREATE: &str = "
   );
 ";
 
+const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_ways;";
+
 const SQL_CREATE_INDEXES: &str = "
   CREATE INDEX IF NOT EXISTS osm_data.osm_ways_search_by_chunk ON osm_ways(osm_pbf_chunk_id);
 ";
-
-const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_ways;";
-
-const INSERT_CHUNK_SIZE: usize = 10_000;
-
-const SQL_INSERT_HEAD: &str = "
-  INSERT OR IGNORE INTO osm_data.osm_ways (
-    id,
-    osm_pbf_chunk_id,
-    payload
-  ) VALUES
-";
-
-fn build_multi_insert_sql(n: usize) -> String {
-  use std::fmt::Write;
-  let mut sql = String::with_capacity(SQL_INSERT_HEAD.len() + n * 24);
-  sql.push_str(SQL_INSERT_HEAD);
-  for i in 0..n {
-    if i > 0 {
-      sql.push_str(",\n");
-    }
-    let base = i * 3;
-    write!(sql, "  (?{}, ?{}, ?{})", base + 1, base + 2, base + 3).unwrap();
-  }
-  sql
-}
 
 pub(crate) fn create_table(conn: &Connection) {
   conn
@@ -185,6 +167,30 @@ pub fn way_coords_chunk(
     .expect("failed to query way coords")
     .map(|r| r.expect("failed to read way coord row"))
     .collect()
+}
+
+const INSERT_CHUNK_SIZE: usize = 10_000;
+
+const SQL_INSERT_HEAD: &str = "
+  INSERT OR IGNORE INTO osm_data.osm_ways (
+    id,
+    osm_pbf_chunk_id,
+    payload
+  ) VALUES
+";
+
+fn build_multi_insert_sql(n: usize) -> String {
+  use std::fmt::Write;
+  let mut sql = String::with_capacity(SQL_INSERT_HEAD.len() + n * 24);
+  sql.push_str(SQL_INSERT_HEAD);
+  for i in 0..n {
+    if i > 0 {
+      sql.push_str(",\n");
+    }
+    let base = i * 3;
+    write!(sql, "  (?{}, ?{}, ?{})", base + 1, base + 2, base + 3).unwrap();
+  }
+  sql
 }
 
 pub fn insert_rows(conn: &Connection, rows: &[osm_way_row]) {

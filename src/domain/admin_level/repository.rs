@@ -1,3 +1,9 @@
+// the `admin_levels` table: the ddl, its index, the eight queries the extraction and the query path
+// run over it, and the upsert.
+//
+// a row read back may carry a level this build does not name — see `level_of`, which drops it with a
+// warning rather than failing the whole read.
+
 use rusqlite::Connection;
 
 use super::admin_level_id;
@@ -21,6 +27,15 @@ const SQL_CREATE: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS admin_levels;";
 
+const SQL_CREATE_INDEXES: &str = "
+  CREATE INDEX IF NOT EXISTS admin_levels_search_by_level
+    ON admin_levels (admin_level);
+";
+
+const SQL_DROP_INDEXES: &str = "
+  DROP INDEX IF EXISTS admin_levels_search_by_level;
+";
+
 pub(crate) fn create_table(conn: &Connection) {
   conn
     .execute_batch(SQL_CREATE)
@@ -33,20 +48,11 @@ pub(crate) fn drop_table(conn: &Connection) {
     .expect("failed to drop admin_levels");
 }
 
-const SQL_CREATE_INDEXES: &str = "
-  CREATE INDEX IF NOT EXISTS admin_levels_search_by_level
-    ON admin_levels (admin_level);
-";
-
 pub fn create_indexes(conn: &Connection) {
   conn
     .execute_batch(SQL_CREATE_INDEXES)
     .expect("failed to create admin_levels indexes");
 }
-
-const SQL_DROP_INDEXES: &str = "
-  DROP INDEX IF EXISTS admin_levels_search_by_level;
-";
 
 pub fn drop_indexes(conn: &Connection) {
   conn

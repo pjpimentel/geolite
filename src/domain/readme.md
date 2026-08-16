@@ -60,8 +60,27 @@ house_number/   a door number placed on a street — the `house_numbers` table
 
 every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
 objects and services sit alongside. everything a concept needs is in one place, and the only write
-path into a table is through its entity. `osm_pbf_file` is the one folder without an `entity`, for a
-reason given below.
+path into a table is through its entity. `osm_pbf_file` is the one folder without an `entity`, and
+`osm_tag` the one that is not a table — both for reasons given below.
+
+## the shape every folder holds to
+
+- **the file explains itself before it imports.** the doc comment is the first thing in the file,
+  above the `use` block.
+- **inside a repository, the ddl comes first**: `SQL_CREATE`, `SQL_DROP`, `SQL_CREATE_INDEXES`,
+  `SQL_DROP_INDEXES` grouped at the top, then `create_table`, `drop_table`, `create_indexes`,
+  `drop_indexes` in that order. **every other `SQL_` const sits immediately above the one function
+  that uses it** — all sixty-eight have exactly one consumer, so the const travels with its query
+  rather than piling up in a wall at the top.
+- **the ddl is the exception on purpose.** it is the schema rather than a query: it is what you open
+  the file to find, and it is the anchor every migration in this refactor was verified against, byte
+  for byte, with `sed -n '/^const SQL_CREATE: /,/^";$/p'`.
+- `create_table` and `drop_table` are `pub(crate)` — only the connection lifecycle calls them.
+  everything else a repository exposes is `pub`.
+- an index is named `<table>_search_by_<purpose>`.
+- `mod.rs` re-exports exactly what production code outside the folder uses, and nothing else.
+- test scenarios are numbered contiguously from `_00` within their file, and the file names and
+  scenario names are in english.
 
 the three osm element folders are where the storage row is public rather than private to the
 repository.

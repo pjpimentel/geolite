@@ -1,9 +1,10 @@
+// a pbf primitive block stores coordinates as integers, scaled by `granularity` and shifted by the
+// block's offsets. every node in the block decodes against the same three numbers.
+
 use super::entity::osm_node;
 use crate::pbf::message::{dense_nodes_msg, node_msg};
 use crate::pbf::tag_policy::tag_policy;
 
-// a pbf primitive block stores coordinates as integers, scaled by `granularity` and shifted by the
-// block's offsets. every node in the block decodes against the same three numbers.
 #[derive(Clone, Copy)]
 pub struct block_scale {
   pub granularity: i64,

@@ -1,9 +1,10 @@
+// node references are delta-encoded against the previous one, so the list has to be walked in
+// order and accumulated — the same trick the dense node form uses for ids and coordinates.
+
 use super::entity::osm_way;
 use crate::pbf::message::way_msg;
 use crate::pbf::tag_policy::tag_policy;
 
-// node references are delta-encoded against the previous one, so the list has to be walked in
-// order and accumulated — the same trick the dense node form uses for ids and coordinates.
 pub fn decode(ways: &[way_msg], strings: &[&str], tags: &tag_policy) -> Vec<osm_way> {
   let mut elements = Vec::new();
 

@@ -1,3 +1,8 @@
+// the `house_numbers` table: the ddl, its index, the candidate scan and the insert.
+//
+// the scan returns the raw tag value: what counts as a number, and in which written forms, is the
+// value object's decision and not sql's — which is what keeps ingestion and query from drifting.
+
 use geo::Geometry;
 use rusqlite::Connection;
 
@@ -18,11 +23,15 @@ const SQL_CREATE: &str = "
   );
 ";
 
+const SQL_DROP: &str = "DROP TABLE IF EXISTS house_numbers;";
+
 const SQL_CREATE_INDEXES: &str = "
   CREATE INDEX IF NOT EXISTS house_numbers_search_by_admin_level_id ON house_numbers(admin_level_id);
 ";
 
-const SQL_DROP: &str = "DROP TABLE IF EXISTS house_numbers;";
+const SQL_DROP_INDEXES: &str = "
+  DROP INDEX IF EXISTS house_numbers_search_by_admin_level_id;
+";
 
 pub(crate) fn create_table(conn: &Connection) {
   conn
@@ -36,64 +45,11 @@ pub(crate) fn drop_table(conn: &Connection) {
     .expect("failed to drop house_numbers");
 }
 
-const SQL_STREETS_WITH_GEOMETRY: &str = "
-  SELECT id, name, wkb
-  FROM admin_levels
-  WHERE admin_level = ?1
-  AND wkb IS NOT NULL;
-";
-
-// the raw tag value comes back untouched: trimming, the drop list and the canonical form of a
-// letter suffix are all decided by the house_number value object, so that what gets written and
-// what a query recognises can never drift apart again. CAST keeps a numeric json value readable
-// as text, which TRIM used to guarantee.
-const SQL_LOAD_ALL_CANDIDATES: &str = "
-  SELECT
-    id,
-    CAST({number_select} AS TEXT) AS number,
-    {street_select} AS addr_street,
-    CAST(payload->>'lon' AS REAL) AS lon,
-    CAST(payload->>'lat' AS REAL) AS lat
-  FROM osm_data.osm_nodes
-  WHERE {number_select} IS NOT NULL
-";
-
-
-const SQL_INSERT: &str = "
-  INSERT OR IGNORE INTO house_numbers (
-    node_id,
-    admin_level_id,
-    number,
-    wkb,
-    strategy
-  ) VALUES (
-    ?1,
-    ?2,
-    ?3,
-    ?4,
-    ?5
-  );
-";
-
-// the storage shape of a placed number: the identity unpacked into its integer key, the number
-// in its stored form and the point encoded as spatialite wkb.
-struct house_numbers {
-  pub node_id: u64,
-  pub admin_level_id: i64,
-  pub number: String,
-  pub wkb: admin_geometry,
-  pub strategy: u8,
-}
-
 pub fn create_indexes(conn: &Connection) {
   conn
     .execute_batch(SQL_CREATE_INDEXES)
     .expect("failed to create house_numbers indexes");
 }
-
-const SQL_DROP_INDEXES: &str = "
-  DROP INDEX IF EXISTS house_numbers_search_by_admin_level_id;
-";
 
 pub fn drop_indexes(conn: &Connection) {
   conn
@@ -109,6 +65,13 @@ pub struct street_meta_row {
   pub cx: f64,
   pub cy: f64,
 }
+
+const SQL_STREETS_WITH_GEOMETRY: &str = "
+  SELECT id, name, wkb
+  FROM admin_levels
+  WHERE admin_level = ?1
+  AND wkb IS NOT NULL;
+";
 
 pub fn streets_with_centroid(conn: &Connection) -> Vec<street_meta_row> {
   let mut stmt = conn
@@ -168,6 +131,21 @@ pub struct candidate_row {
   pub lon: f64,
   pub lat: f64,
 }
+
+// the raw tag value comes back untouched: trimming, the drop list and the canonical form of a
+// letter suffix are all decided by the house_number value object, so that what gets written and
+// what a query recognises can never drift apart again. CAST keeps a numeric json value readable
+// as text, which TRIM used to guarantee.
+const SQL_LOAD_ALL_CANDIDATES: &str = "
+  SELECT
+    id,
+    CAST({number_select} AS TEXT) AS number,
+    {street_select} AS addr_street,
+    CAST(payload->>'lon' AS REAL) AS lon,
+    CAST(payload->>'lat' AS REAL) AS lat
+  FROM osm_data.osm_nodes
+  WHERE {number_select} IS NOT NULL
+";
 
 pub fn load_all_candidates(
   conn: &Connection,
@@ -258,6 +236,32 @@ pub fn batch_insert_links(conn: &Connection, links: &[house_number_link]) -> i64
     .collect();
   batch_insert(conn, &rows)
 }
+
+// the storage shape of a placed number: the identity unpacked into its integer key, the number
+// in its stored form and the point encoded as spatialite wkb.
+struct house_numbers {
+  pub node_id: u64,
+  pub admin_level_id: i64,
+  pub number: String,
+  pub wkb: admin_geometry,
+  pub strategy: u8,
+}
+
+const SQL_INSERT: &str = "
+  INSERT OR IGNORE INTO house_numbers (
+    node_id,
+    admin_level_id,
+    number,
+    wkb,
+    strategy
+  ) VALUES (
+    ?1,
+    ?2,
+    ?3,
+    ?4,
+    ?5
+  );
+";
 
 fn batch_insert(conn: &Connection, rows: &[house_numbers]) -> i64 {
   if rows.is_empty() {

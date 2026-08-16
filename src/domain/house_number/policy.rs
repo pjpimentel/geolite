@@ -1,7 +1,8 @@
-use super::value::house_number_shape;
-
 // a plain number or a number with one trailing letter — brazil, portugal and everywhere else
 // that writes a door number as a single value.
+
+use super::value::house_number_shape;
+
 pub const SIMPLE_SHAPES: &[house_number_shape] =
   &[house_number_shape::simple, house_number_shape::suffixed];
 

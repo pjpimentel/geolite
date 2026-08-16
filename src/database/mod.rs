@@ -91,7 +91,7 @@ pub fn open_write_main(path: &str) -> Connection {
   crate::domain::osm_pbf_file::repository::create_table(&conn);
   crate::domain::admin_level::repository::create_table(&conn);
   crate::domain::admin_level_hierarchy::repository::create_table(&conn);
-  crate::domain::admin_level::spatial_index::create(&conn);
+  crate::domain::admin_level::spatial_index::create_table(&conn);
   crate::domain::house_number::repository::create_table(&conn);
   conn
 }

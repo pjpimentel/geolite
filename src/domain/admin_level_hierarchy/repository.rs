@@ -16,44 +16,6 @@ const SQL_CREATE: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS admin_levels_hierarchy;";
 
-const SQL_COUNT: &str = "
-  SELECT COUNT(*) FROM admin_levels_hierarchy
-";
-
-const SQL_INSERT: &str = "
-  INSERT OR IGNORE INTO admin_levels_hierarchy (
-    admin_level_id,
-    ancestor_ids,
-    user_friendly_name
-  ) VALUES (
-    ?1,
-    jsonb(?2),
-    ?3
-  );
-";
-
-const SQL_PENDING_TOTAL: &str = "
-  WITH pending AS (
-    SELECT al.id
-    FROM admin_levels al
-    LEFT JOIN admin_levels_hierarchy h ON al.id = h.admin_level_id
-    WHERE h.admin_level_id IS NULL
-  )
-  SELECT COUNT(*) FROM pending
-";
-
-const SQL_PENDING_STREET_IDS: &str = "
-  WITH already_indexed AS (
-    SELECT admin_level_id FROM admin_levels_hierarchy
-  )
-  SELECT al.id
-  FROM admin_levels al
-  LEFT JOIN already_indexed ai ON al.id = ai.admin_level_id
-  WHERE al.admin_level = ?1
-    AND ai.admin_level_id IS NULL
-  ORDER BY al.id ASC
-";
-
 pub(crate) fn create_table(conn: &Connection) {
   conn
     .execute_batch(SQL_CREATE)
@@ -71,17 +33,43 @@ pub fn destroy(conn: &Connection) {
   create_table(conn);
 }
 
+const SQL_COUNT: &str = "
+  SELECT COUNT(*) FROM admin_levels_hierarchy
+";
+
 pub fn count(conn: &Connection) -> i64 {
   conn
     .query_row(SQL_COUNT, [], |row| row.get(0))
     .expect("failed to count admin_levels_hierarchy")
 }
 
+const SQL_PENDING_TOTAL: &str = "
+  WITH pending AS (
+    SELECT al.id
+    FROM admin_levels al
+    LEFT JOIN admin_levels_hierarchy h ON al.id = h.admin_level_id
+    WHERE h.admin_level_id IS NULL
+  )
+  SELECT COUNT(*) FROM pending
+";
+
 pub fn pending_total(conn: &Connection) -> i64 {
   conn
     .query_row(SQL_PENDING_TOTAL, [], |row| row.get::<_, i64>(0))
     .expect("failed to query pending total")
 }
+
+const SQL_PENDING_STREET_IDS: &str = "
+  WITH already_indexed AS (
+    SELECT admin_level_id FROM admin_levels_hierarchy
+  )
+  SELECT al.id
+  FROM admin_levels al
+  LEFT JOIN already_indexed ai ON al.id = ai.admin_level_id
+  WHERE al.admin_level = ?1
+    AND ai.admin_level_id IS NULL
+  ORDER BY al.id ASC
+";
 
 pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
   let mut stmt = conn
@@ -132,6 +120,18 @@ pub fn load_by_ids(
     })
     .collect()
 }
+
+const SQL_INSERT: &str = "
+  INSERT OR IGNORE INTO admin_levels_hierarchy (
+    admin_level_id,
+    ancestor_ids,
+    user_friendly_name
+  ) VALUES (
+    ?1,
+    jsonb(?2),
+    ?3
+  );
+";
 
 pub fn batch_insert(conn: &Connection, rows: &[hierarchy_row]) {
   if rows.is_empty() {

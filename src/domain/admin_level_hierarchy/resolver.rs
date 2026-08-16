@@ -1,3 +1,9 @@
+// the containment algorithm: for every area, the smallest enclosing one, found by point-in-polygon
+// against an in-memory rtree of every candidate's bounding box.
+//
+// levels are resolved in ascending order so a parent is finished before its children read it, and
+// streets — the overwhelming majority — are processed last, in parallel, against the same tree.
+
 use geo::{Area, BoundingRect, Centroid, Geometry};
 
 use super::entity::{self, hierarchy_row};

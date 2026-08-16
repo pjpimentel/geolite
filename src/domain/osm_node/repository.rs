@@ -1,3 +1,7 @@
+// the `osm_data.osm_nodes` table: the ddl, the chunk index and the bulk insert. rows arrive with
+// their payload already encoded, in chunks of ten thousand, because the decoding happens in several
+// threads and only the write is serial.
+
 use rusqlite::Connection;
 
 use super::entity::osm_node_row;
@@ -10,11 +14,30 @@ const SQL_CREATE: &str = "
   );
 ";
 
+const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_nodes;";
+
 const SQL_CREATE_INDEXES: &str = "
   CREATE INDEX IF NOT EXISTS osm_data.osm_nodes_search_by_chunk ON osm_nodes(osm_pbf_chunk_id);
 ";
 
-const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_nodes;";
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create osm_nodes");
+}
+
+#[allow(dead_code)]
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop osm_nodes");
+}
+
+pub fn create_indexes(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE_INDEXES)
+    .expect("failed to create osm_nodes indexes");
+}
 
 const INSERT_CHUNK_SIZE: usize = 10_000;
 
@@ -38,25 +61,6 @@ fn build_multi_insert_sql(n: usize) -> String {
     write!(sql, "  (?{}, ?{}, ?{})", base + 1, base + 2, base + 3).unwrap();
   }
   sql
-}
-
-pub(crate) fn create_table(conn: &Connection) {
-  conn
-    .execute_batch(SQL_CREATE)
-    .expect("failed to create osm_nodes");
-}
-
-#[allow(dead_code)]
-pub(crate) fn drop_table(conn: &Connection) {
-  conn
-    .execute_batch(SQL_DROP)
-    .expect("failed to drop osm_nodes");
-}
-
-pub fn create_indexes(conn: &Connection) {
-  conn
-    .execute_batch(SQL_CREATE_INDEXES)
-    .expect("failed to create osm_nodes indexes");
 }
 
 pub fn insert_rows(conn: &Connection, rows: &[osm_node_row]) {

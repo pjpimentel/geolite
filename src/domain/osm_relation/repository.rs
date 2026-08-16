@@ -1,3 +1,6 @@
+// the `osm_data.osm_relations` table: the ddl, the admin-level index, the bulk insert, and the
+// queries that find the relations a level wants and stitch their member ways back into coordinates.
+
 use rusqlite::Connection;
 
 use super::entity::osm_relation_row;
@@ -12,57 +15,12 @@ const SQL_CREATE: &str = "
   );
 ";
 
+const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_relations;";
+
 const SQL_CREATE_INDEXES: &str = "
   CREATE INDEX IF NOT EXISTS osm_data.osm_relations_search_by_admin_level
     ON osm_relations(JSON_EXTRACT(payload, '$.tags.admin_level'));
 ";
-
-const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_relations;";
-
-const SQL_ALL_IDS_BY_ADMIN_LEVEL: &str = "
-  SELECT id
-  FROM osm_data.osm_relations
-  WHERE JSON_EXTRACT(payload, '$.tags.admin_level') = ?1
-  AND JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
-";
-
-const SQL_REMAINING_IDS_BY_ADMIN_LEVEL: &str = "
-  WITH candidates AS (
-    SELECT id
-    FROM osm_data.osm_relations
-    WHERE JSON_EXTRACT(payload, '$.tags.admin_level') = ?1
-    AND JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
-  )
-  SELECT candidates.id
-  FROM candidates
-  LEFT JOIN main.admin_levels ON main.admin_levels.relation_id = candidates.id
-    AND main.admin_levels.admin_level = ?2
-  WHERE main.admin_levels.relation_id IS NULL
-";
-
-const INSERT_CHUNK_SIZE: usize = 10_000;
-
-const SQL_INSERT_HEAD: &str = "
-  INSERT OR IGNORE INTO osm_data.osm_relations (
-    id,
-    osm_pbf_chunk_id,
-    payload
-  ) VALUES
-";
-
-fn build_multi_insert_sql(n: usize) -> String {
-  use std::fmt::Write;
-  let mut sql = String::with_capacity(SQL_INSERT_HEAD.len() + n * 24);
-  sql.push_str(SQL_INSERT_HEAD);
-  for i in 0..n {
-    if i > 0 {
-      sql.push_str(",\n");
-    }
-    let base = i * 3;
-    write!(sql, "  (?{}, ?{}, ?{})", base + 1, base + 2, base + 3).unwrap();
-  }
-  sql
-}
 
 pub(crate) fn create_table(conn: &Connection) {
   conn
@@ -83,6 +41,13 @@ pub fn create_indexes(conn: &Connection) {
     .expect("failed to create osm_relations indexes");
 }
 
+const SQL_ALL_IDS_BY_ADMIN_LEVEL: &str = "
+  SELECT id
+  FROM osm_data.osm_relations
+  WHERE JSON_EXTRACT(payload, '$.tags.admin_level') = ?1
+  AND JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
+";
+
 pub fn all_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
   let level_str = level.value().to_string();
   let mut stmt = conn
@@ -94,6 +59,20 @@ pub fn all_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
     .map(|r| r.expect("failed to read relation id"))
     .collect()
 }
+
+const SQL_REMAINING_IDS_BY_ADMIN_LEVEL: &str = "
+  WITH candidates AS (
+    SELECT id
+    FROM osm_data.osm_relations
+    WHERE JSON_EXTRACT(payload, '$.tags.admin_level') = ?1
+    AND JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
+  )
+  SELECT candidates.id
+  FROM candidates
+  LEFT JOIN main.admin_levels ON main.admin_levels.relation_id = candidates.id
+    AND main.admin_levels.admin_level = ?2
+  WHERE main.admin_levels.relation_id IS NULL
+";
 
 pub fn remaining_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
   let level_str = level.value().to_string();
@@ -153,7 +132,7 @@ pub fn relation_coords_chunk(
        CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lon') AS REAL) AS lon,
        CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lat') AS REAL) AS lat
      FROM osm_data.osm_ways,
-          json_each(JSON_EXTRACT(osm_data.osm_ways.payload, '$.refs')) AS node_refs
+          JSON_EACH(JSON_EXTRACT(osm_data.osm_ways.payload, '$.refs')) AS node_refs
      INNER JOIN way_members ON way_members.way_id = osm_data.osm_ways.id
      INNER JOIN osm_data.osm_nodes ON osm_data.osm_nodes.id = CAST(node_refs.value AS INTEGER)
      ORDER BY way_members.relation_id ASC, way_members.way_order ASC, node_refs.key ASC",
@@ -181,6 +160,30 @@ pub fn relation_coords_chunk(
     .expect("failed to query relation coords")
     .map(|r| r.expect("failed to read relation coord row"))
     .collect()
+}
+
+const INSERT_CHUNK_SIZE: usize = 10_000;
+
+const SQL_INSERT_HEAD: &str = "
+  INSERT OR IGNORE INTO osm_data.osm_relations (
+    id,
+    osm_pbf_chunk_id,
+    payload
+  ) VALUES
+";
+
+fn build_multi_insert_sql(n: usize) -> String {
+  use std::fmt::Write;
+  let mut sql = String::with_capacity(SQL_INSERT_HEAD.len() + n * 24);
+  sql.push_str(SQL_INSERT_HEAD);
+  for i in 0..n {
+    if i > 0 {
+      sql.push_str(",\n");
+    }
+    let base = i * 3;
+    write!(sql, "  (?{}, ?{}, ?{})", base + 1, base + 2, base + 3).unwrap();
+  }
+  sql
 }
 
 pub fn insert_rows(conn: &Connection, rows: &[osm_relation_row]) {

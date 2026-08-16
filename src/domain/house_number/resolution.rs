@@ -1,8 +1,9 @@
+// where a door number landed on the street the user asked about.
+
 use geo::Point;
 
 use super::value::{house_number, house_number_shape};
 
-// where a door number landed on the street the user asked about.
 #[derive(Debug, PartialEq)]
 pub enum house_number_resolution {
   // a number with this exact value is mapped on the street.

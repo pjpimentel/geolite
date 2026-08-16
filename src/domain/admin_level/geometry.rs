@@ -1,12 +1,13 @@
-use geo::{BoundingRect, Geometry};
-use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
-
 // the shape of an admin level, and how it is written to and read from the `wkb` column.
 //
 // the on-disk format is spatialite wkb: a 39-byte header carrying the srid and the minimum
 // bounding rectangle, then the geometry body. the header is what makes `mbr_center` possible
 // without parsing the geometry at all.
+
+use geo::{BoundingRect, Geometry};
+use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
+use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+
 pub struct admin_geometry(pub Geometry<f64>);
 
 impl admin_geometry {

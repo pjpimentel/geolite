@@ -1,5 +1,3 @@
-use super::policy::house_number_policy;
-
 // a door number, in the two forms the system needs it in:
 //
 // - `stored_form` is what gets persisted or shown. it is produced faithfully by whichever side
@@ -11,6 +9,9 @@ use super::policy::house_number_policy;
 // the split is what lets the colombian nomenclature be fixed without a rebuild: databases already
 // on disk keep the exact bytes they were written with, because the key is computed in memory, at
 // comparison time, on both sides.
+
+use super::policy::house_number_policy;
+
 #[derive(Clone, Debug)]
 pub struct house_number {
   stored_form: String,

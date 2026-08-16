@@ -1,12 +1,12 @@
-use super::value::house_number;
-use super::policy::house_number_policy;
-
 // finding the door number inside a free-text query.
 //
 // the query is not stripped of numbers before the text search runs, because a number can belong
 // to the street's own name ("25" in "rua 25 de marco"). the number is picked out here instead,
 // per street match: the street's own name tokens are removed first, and the FIRST remaining token
 // that reads as a number is the one the user meant.
+
+use super::value::house_number;
+use super::policy::house_number_policy;
 
 // a cheap pre-check: is there any number-shaped token at all? avoids loading a street's numbers
 // when the query clearly has none.

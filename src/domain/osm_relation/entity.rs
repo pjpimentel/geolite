@@ -1,8 +1,9 @@
-use crate::database::jsonb;
-
 // a relation as the pbf file describes it: an ordered list of members, each pointing at a node, a
 // way or another relation and carrying a role. administrative boundaries are relations whose way
 // members, joined end to end, close into rings.
+
+use crate::database::jsonb;
+
 pub struct osm_relation {
   pub id: i64,
   pub tags: std::collections::HashMap<String, String>,

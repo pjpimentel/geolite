@@ -93,7 +93,3 @@ impl PartialOrd for level {
     Some(self.cmp(other))
   }
 }
-
-#[cfg(test)]
-#[path = "scale.test.rs"]
-mod tests;

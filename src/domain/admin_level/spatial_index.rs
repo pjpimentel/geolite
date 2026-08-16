@@ -14,6 +14,31 @@ const SQL_CREATE_RTREE: &str = "
 
 const SQL_DROP_RTREE: &str = "DROP TABLE IF EXISTS admin_levels_rtree;";
 
+pub struct rtree_row {
+  pub id: i64,
+  pub min_lon: f64,
+  pub max_lon: f64,
+  pub min_lat: f64,
+  pub max_lat: f64,
+}
+
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE_RTREE)
+    .expect("failed to create admin_levels_rtree");
+}
+
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP_RTREE)
+    .expect("failed to drop admin_levels_rtree");
+}
+
+pub fn recreate(conn: &Connection) {
+  drop_table(conn);
+  create_table(conn);
+}
+
 const SQL_INSERT_RTREE: &str = "
   INSERT INTO admin_levels_rtree (
     id,
@@ -29,31 +54,6 @@ const SQL_INSERT_RTREE: &str = "
     ?5
   );
 ";
-
-pub struct rtree_row {
-  pub id: i64,
-  pub min_lon: f64,
-  pub max_lon: f64,
-  pub min_lat: f64,
-  pub max_lat: f64,
-}
-
-pub(crate) fn create(conn: &Connection) {
-  conn
-    .execute_batch(SQL_CREATE_RTREE)
-    .expect("failed to create admin_levels_rtree");
-}
-
-pub(crate) fn drop_table(conn: &Connection) {
-  conn
-    .execute_batch(SQL_DROP_RTREE)
-    .expect("failed to drop admin_levels_rtree");
-}
-
-pub fn recreate(conn: &Connection) {
-  drop_table(conn);
-  create(conn);
-}
 
 pub fn batch_insert(conn: &Connection, rows: &[rtree_row]) {
   if rows.is_empty() {

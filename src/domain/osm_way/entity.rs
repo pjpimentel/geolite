@@ -1,7 +1,8 @@
-use crate::database::jsonb;
-
 // a way as the pbf file describes it: an ordered list of node ids, plus tags. the geometry is not
 // here — it only exists once the referenced nodes are looked up.
+
+use crate::database::jsonb;
+
 pub struct osm_way {
   pub id: i64,
   pub refs: Vec<i64>,
