@@ -35,8 +35,8 @@ $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
 ## docs
 
 1. source code modules
+    1. [domain](src/domain/readme.md)
     1. [database](src/database/readme.md)
-    1. [osm-pbf-file](src/osm_pbf_file/readme.md)
     1. [extract](src/extract/readme.md)
     1. [index](src/index/readme.md)
     1. [optimize](src/optimize/readme.md)
