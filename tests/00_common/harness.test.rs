@@ -56,7 +56,7 @@ pub struct built {
 // *.osm.pbf it finds under data_path, and the committed fixture must never be one of them.
 //
 // --preset is explicit: the workspace directory is named after the test target, not the map, so
-// substring inference on the path would pick the wrong preset for a target like 1_general.
+// substring inference on the path would pick the wrong preset for a target like 01_general.
 pub fn build(tag: &str, pbf_src: &Path, preset: &str) -> Result<built, String> {
   if !pbf_src.exists() {
     return Err(format!("pbf not found at {}", pbf_src.display()));
@@ -144,7 +144,7 @@ fn build_world(scenario: &'static scenario) -> Result<world, String> {
 
   let bytes = std::fs::read(&pbf_src).map_err(|e| format!("failed to read the fixture: {e}"))?;
   let digest = format!("{:x}", md5::compute(&bytes));
-  // keyed on preset + city + content, not on the target: 1_general and 2_preset_brazil build the
+  // keyed on preset + city + content, not on the target: 01_general and 02_preset_brazil build the
   // same santos extract with the same preset, and must share one workspace.
   let tag = format!("{}-{}-{}", scenario.preset, scenario.city(), &digest[..8]);
   drop(bytes);

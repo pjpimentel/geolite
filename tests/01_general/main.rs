@@ -1,6 +1,6 @@
 #![allow(nonstandard_style)]
 
-#[path = "../0_common/mod.rs"]
+#[path = "../00_common/mod.rs"]
 mod common;
 
 #[path = "general.test.rs"]

@@ -4,8 +4,8 @@ use crate::common::query::{first, matches};
 use serde_json::{Value, json};
 
 pub static SCENARIO: scenario = scenario {
-  region: "1_general",
-  fixture_dir: "2_preset_brazil",
+  region: "01_general",
+  fixture_dir: "02_preset_brazil",
   pbf: "santos.osm.pbf",
   preset: "brazil",
 };
@@ -19,10 +19,10 @@ fn world() -> &'static world {
 const ANY_TEXT: &str = "rua";
 const ANY_POINT: &str = "-23.970949,-46.318730";
 
-// 00. pipeline integrity
+// 00.00. pipeline integrity
 #[test]
 #[ignore]
-fn _00_build_exits_zero() {
+fn _00_00_build_exits_zero() {
   let w = world();
   assert_eq!(
     w.build_status, 0,
@@ -31,10 +31,10 @@ fn _00_build_exits_zero() {
   );
 }
 
-// 01. pipeline integrity
+// 00.01. pipeline integrity
 #[test]
 #[ignore]
-fn _01_build_prints_every_stage_banner_in_order() {
+fn _00_01_build_prints_every_stage_banner_in_order() {
   let w = world();
   let stdout = &w.build_stdout;
   let stages = [
@@ -57,10 +57,10 @@ fn _01_build_prints_every_stage_banner_in_order() {
   }
 }
 
-// 02. pipeline integrity
+// 00.02. pipeline integrity
 #[test]
 #[ignore]
-fn _02_build_skips_the_download_stage_for_a_local_source() {
+fn _00_02_build_skips_the_download_stage_for_a_local_source() {
   let w = world();
   assert!(
     w.build_stdout.contains("skipping"),
@@ -75,10 +75,10 @@ fn _02_build_skips_the_download_stage_for_a_local_source() {
   );
 }
 
-// 03. pipeline integrity
+// 00.03. pipeline integrity
 #[test]
 #[ignore]
-fn _03_sqlite_and_tantivy_artifacts_exist() {
+fn _00_03_sqlite_and_tantivy_artifacts_exist() {
   let w = world();
   let sqlite = std::fs::metadata(&w.sqlite_path).expect("the sqlite database must exist");
   assert!(sqlite.len() > 0, "the sqlite database must not be empty");
@@ -88,10 +88,10 @@ fn _03_sqlite_and_tantivy_artifacts_exist() {
   );
 }
 
-// 04. pipeline integrity
+// 00.04. pipeline integrity
 #[test]
 #[ignore]
-fn _04_optimize_deletes_the_osm_data_sibling() {
+fn _00_04_optimize_deletes_the_osm_data_sibling() {
   let w = world();
   assert!(
     !w.data_path.join("database.osm_data.sqlite3").exists(),
@@ -99,10 +99,10 @@ fn _04_optimize_deletes_the_osm_data_sibling() {
   );
 }
 
-// 05. pipeline integrity: optimize deletes every pbf under data_path; the copy lives beside it
+// 00.05. pipeline integrity: optimize deletes every pbf under data_path; the copy lives beside it
 #[test]
 #[ignore]
-fn _05_optimize_leaves_every_pbf_outside_data_path_alone() {
+fn _00_05_optimize_leaves_every_pbf_outside_data_path_alone() {
   let w = world();
   // optimize deletes every *.osm.pbf under data_path. the source copy is deliberately a
   // sibling of data_path rather than a child, so it survives — and so does the fixture.
@@ -120,10 +120,10 @@ fn _05_optimize_leaves_every_pbf_outside_data_path_alone() {
   );
 }
 
-// 06. pipeline integrity
+// 00.06. pipeline integrity
 #[test]
 #[ignore]
-fn _06_extracted_admin_levels_cover_only_the_preset_levels() {
+fn _00_06_extracted_admin_levels_cover_only_the_preset_levels() {
   let w = world();
   let conn = w.open_sqlite();
   let mut stmt = conn
@@ -153,10 +153,10 @@ fn _06_extracted_admin_levels_cover_only_the_preset_levels() {
   }
 }
 
-// 07. pipeline integrity
+// 00.07. pipeline integrity
 #[test]
 #[ignore]
-fn _07_hierarchy_is_populated_for_every_admin_level() {
+fn _00_07_hierarchy_is_populated_for_every_admin_level() {
   let w = world();
   let conn = w.open_sqlite();
   let levels: i64 = conn
@@ -173,10 +173,10 @@ fn _07_hierarchy_is_populated_for_every_admin_level() {
   );
 }
 
-// 08. pipeline integrity
+// 00.08. pipeline integrity
 #[test]
 #[ignore]
-fn _08_house_numbers_were_extracted_and_linked() {
+fn _00_08_house_numbers_were_extracted_and_linked() {
   let w = world();
   let conn = w.open_sqlite();
   let total: i64 = conn
@@ -195,10 +195,10 @@ fn _08_house_numbers_were_extracted_and_linked() {
   assert_eq!(orphans, 0, "every house number must point at a street row");
 }
 
-// 09. pipeline integrity
+// 00.09. pipeline integrity
 #[test]
 #[ignore]
-fn _09_fixture_counts_stay_within_expected_bounds() {
+fn _00_09_fixture_counts_stay_within_expected_bounds() {
   let w = world();
   let conn = w.open_sqlite();
   let streets: i64 = conn
@@ -224,10 +224,10 @@ fn _09_fixture_counts_stay_within_expected_bounds() {
   );
 }
 
-// 10. contract
+// 01.00. contract
 #[test]
 #[ignore]
-fn _10_coordinates_query_prints_pretty_printed_json() {
+fn _01_00_coordinates_query_prints_pretty_printed_json() {
   let w = world();
   let out = w.geolite(&["query", ANY_POINT, "--include-wkt", "false"]);
   assert_eq!(out.status, 0, "stderr: {}", out.stderr);
@@ -247,20 +247,20 @@ fn _10_coordinates_query_prints_pretty_printed_json() {
   );
 }
 
-// 11. contract
+// 01.01. contract
 #[test]
 #[ignore]
-fn _11_coordinates_query_reports_the_coordinates_service() {
+fn _01_01_coordinates_query_reports_the_coordinates_service() {
   assert_eq!(
     world().run(&[ANY_POINT])["service"],
     "coordinates_to_address"
   );
 }
 
-// 12. contract
+// 01.02. contract
 #[test]
 #[ignore]
-fn _12_coordinate_matches_omit_house_number_and_relevance_signals() {
+fn _01_02_coordinate_matches_omit_house_number_and_relevance_signals() {
   let result = world().run(&[ANY_POINT]);
   let top = first(&result);
   assert!(
@@ -274,27 +274,27 @@ fn _12_coordinate_matches_omit_house_number_and_relevance_signals() {
   assert!(top["score"].is_null(), "score belongs to the text path");
 }
 
-// 13. contract
+// 01.03. contract
 #[test]
 #[ignore]
-fn _13_result_count_never_exceeds_max_results() {
+fn _01_03_result_count_never_exceeds_max_results() {
   assert!(
     matches(&world().run(&[ANY_POINT])).len() <= 10,
     "MAX_RESULTS is 10"
   );
 }
 
-// 14. contract
+// 01.04. contract
 #[test]
 #[ignore]
-fn _14_text_query_reports_the_text_service() {
+fn _01_04_text_query_reports_the_text_service() {
   assert_eq!(world().run(&[ANY_TEXT])["service"], "text_to_address");
 }
 
-// 15. contract
+// 01.05. contract
 #[test]
 #[ignore]
-fn _15_include_wkt_false_omits_every_geometry() {
+fn _01_05_include_wkt_false_omits_every_geometry() {
   for m in matches(&world().run(&[ANY_TEXT])) {
     for level in m["admin_levels"]
       .as_array()
@@ -308,10 +308,10 @@ fn _15_include_wkt_false_omits_every_geometry() {
   }
 }
 
-// 16. contract
+// 01.06. contract
 #[test]
 #[ignore]
-fn _16_version_prints_the_crate_version() {
+fn _01_06_version_prints_the_crate_version() {
   let w = world();
   let out = w.geolite(&["--version"]);
   assert_eq!(out.status, 0);
@@ -322,10 +322,10 @@ fn _16_version_prints_the_crate_version() {
   );
 }
 
-// 17. contract
+// 01.07. contract
 #[test]
 #[ignore]
-fn _17_help_lists_every_subcommand() {
+fn _01_07_help_lists_every_subcommand() {
   let w = world();
   let out = w.geolite(&["--help"]);
   assert_eq!(out.status, 0);
@@ -346,10 +346,10 @@ fn _17_help_lists_every_subcommand() {
   }
 }
 
-// 18. contract
+// 01.08. contract
 #[test]
 #[ignore]
-fn _18_root_serves_the_web_ui_as_html() {
+fn _01_08_root_serves_the_web_ui_as_html() {
   let w = world();
   let s = w.start_server();
   let r = get(s.port, "/");
@@ -359,10 +359,10 @@ fn _18_root_serves_the_web_ui_as_html() {
   assert!(r.text().contains("<html"), "the embedded ui must be served");
 }
 
-// 19. contract
+// 01.09. contract
 #[test]
 #[ignore]
-fn _19_docs_serves_the_swagger_ui() {
+fn _01_09_docs_serves_the_swagger_ui() {
   let w = world();
   let s = w.start_server();
   let r = get(s.port, "/docs");
@@ -373,10 +373,10 @@ fn _19_docs_serves_the_swagger_ui() {
   );
 }
 
-// 20. contract
+// 01.10. contract
 #[test]
 #[ignore]
-fn _20_status_reports_both_services_available() {
+fn _01_10_status_reports_both_services_available() {
   let w = world();
   let s = w.start_server();
   let r = get(s.port, "/status");
@@ -394,10 +394,10 @@ fn _20_status_reports_both_services_available() {
   );
 }
 
-// 21. contract
+// 01.11. contract
 #[test]
 #[ignore]
-fn _21_an_unknown_route_returns_not_found() {
+fn _01_11_an_unknown_route_returns_not_found() {
   let w = world();
   let s = w.start_server();
   let r = get(s.port, "/definitely-not-a-route");
@@ -405,10 +405,10 @@ fn _21_an_unknown_route_returns_not_found() {
   assert_eq!(r.text(), r#"{"error":"not found"}"#);
 }
 
-// 22. contract
+// 01.12. contract
 #[test]
 #[ignore]
-fn _22_a_non_get_method_on_a_known_route_returns_method_not_allowed() {
+fn _01_12_a_non_get_method_on_a_known_route_returns_method_not_allowed() {
   let w = world();
   let s = w.start_server();
   for (method, path) in [("POST", "/geocode"), ("PUT", "/status"), ("DELETE", "/")] {
@@ -418,10 +418,10 @@ fn _22_a_non_get_method_on_a_known_route_returns_method_not_allowed() {
   }
 }
 
-// 23. contract
+// 01.13. contract
 #[test]
 #[ignore]
-fn _23_a_non_get_method_on_an_unknown_route_returns_not_found() {
+fn _01_13_a_non_get_method_on_an_unknown_route_returns_not_found() {
   let w = world();
   let s = w.start_server();
   assert_eq!(
@@ -430,10 +430,10 @@ fn _23_a_non_get_method_on_an_unknown_route_returns_not_found() {
   );
 }
 
-// 24. contract
+// 01.14. contract
 #[test]
 #[ignore]
-fn _24_options_on_a_known_route_returns_no_content_with_cors_preflight_headers() {
+fn _01_14_options_on_a_known_route_returns_no_content_with_cors_preflight_headers() {
   let w = world();
   let s = w.start_server();
   let r = request(s.port, "OPTIONS", "/geocode");
@@ -450,10 +450,10 @@ fn _24_options_on_a_known_route_returns_no_content_with_cors_preflight_headers()
   assert!(r.body.is_empty());
 }
 
-// 25. contract
+// 01.15. contract
 #[test]
 #[ignore]
-fn _25_every_response_carries_the_cors_origin_header() {
+fn _01_15_every_response_carries_the_cors_origin_header() {
   let w = world();
   let s = w.start_server();
   for path in [
@@ -472,10 +472,10 @@ fn _25_every_response_carries_the_cors_origin_header() {
   }
 }
 
-// 26. contract
+// 01.16. contract
 #[test]
 #[ignore]
-fn _26_every_response_declares_its_length_and_never_chunks() {
+fn _01_16_every_response_declares_its_length_and_never_chunks() {
   let w = world();
   let s = w.start_server();
   for path in [
@@ -500,10 +500,10 @@ fn _26_every_response_declares_its_length_and_never_chunks() {
   }
 }
 
-// 27. contract
+// 01.17. contract
 #[test]
 #[ignore]
-fn _27_a_missing_query_param_returns_bad_request() {
+fn _01_17_a_missing_query_param_returns_bad_request() {
   let w = world();
   let s = w.start_server();
   let r = get(s.port, "/geocode");
@@ -511,10 +511,10 @@ fn _27_a_missing_query_param_returns_bad_request() {
   assert_eq!(r.text(), r#"{"error":"missing query param: query"}"#);
 }
 
-// 28. contract
+// 01.18. contract
 #[test]
 #[ignore]
-fn _28_only_the_literal_false_disables_the_geometry() {
+fn _01_18_only_the_literal_false_disables_the_geometry() {
   let w = world();
   let s = w.start_server();
   let base = format!("/geocode?query={}", encode(ANY_POINT));
@@ -534,10 +534,10 @@ fn _28_only_the_literal_false_disables_the_geometry() {
   }
 }
 
-// 29. contract
+// 01.19. contract
 #[test]
 #[ignore]
-fn _29_plus_and_percent_encoded_spaces_decode_identically() {
+fn _01_19_plus_and_percent_encoded_spaces_decode_identically() {
   let w = world();
   let s = w.start_server();
   let plus = get(s.port, &ask(ANY_TEXT).http_path().replace("%20", "+"));
@@ -549,10 +549,10 @@ fn _29_plus_and_percent_encoded_spaces_decode_identically() {
   );
 }
 
-// 30. contract: the openapi skeleton — routes, methods, schema names — is exactly this
+// 01.20. contract: the openapi skeleton — routes, methods, schema names — is exactly this
 #[test]
 #[ignore]
-fn _30_the_openapi_spec_documents_exactly_these_routes_and_schemas() {
+fn _01_20_the_openapi_spec_documents_exactly_these_routes_and_schemas() {
   let s = world().start_server();
   let r = get(s.port, "/openapi.json");
   assert_eq!(r.status, 200);
@@ -604,10 +604,10 @@ fn _30_the_openapi_spec_documents_exactly_these_routes_and_schemas() {
   );
 }
 
-// 31. contract: every http error body, byte for byte
+// 01.21. contract: every http error body, byte for byte
 #[test]
 #[ignore]
-fn _31_the_error_bodies_are_exactly_these() {
+fn _01_21_the_error_bodies_are_exactly_these() {
   let s = world().start_server();
   let query = encode(ANY_TEXT);
   let cases: Vec<(&str, &str, String)> = vec![
@@ -668,10 +668,10 @@ fn _31_the_error_bodies_are_exactly_these() {
   );
 }
 
-// 32. dead case
+// 02.00. dead case
 #[test]
 #[ignore]
-fn _32_a_nonsense_query_returns_no_matches() {
+fn _02_00_a_nonsense_query_returns_no_matches() {
   let w = world();
   let out = w.geolite(&["query", "zzzz qqqq wwww", "--include-wkt", "false"]);
   assert_eq!(out.status, 0, "an empty result is not an error");
@@ -679,10 +679,10 @@ fn _32_a_nonsense_query_returns_no_matches() {
   assert!(matches(&result).is_empty());
 }
 
-// 33. dead case
+// 02.01. dead case
 #[test]
 #[ignore]
-fn _33_build_with_a_missing_source_exits_one() {
+fn _02_01_build_with_a_missing_source_exits_one() {
   let w = world();
   let out = w.geolite(&["build", "./does-not-exist.osm.pbf"]);
   assert_eq!(out.status, 1);
@@ -693,10 +693,10 @@ fn _33_build_with_a_missing_source_exits_one() {
   );
 }
 
-// 34. dead case
+// 02.02. dead case
 #[test]
 #[ignore]
-fn _34_query_without_a_sqlite_exits_one() {
+fn _02_02_query_without_a_sqlite_exits_one() {
   let w = world();
   let missing = w.root.join("absent.sqlite3");
   let out = w.geolite(&["--sqlite-path", &missing.to_string_lossy(), "query", "x"]);
@@ -708,10 +708,10 @@ fn _34_query_without_a_sqlite_exits_one() {
   );
 }
 
-// 35. dead case
+// 02.03. dead case
 #[test]
 #[ignore]
-fn _35_query_without_a_tantivy_index_exits_one() {
+fn _02_03_query_without_a_tantivy_index_exits_one() {
   let w = world();
   let missing = w.root.join("absent.tantivy");
   let out = w.geolite(&[
@@ -728,10 +728,10 @@ fn _35_query_without_a_tantivy_index_exits_one() {
   );
 }
 
-// 36. dead case
+// 02.04. dead case
 #[test]
 #[ignore]
-fn _36_an_out_of_range_min_quality_is_rejected_by_clap() {
+fn _02_04_an_out_of_range_min_quality_is_rejected_by_clap() {
   let w = world();
   let out = w.geolite(&["query", ANY_TEXT, "--min-quality", "2"]);
   assert_eq!(out.status, 2);
@@ -742,10 +742,10 @@ fn _36_an_out_of_range_min_quality_is_rejected_by_clap() {
   );
 }
 
-// 37. dead case
+// 02.05. dead case
 #[test]
 #[ignore]
-fn _37_a_non_area_bounding_wkt_is_rejected_by_clap() {
+fn _02_05_a_non_area_bounding_wkt_is_rejected_by_clap() {
   let w = world();
   let out = w.geolite(&["query", ANY_TEXT, "--bounding-wkt", "POINT(1 1)"]);
   assert_eq!(out.status, 2);
@@ -756,28 +756,28 @@ fn _37_a_non_area_bounding_wkt_is_rejected_by_clap() {
   );
 }
 
-// 38. dead case
+// 02.06. dead case
 #[test]
 #[ignore]
-fn _38_an_unknown_friendly_name_placeholder_is_rejected_by_clap() {
+fn _02_06_an_unknown_friendly_name_placeholder_is_rejected_by_clap() {
   let w = world();
   let out = w.geolite(&["query", ANY_TEXT, "--friendly-name-format", "{foo}"]);
   assert_eq!(out.status, 2);
   assert!(out.stderr.contains("foo"), "stderr: {}", out.stderr);
 }
 
-// 39. dead case
+// 02.07. dead case
 #[test]
 #[ignore]
-fn _39_an_unknown_subcommand_exits_two() {
+fn _02_07_an_unknown_subcommand_exits_two() {
   let w = world();
   assert_eq!(w.geolite(&["definitely-not-a-command"]).status, 2);
 }
 
-// 40. dead case
+// 02.08. dead case
 #[test]
 #[ignore]
-fn _40_an_unknown_friendly_name_placeholder_returns_bad_request() {
+fn _02_08_an_unknown_friendly_name_placeholder_returns_bad_request() {
   let w = world();
   let s = w.start_server();
   let path = format!(
@@ -790,10 +790,10 @@ fn _40_an_unknown_friendly_name_placeholder_returns_bad_request() {
   assert!(r.text().contains("foo"), "body: {}", r.text());
 }
 
-// 41. dead case
+// 02.09. dead case
 #[test]
 #[ignore]
-fn _41_a_non_area_bounding_wkt_returns_bad_request() {
+fn _02_09_a_non_area_bounding_wkt_returns_bad_request() {
   let w = world();
   let s = w.start_server();
   let path = format!(
@@ -804,20 +804,20 @@ fn _41_a_non_area_bounding_wkt_returns_bad_request() {
   assert_eq!(get(s.port, &path).status, 400);
 }
 
-// 42. dead case
+// 02.10. dead case
 #[test]
 #[ignore]
-fn _42_an_invalid_last_admin_levels_returns_bad_request() {
+fn _02_10_an_invalid_last_admin_levels_returns_bad_request() {
   let w = world();
   let s = w.start_server();
   let path = format!("/geocode?query={}&last_admin_levels=abc", encode(ANY_TEXT));
   assert_eq!(get(s.port, &path).status, 400);
 }
 
-// 43. dead case: http drops an out-of-range quality where the cli rejects it
+// 02.11. dead case: http drops an out-of-range quality where the cli rejects it
 #[test]
 #[ignore]
-fn _43_an_out_of_range_quality_is_ignored_rather_than_rejected() {
+fn _02_11_an_out_of_range_quality_is_ignored_rather_than_rejected() {
   let w = world();
   // a deliberate asymmetry with the cli, which errors in parse_min_quality. the http handler
   // drops the value with .filter(...) instead.
@@ -828,10 +828,10 @@ fn _43_an_out_of_range_quality_is_ignored_rather_than_rejected() {
   assert!(!r.json()["matches"].as_array().expect("matches").is_empty());
 }
 
-// 44. degraded mode
+// 03.00. degraded mode
 #[test]
 #[ignore]
-fn _44_status_reports_service_unavailable_without_an_index() {
+fn _03_00_status_reports_service_unavailable_without_an_index() {
   let w = world();
   let s = w.start_degraded_server();
   let r = get(s.port, "/status");
@@ -842,10 +842,10 @@ fn _44_status_reports_service_unavailable_without_an_index() {
   assert_eq!(body["databases"][0]["coordinates_to_address"], true);
 }
 
-// 45. degraded mode
+// 03.01. degraded mode
 #[test]
 #[ignore]
-fn _45_a_text_query_is_unavailable_without_an_index() {
+fn _03_01_a_text_query_is_unavailable_without_an_index() {
   let w = world();
   let s = w.start_degraded_server();
   let r = get(s.port, &ask(ANY_TEXT).http_path());
@@ -856,10 +856,10 @@ fn _45_a_text_query_is_unavailable_without_an_index() {
   );
 }
 
-// 46. degraded mode
+// 03.02. degraded mode
 #[test]
 #[ignore]
-fn _46_a_coordinate_query_still_works_without_an_index() {
+fn _03_02_a_coordinate_query_still_works_without_an_index() {
   let w = world();
   let s = w.start_degraded_server();
   let r = get(s.port, &ask(ANY_POINT).http_path());
@@ -869,10 +869,10 @@ fn _46_a_coordinate_query_still_works_without_an_index() {
   assert!(!body["matches"].as_array().expect("matches").is_empty());
 }
 
-// 47. degraded mode
+// 03.03. degraded mode
 #[test]
 #[ignore]
-fn _47_the_static_routes_still_serve_without_an_index() {
+fn _03_03_the_static_routes_still_serve_without_an_index() {
   let w = world();
   let s = w.start_degraded_server();
   for path in ["/", "/docs", "/openapi.json"] {
@@ -880,10 +880,10 @@ fn _47_the_static_routes_still_serve_without_an_index() {
   }
 }
 
-// 48. degraded mode
+// 03.04. degraded mode
 #[test]
 #[ignore]
-fn _48_a_degraded_boot_warns_on_stderr() {
+fn _03_04_a_degraded_boot_warns_on_stderr() {
   let w = world();
   let s = w.start_degraded_server();
   let _ = get(s.port, "/status"); // make sure the warning is flushed before reading
@@ -894,10 +894,10 @@ fn _48_a_degraded_boot_warns_on_stderr() {
   );
 }
 
-// 49. precision guarantee: streets have no distance cap; only --min-quality removes a far match
+// 04.00. precision guarantee: streets have no distance cap; only --min-quality removes a far match
 #[test]
 #[ignore]
-fn _49_distant_coordinates_still_resolve_because_streets_have_no_distance_cap() {
+fn _04_00_distant_coordinates_still_resolve_because_streets_have_no_distance_cap() {
   let far = world().run(&["-25.5,-45.0"]);
   let distance = first(&far)["coordinates_distance_in_meters"]
     .as_u64()
@@ -915,10 +915,10 @@ fn _49_distant_coordinates_still_resolve_because_streets_have_no_distance_cap() 
   );
 }
 
-// 50. regression guard: id is pack_admin_id(osm_id), a pure function, never an insert-order rowid
+// 05.00. regression guard: id is pack_admin_id(osm_id), a pure function, never an insert-order rowid
 #[test]
 #[ignore]
-fn _50_match_id_is_the_packed_osm_id() {
+fn _05_00_match_id_is_the_packed_osm_id() {
   let result = world().run(&[ANY_POINT]);
   for m in matches(&result) {
     let id = m["id"].as_u64().expect("id must be a number");

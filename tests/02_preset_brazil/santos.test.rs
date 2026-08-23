@@ -4,8 +4,8 @@ use crate::common::query::{first, levels_of, matches, name_at, way_ids};
 use serde_json::{Value, json};
 
 pub static SCENARIO: scenario = scenario {
-  region: "2_preset_brazil",
-  fixture_dir: "2_preset_brazil",
+  region: "02_preset_brazil",
+  fixture_dir: "02_preset_brazil",
   pbf: "santos.osm.pbf",
   preset: "brazil",
 };
@@ -49,10 +49,10 @@ fn assert_boundary(relation_id: u64, level: u8, name: &str) {
   );
 }
 
-// 00. result quality: reverse geocoding lands on the nearest street
+// 00.00. result quality: reverse geocoding lands on the nearest street
 #[test]
 #[ignore]
-fn _00_top_match_is_a_street_within_the_expected_distance() {
+fn _00_00_top_match_is_a_street_within_the_expected_distance() {
   let result = world().run(&[COORDINATES_QUERY]);
   let top = first(&result);
   let distance = top["coordinates_distance_in_meters"]
@@ -69,10 +69,10 @@ fn _00_top_match_is_a_street_within_the_expected_distance() {
   );
 }
 
-// 01. result quality
+// 00.01. result quality
 #[test]
 #[ignore]
-fn _01_top_match_carries_the_full_ladder() {
+fn _00_01_top_match_carries_the_full_ladder() {
   let result = world().run(&[COORDINATES_QUERY]);
   let top = first(&result);
   for (level, name) in [
@@ -90,10 +90,10 @@ fn _01_top_match_carries_the_full_ladder() {
   }
 }
 
-// 02. result quality: the readme example is the executable proof of the documented address
+// 00.02. result quality: the readme example is the executable proof of the documented address
 #[test]
 #[ignore]
-fn _02_the_documented_example_resolves_to_the_documented_address() {
+fn _00_02_the_documented_example_resolves_to_the_documented_address() {
   let w = world();
   let result = w.assert_cli(
     &ask(TEXT_QUERY),
@@ -108,10 +108,10 @@ fn _02_the_documented_example_resolves_to_the_documented_address() {
   assert_eq!(levels_of(first(&result)), vec![2, 4, 8, 10, 12]);
 }
 
-// 03. result quality: the street is split in two ways; both must come back, order aside
+// 00.03. result quality: the street is split in two ways; both must come back, order aside
 #[test]
 #[ignore]
-fn _03_every_segment_of_the_street_comes_back() {
+fn _00_03_every_segment_of_the_street_comes_back() {
   // segments tie on score, so their relative order follows the tantivy segment layout.
   // assert the set, never the order.
   let mut expected = vec![255710390, 729205713];
@@ -119,10 +119,10 @@ fn _03_every_segment_of_the_street_comes_back() {
   assert_eq!(way_ids(&world().run(&[TEXT_QUERY])), expected);
 }
 
-// 04. result quality
+// 00.04. result quality
 #[test]
 #[ignore]
-fn _04_a_house_number_on_the_street_resolves_as_exact() {
+fn _00_04_a_house_number_on_the_street_resolves_as_exact() {
   // rua januario dos santos is a single segment carrying 70, 197, 232 and 235 — no tie to break,
   // so the ranking is stable.
   let w = world();
@@ -138,10 +138,10 @@ fn _04_a_house_number_on_the_street_resolves_as_exact() {
   assert!(levels_of(first(&result)).contains(&30));
 }
 
-// 05. result quality
+// 00.05. result quality
 #[test]
 #[ignore]
-fn _05_a_house_number_between_two_known_ones_resolves_as_interpolated() {
+fn _00_05_a_house_number_between_two_known_ones_resolves_as_interpolated() {
   let w = world();
   let result = w.assert_cli(
     &ask("rua januario dos santos, santos 210"),
@@ -150,10 +150,10 @@ fn _05_a_house_number_between_two_known_ones_resolves_as_interpolated() {
   assert!(levels_of(first(&result)).contains(&30));
 }
 
-// 06. result quality
+// 00.06. result quality
 #[test]
 #[ignore]
-fn _06_an_out_of_range_house_number_resolves_as_absent() {
+fn _00_06_an_out_of_range_house_number_resolves_as_absent() {
   let w = world();
   let bare = world().run(&["rua januario dos santos, santos"]);
   let numbered = w.assert_cli(
@@ -172,10 +172,10 @@ fn _06_an_out_of_range_house_number_resolves_as_absent() {
   );
 }
 
-// 07. result quality
+// 00.07. result quality
 #[test]
 #[ignore]
-fn _07_friendly_name_format_renders_the_requested_placeholders() {
+fn _00_07_friendly_name_format_renders_the_requested_placeholders() {
   let w = world();
   for (format, expected) in [
     (
@@ -194,10 +194,10 @@ fn _07_friendly_name_format_renders_the_requested_placeholders() {
   }
 }
 
-// 08. result quality
+// 00.08. result quality
 #[test]
 #[ignore]
-fn _08_friendly_name_format_house_number_alias() {
+fn _00_08_friendly_name_format_house_number_alias() {
   let w = world();
   w.assert_cli(
     &ask("rua januario dos santos, santos 197")
@@ -206,10 +206,10 @@ fn _08_friendly_name_format_house_number_alias() {
   );
 }
 
-// 09. result quality: the full payload for the documented text query, compared whole
+// 00.09. result quality: the full payload for the documented text query, compared whole
 #[test]
 #[ignore]
-fn _09_the_text_query_matches_are_exactly_these() {
+fn _00_09_the_text_query_matches_are_exactly_these() {
   // every match, whole. the two segments tie on score, so the array is sorted by id before
   // comparing — their order follows the tantivy segment layout and must never be asserted.
   let result = world().run(&[TEXT_QUERY]);
@@ -312,10 +312,10 @@ fn _09_the_text_query_matches_are_exactly_these() {
   );
 }
 
-// 10. result quality: the full top match for the documented coordinate, compared whole
+// 00.10. result quality: the full top match for the documented coordinate, compared whole
 #[test]
 #[ignore]
-fn _10_the_coordinate_query_top_match_is_exactly_this() {
+fn _00_10_the_coordinate_query_top_match_is_exactly_this() {
   let actual = first(&world().run(&[COORDINATES_QUERY])).clone();
   world().assert_exact(
     &actual,
@@ -373,10 +373,10 @@ fn _10_the_coordinate_query_top_match_is_exactly_this() {
   );
 }
 
-// 11. result quality
+// 00.11. result quality
 #[test]
 #[ignore]
-fn _11_an_accented_query_is_url_decoded() {
+fn _00_11_an_accented_query_is_url_decoded() {
   let w = world();
   let s = w.start_server();
   let r = get(s.port, &ask("rua castro alves, embaré, santos").http_path());
@@ -387,10 +387,10 @@ fn _11_an_accented_query_is_url_decoded() {
   );
 }
 
-// 12. precision guarantee: only reachable when the level 2 ring closed
+// 01.00. precision guarantee: only reachable when the level 2 ring closed
 #[test]
 #[ignore]
-fn _12_the_country_iso_code_is_resolved() {
+fn _01_00_the_country_iso_code_is_resolved() {
   let w = world();
   w.assert_cli(
     &ask(COORDINATES_QUERY),
@@ -398,10 +398,10 @@ fn _12_the_country_iso_code_is_resolved() {
   );
 }
 
-// 13. precision guarantee
+// 01.01. precision guarantee
 #[test]
 #[ignore]
-fn _13_min_quality_one_keeps_only_fully_covered_matches() {
+fn _01_01_min_quality_one_keeps_only_fully_covered_matches() {
   let result = world().run(&[TEXT_QUERY, "--min-quality", "1.0"]);
   assert!(
     !matches(&result).is_empty(),
@@ -415,10 +415,10 @@ fn _13_min_quality_one_keeps_only_fully_covered_matches() {
   }
 }
 
-// 14. precision guarantee
+// 01.02. precision guarantee
 #[test]
 #[ignore]
-fn _14_bounding_wkt_keeps_only_matches_inside_the_polygon() {
+fn _01_02_bounding_wkt_keeps_only_matches_inside_the_polygon() {
   let bounded = world().run(&[TEXT_QUERY, "--bounding-wkt", INSIDE_POLYGON]);
   assert!(
     !matches(&bounded).is_empty(),
@@ -431,10 +431,10 @@ fn _14_bounding_wkt_keeps_only_matches_inside_the_polygon() {
   );
 }
 
-// 15. precision guarantee
+// 01.03. precision guarantee
 #[test]
 #[ignore]
-fn _15_a_bounding_polygon_over_open_water_excludes_everything() {
+fn _01_03_a_bounding_polygon_over_open_water_excludes_everything() {
   let result = world().run(&[TEXT_QUERY, "--bounding-wkt", OUTSIDE_POLYGON]);
   assert!(
     matches(&result).is_empty(),
@@ -442,10 +442,10 @@ fn _15_a_bounding_polygon_over_open_water_excludes_everything() {
   );
 }
 
-// 16. precision guarantee
+// 01.04. precision guarantee
 #[test]
 #[ignore]
-fn _16_last_admin_levels_keeps_only_the_requested_leaf() {
+fn _01_04_last_admin_levels_keeps_only_the_requested_leaf() {
   let result = world().run(&["santos, sao paulo", "--last-admin-levels", "8"]);
   assert!(!matches(&result).is_empty());
   for m in matches(&result) {
@@ -457,30 +457,30 @@ fn _16_last_admin_levels_keeps_only_the_requested_leaf() {
   }
 }
 
-// 17. ambiguity
+// 02.00. ambiguity
 #[test]
 #[ignore]
-fn _17_an_ascii_folded_query_matches_the_accented_name() {
+fn _02_00_an_ascii_folded_query_matches_the_accented_name() {
   let folded = world().run(&["rua castro alves, embare, santos"]);
   let accented = world().run(&["rua castro alves, embaré, santos"]);
   assert_eq!(way_ids(&folded), way_ids(&accented));
   assert!(!way_ids(&folded).is_empty());
 }
 
-// 18. ambiguity
+// 02.01. ambiguity
 #[test]
 #[ignore]
-fn _18_the_preset_expands_the_street_abbreviation() {
+fn _02_01_the_preset_expands_the_street_abbreviation() {
   let abbreviated = world().run(&["r. castro alves, embare, santos"]);
   let spelled = world().run(&["rua castro alves, embare, santos"]);
   assert_eq!(way_ids(&abbreviated), way_ids(&spelled));
   assert!(!way_ids(&abbreviated).is_empty());
 }
 
-// 19. ambiguity: one expectation, both surfaces, and the two must agree byte for byte
+// 02.02. ambiguity: one expectation, both surfaces, and the two must agree byte for byte
 #[test]
 #[ignore]
-fn _19_the_surfaces_agree_on_a_text_query() {
+fn _02_02_the_surfaces_agree_on_a_text_query() {
   let w = world();
   let s = w.start_server();
   w.assert_both(
@@ -493,10 +493,10 @@ fn _19_the_surfaces_agree_on_a_text_query() {
   );
 }
 
-// 20. ambiguity
+// 02.03. ambiguity
 #[test]
 #[ignore]
-fn _20_the_surfaces_agree_on_a_coordinate_query() {
+fn _02_03_the_surfaces_agree_on_a_coordinate_query() {
   let w = world();
   let s = w.start_server();
   w.assert_both(
@@ -506,10 +506,10 @@ fn _20_the_surfaces_agree_on_a_coordinate_query() {
   );
 }
 
-// 21. ambiguity
+// 02.04. ambiguity
 #[test]
 #[ignore]
-fn _21_the_surfaces_agree_under_every_flag() {
+fn _02_04_the_surfaces_agree_under_every_flag() {
   let w = world();
   let s = w.start_server();
   let query = TEXT_QUERY;
@@ -525,10 +525,10 @@ fn _21_the_surfaces_agree_under_every_flag() {
   w.assert_both(&s, &ask(query).last_admin_levels("12"), &any);
 }
 
-// 22. regression guard: a clipped boundary becomes a MultiLineString and can never be an ancestor
+// 03.00. regression guard: a clipped boundary becomes a MultiLineString and can never be an ancestor
 #[test]
 #[ignore]
-fn _22_boundary_relations_are_polygonal_not_linestrings() {
+fn _03_00_boundary_relations_are_polygonal_not_linestrings() {
   for (relation_id, level, name) in [
     (59470, 2, "Brasil"),
     (298204, 4, "São Paulo"),
@@ -538,10 +538,10 @@ fn _22_boundary_relations_are_polygonal_not_linestrings() {
   }
 }
 
-// 23. regression guard: the iso code only resolves when the level 2 ring closed
+// 03.01. regression guard: the iso code only resolves when the level 2 ring closed
 #[test]
 #[ignore]
-fn _23_the_country_relation_carries_its_iso_code() {
+fn _03_01_the_country_relation_carries_its_iso_code() {
   let w = world();
   let conn = w.open_sqlite();
   let stored: Option<String> = conn
@@ -554,10 +554,10 @@ fn _23_the_country_relation_carries_its_iso_code() {
   assert_eq!(stored.as_deref(), Some("BR"));
 }
 
-// 24. regression guard: a level 9 also named santos is in the fixture; the preset must drop it
+// 03.02. regression guard: a level 9 also named santos is in the fixture; the preset must drop it
 #[test]
 #[ignore]
-fn _24_the_friendly_name_never_repeats_an_admin_level_name() {
+fn _03_02_the_friendly_name_never_repeats_an_admin_level_name() {
   for m in matches(&world().run(&[TEXT_QUERY])) {
     let name = m["friendly_name"]
       .as_str()
@@ -569,10 +569,10 @@ fn _24_the_friendly_name_never_repeats_an_admin_level_name() {
   }
 }
 
-// 25. regression guard: the leaf filter runs at retrieval (leaf 12) and again after enrichment (30)
+// 03.03. regression guard: the leaf filter runs at retrieval (leaf 12) and again after enrichment (30)
 #[test]
 #[ignore]
-fn _25_a_house_number_leaf_needs_both_the_street_and_the_house_number_level() {
+fn _03_03_a_house_number_leaf_needs_both_the_street_and_the_house_number_level() {
   let query = "rua januario dos santos, santos 197";
 
   let street_only = world().run(&[query, "--last-admin-levels", "12"]);
@@ -599,10 +599,10 @@ fn _25_a_house_number_leaf_needs_both_the_street_and_the_house_number_level() {
   );
 }
 
-// 26. regression guard: force_content_length keeps a multi-megabyte body identity-encoded
+// 03.04. regression guard: force_content_length keeps a multi-megabyte body identity-encoded
 #[test]
 #[ignore]
-fn _26_a_response_past_the_chunked_threshold_stays_identity_encoded() {
+fn _03_04_a_response_past_the_chunked_threshold_stays_identity_encoded() {
   let w = world();
   // the country ring pushes this response into megabytes, well past tiny_http's 32 KiB
   // chunked threshold. this is the regression test for force_content_length.
@@ -628,10 +628,10 @@ fn _26_a_response_past_the_chunked_threshold_stays_identity_encoded() {
   );
 }
 
-// 27. pipeline integrity: the preset is inferred from the source path, not from a flag
+// 04.00. pipeline integrity: the preset is inferred from the source path, not from a flag
 #[test]
 #[ignore]
-fn _27_build_resolves_the_preset_from_the_source_path() {
+fn _04_00_build_resolves_the_preset_from_the_source_path() {
   let w = world();
   let banner = format!("preset: {}", "brazil");
   assert!(
@@ -640,10 +640,10 @@ fn _27_build_resolves_the_preset_from_the_source_path() {
   );
 }
 
-// 28. pipeline integrity
+// 04.01. pipeline integrity
 #[test]
 #[ignore]
-fn _28_header_stage_reports_the_fixture_generator() {
+fn _04_01_header_stage_reports_the_fixture_generator() {
   let w = world();
   assert!(
     w.build_stdout.contains("geolite-e2e-fixture/1"),
@@ -651,10 +651,10 @@ fn _28_header_stage_reports_the_fixture_generator() {
   );
 }
 
-// 29. contract
+// 05.00. contract
 #[test]
 #[ignore]
-fn _29_include_wkt_true_attaches_geometry_to_every_level() {
+fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
   let w = world();
   let result = w.query_json(&[TEXT_QUERY]);
   let top = first(&result);
@@ -682,10 +682,10 @@ fn _29_include_wkt_true_attaches_geometry_to_every_level() {
   );
 }
 
-// 30. dead case
+// 06.00. dead case
 #[test]
 #[ignore]
-fn _30_a_typo_falls_back_to_the_loose_query() {
+fn _06_00_a_typo_falls_back_to_the_loose_query() {
   assert!(
     !way_ids(&world().run(&["rua castro alvez, embare, santos"])).is_empty(),
     "the fuzzy fallback must still find the street"
