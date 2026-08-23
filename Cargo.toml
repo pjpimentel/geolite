@@ -10,7 +10,7 @@ repository = "https://github.com/pjpimentel/geolite"
 homepage = "https://geolite.pimentel.co"
 keywords = ["geocode", "openstreetmap", "osm"]
 categories = ["command-line-utilities", "science::geo"]
-include = ["src/**/*", "readme.md", "LICENSE"]
+include = ["src/**/*", "!src/**/*.test.rs", "readme.md", "LICENSE"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

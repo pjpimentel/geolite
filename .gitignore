@@ -9,3 +9,8 @@ Dockerfile.prebuilt.generated
 
 /target
 tmp
+
+# e2e fixture recipes stay local; only the generated .osm.pbf is committed
+tests/**/*.build-fixture.sh
+tests/**/*.boundary-ids.txt
+tasks.md
