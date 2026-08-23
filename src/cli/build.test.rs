@@ -207,15 +207,18 @@ fn write_street_fixture(pbf_path: &str) {
   );
 }
 
-// drives command_handler_build end to end on a local fixture: the source is not a geofabrik id
-// (the stub index is empty, so download only warns), every extract stage runs on real data, and
-// the pipeline ends with a populated admin_levels, a tantivy dir and no osm_data sibling.
+// drives command_handler_build end to end on a local fixture: the source is already on disk, so
+// the download stage is skipped entirely, every extract stage runs on real data, and the pipeline
+// ends with a populated admin_levels, a tantivy dir and no osm_data sibling.
+//
+// the endpoint points at a closed port on purpose: reaching it would fail with `expect`, so the
+// test proves a local source never touches the network.
 #[test]
 fn _03_full_pipeline_from_local_pbf_fixture_runs_every_stage() {
   let work = workspace::new("full_pipeline");
   let pbf_path = work.base.join("fixture.osm.pbf").to_string_lossy().into_owned();
   write_street_fixture(&pbf_path);
-  let ls_endpoint = start_json_server(r#"{"features":[]}"#.to_string());
+  let ls_endpoint = "http://127.0.0.1:1/index.json".to_string();
 
   super::command_handler_build(
     &work.base.to_string_lossy(),

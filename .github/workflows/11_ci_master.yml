@@ -56,10 +56,14 @@ jobs:
     uses: ./.github/workflows/1_pre_build_quality_check.yml
     secrets: inherit
 
+  e2e:
+    needs: pre_release_check
+    uses: ./.github/workflows/4_e2e.yml
+
   # TODO: maybe publish on cargo before is better. why? because the dockerfile could install and compile from there.
 
   build:
-    needs: [pre_release_check, pre_build_quality_check]
+    needs: [pre_release_check, pre_build_quality_check, e2e]
     if: needs.pre_release_check.outputs.needs_release == 'true'
     permissions:
       contents: read

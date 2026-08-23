@@ -33,14 +33,22 @@ pub fn command_handler_build(
   let inputs = vec![source.to_string()];
 
   println!("\x1b[2m── download\x1b[0m");
-  command_handler_osm_pbf_file_download(
-    data_path,
-    threads,
-    sqlite_path,
-    &inputs,
-    ls_endpoint,
-    abort_on_any_error,
-  );
+  // a origem local ja esta em disco: baixar seria inutil e, pior, resolve_geofabrik_url
+  // busca o indice da geofabrik com `expect`, derrubando o pipeline inteiro quando a rede
+  // falha. checagem so de filesystem de proposito — resolve_osm_pbf_path abriria o sqlite,
+  // que neste ponto do build pode ainda nao existir.
+  if source_path.exists() || source_in_data.exists() {
+    println!("\x1b[1;33mskipping\x1b[0m download — '{source}' is already a local file");
+  } else {
+    command_handler_osm_pbf_file_download(
+      data_path,
+      threads,
+      sqlite_path,
+      &inputs,
+      ls_endpoint,
+      abort_on_any_error,
+    );
+  }
 
   if crate::resolve_osm_pbf_path(data_path, sqlite_path, source).is_none() {
     eprintln!(

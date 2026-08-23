@@ -54,6 +54,7 @@ $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
     1. [query](#query)
     1. [explore](#explore)
     1. [merge separately-built databases](#merge-separately-built-databases)
+    1. [run the end-to-end suite](#run-the-end-to-end-suite)
 
 ---
 
@@ -157,6 +158,11 @@ $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sql
 $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/nordeste.sqlite3 build nordeste
 $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --preset brazil merge /.geolite/brazil.sqlite3 /.geolite/sudeste.sqlite3 /.geolite/nordeste.sqlite3
 $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/brazil.sqlite3 http-server
+```
+
+### run the end-to-end suite
+```bash
+$ cargo test --release --test '*' -- --ignored --nocapture
 ```
 
 ## question and answers
