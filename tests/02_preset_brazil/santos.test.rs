@@ -691,3 +691,7 @@ fn _06_00_a_typo_falls_back_to_the_loose_query() {
     "the fuzzy fallback must still find the street"
   );
 }
+
+// TODO: pegar 10 enderecos reais e garantir o resultado.
+// TODO: pegar 10 coordenadas reais e garantir o resultado.
+// TODO: revisar e apagar testes pre-gerados
