@@ -838,6 +838,75 @@ fn _02_08_every_point_along_the_square_lands_on_the_same_square() {
   }
 }
 
-// TODO: pegar 8 enderecos reais e garantir o resultado.
-// TODO: pegar 8 coordenadas reais e garantir o resultado.
+// 02.09. ambiguity: ten spellings of the same numbered address, every one landing on the same house
+#[test]
+#[ignore]
+fn _02_09_every_spelling_of_the_numbered_address_lands_on_the_same_house() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "rua doutor galeao carvalhal, 15 gonzaga santos",
+    "Rua Doutor Galeão Carvalhal, 15, Gonzaga, Santos",
+    "RUA DOUTOR GALEAO CARVALHAL 15 GONZAGA SANTOS",
+    "rua doutor galeao carvalhal 15 - gonzaga - santos",
+    "rua dr. galeao carvalhal, 15, gonzaga, santos",
+    "r. dr. galeao carvalhal, 15, gonzaga, santos",
+    "rua doutor galeao carvalhal, nº 15, gonzaga, santos",
+    "15 rua doutor galeao carvalhal gonzaga santos",
+    "santos, gonzaga, rua doutor galeao carvalhal, 15",
+    "Rua Doutor Galeão Carvalhal, 15 - Gonzaga - Santos/SP",
+  ] {
+    let result = w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "text_to_address",
+        "matches": [{
+          "friendly_name": "Rua Doutor Galeão Carvalhal, 15, Gonzaga, Santos, São Paulo, Brasil",
+          "house_number": { "number": "15" },
+        }],
+      }),
+    );
+    assert_eq!(
+      levels_of(first(&result)),
+      vec![2, 4, 8, 10, 12, 30],
+      "{input:?} must resolve the full ladder down to the house number"
+    );
+  }
+}
+
+// 02.10. ambiguity: five points along the whole street, every one landing on the same street
+#[test]
+#[ignore]
+fn _02_10_every_point_along_the_numbered_street_lands_on_the_same_street() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "-23.96748,-46.332242",
+    "-23.967571,-46.33156",
+    "-23.967695,-46.330486",
+    "-23.967803,-46.329608",
+    "-23.96785,-46.329218",
+  ] {
+    w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "coordinates_to_address",
+        "matches": [{
+          "admin_levels": [
+            { "level": 2, "name": "Brasil" },
+            { "level": 4, "name": "São Paulo" },
+            { "level": 8, "name": "Santos" },
+            { "level": 10, "name": "Gonzaga" },
+            { "level": 12, "name": "Rua Doutor Galeão Carvalhal" },
+          ],
+        }],
+      }),
+    );
+  }
+}
+
+// TODO: pegar 7 enderecos reais e garantir o resultado.
+// TODO: pegar 7 coordenadas reais e garantir o resultado.
 // TODO: revisar e apagar testes pre-gerados
