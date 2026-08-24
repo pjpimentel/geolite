@@ -176,12 +176,13 @@ impl world {
     actual
   }
 
-  pub fn assert_both(&self, server: &server, ask: &ask, expected: &Value) {
+  pub fn assert_both(&self, server: &server, ask: &ask, expected: &Value) -> Value {
     let from_cli = self.assert_cli(ask, expected);
     let from_http = self.assert_http(server, ask, expected);
     assert_eq!(
       from_cli, from_http,
       "the cli and the http api disagreed for {ask}"
     );
+    from_cli
   }
 }

@@ -691,7 +691,153 @@ fn _06_00_a_typo_falls_back_to_the_loose_query() {
     "the fuzzy fallback must still find the street"
   );
 }
+///////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////
 
-// TODO: pegar 10 enderecos reais e garantir o resultado.
-// TODO: pegar 10 coordenadas reais e garantir o resultado.
+// 02.05. ambiguity: ten spellings of the same address, every one landing on the same street
+#[test]
+#[ignore]
+fn _02_05_every_spelling_of_the_address_lands_on_the_same_street() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "rua castro alves embare santos",
+    "Rua Castro Alves, Embaré, Santos",
+    "RUA CASTRO ALVES EMBARE SANTOS",
+    "rua castro alves,embare,santos",
+    "rua castro alves - embare - santos",
+    "rua  castro   alves    embare  santos",
+    "castro alves embare santos",
+    "santos, embare, rua castro alves",
+    "rua castro alves, embare, santos, sp",
+    "Rua Castro Alves - Embaré - Santos/SP",
+  ] {
+    let result = w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "text_to_address",
+        "matches": [{ "friendly_name": "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil" }],
+      }),
+    );
+    assert_eq!(
+      levels_of(first(&result)),
+      vec![2, 4, 8, 10, 12],
+      "{input:?} must resolve the full ladder"
+    );
+  }
+}
+
+// 02.06. ambiguity: ten points along the whole street, every one landing on the same street
+#[test]
+#[ignore]
+fn _02_06_every_point_along_the_street_lands_on_the_same_street() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "-23.971817,-46.319467",
+    "-23.971283,-46.319041",
+    "-23.970752,-46.318611",
+    "-23.970219,-46.318183",
+    "-23.969685,-46.317756",
+    "-23.969155,-46.317324",
+    "-23.968826,-46.317054",
+    "-23.968094,-46.316461",
+    "-23.967564,-46.31603",
+    "-23.967039,-46.315589",
+  ] {
+    w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "coordinates_to_address",
+        "matches": [{
+          "admin_levels": [
+            { "level": 2, "name": "Brasil" },
+            { "level": 4, "name": "São Paulo" },
+            { "level": 8, "name": "Santos" },
+            { "level": 10, "name": "Embaré" },
+            { "level": 12, "name": "Rua Castro Alves" },
+          ],
+        }],
+      }),
+    );
+  }
+}
+
+// 02.07. ambiguity: ten spellings of the same square, every one landing on the same square
+#[test]
+#[ignore]
+fn _02_07_every_spelling_of_the_square_lands_on_the_same_square() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "praca doutor hipolito do rego embare santos",
+    "Praça Doutor Hipólito do Rego, Embaré, Santos",
+    "PRACA DOUTOR HIPOLITO DO REGO EMBARE SANTOS",
+    "praca doutor hipolito do rego,embare,santos",
+    "praca doutor hipolito do rego - embare - santos",
+    "pç. doutor hipolito do rego embare santos",
+    "pca. doutor hipolito do rego embare santos",
+    "praca dr. hipolito do rego embare santos",
+    "santos, embare, praca doutor hipolito do rego",
+    "Praça Doutor Hipólito do Rego - Embaré - Santos/SP",
+  ] {
+    let result = w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "text_to_address",
+        "matches": [{
+          "friendly_name": "Praça Doutor Hipólito do Rego, Embaré, Santos, São Paulo, Brasil",
+        }],
+      }),
+    );
+    assert_eq!(
+      levels_of(first(&result)),
+      vec![2, 4, 8, 10, 12],
+      "{input:?} must resolve the full ladder"
+    );
+  }
+}
+
+// 02.08. ambiguity: ten points along the whole square, every one landing on the same square
+#[test]
+#[ignore]
+fn _02_08_every_point_along_the_square_lands_on_the_same_square() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "-23.972449,-46.319952",
+    "-23.972405,-46.319919",
+    "-23.972361,-46.319885",
+    "-23.972316,-46.319852",
+    "-23.972272,-46.319818",
+    "-23.972227,-46.319785",
+    "-23.972183,-46.319751",
+    "-23.972091,-46.319785",
+    "-23.972095,-46.319844",
+    "-23.972075,-46.319895",
+  ] {
+    w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "coordinates_to_address",
+        "matches": [{
+          "admin_levels": [
+            { "level": 2, "name": "Brasil" },
+            { "level": 4, "name": "São Paulo" },
+            { "level": 8, "name": "Santos" },
+            { "level": 10, "name": "Embaré" },
+            { "level": 12, "name": "Praça Doutor Hipólito do Rego" },
+          ],
+        }],
+      }),
+    );
+  }
+}
+
+// TODO: pegar 8 enderecos reais e garantir o resultado.
+// TODO: pegar 8 coordenadas reais e garantir o resultado.
 // TODO: revisar e apagar testes pre-gerados
