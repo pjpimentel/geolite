@@ -907,6 +907,148 @@ fn _02_10_every_point_along_the_numbered_street_lands_on_the_same_street() {
   }
 }
 
-// TODO: pegar 7 enderecos reais e garantir o resultado.
-// TODO: pegar 7 coordenadas reais e garantir o resultado.
+// 02.11. ambiguity: twelve spellings of the same square address, every one landing on the same street
+#[test]
+#[ignore]
+fn _02_11_every_spelling_of_the_square_address_lands_on_the_street_along_it() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "praca visconde de maua, 29 centro santos",
+    "Praça Visconde de Mauá, 29, Centro, Santos",
+    "PRACA VISCONDE DE MAUA 29 CENTRO SANTOS",
+    "praca visconde de maua 29 - centro - santos",
+    "pç. visconde de maua, 29, centro, santos",
+    "pca. visconde de maua, 29, centro, santos",
+    "praca visc. de maua, 29, centro, santos",
+    "pç. visc. de maua, 29, centro, santos",
+    "praca visconde de maua, nº 29, centro, santos",
+    "29 praca visconde de maua centro santos",
+    "santos, centro, praca visconde de maua, 29",
+    "Praça Visconde de Mauá, 29 - Centro - Santos/SP",
+  ] {
+    let result = w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "text_to_address",
+        "matches": [{
+          "friendly_name": "Rua Visconde de Mauá, Centro, Santos, São Paulo, Brasil",
+          "house_number": { "number": "29", "kind": "absent" },
+        }],
+      }),
+    );
+    assert_eq!(
+      levels_of(first(&result)),
+      vec![2, 4, 8, 10, 12],
+      "{input:?} must resolve the full ladder; an absent number never becomes a level"
+    );
+  }
+}
+
+// 02.12. ambiguity: five points along the street that borders the square, every one landing on it
+#[test]
+#[ignore]
+fn _02_12_every_point_along_the_street_that_borders_the_square_lands_on_the_same_street() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "-23.933232,-46.329390",
+    "-23.933388,-46.329408",
+    "-23.933511,-46.329422",
+    "-23.933634,-46.329436",
+    "-23.933757,-46.329450",
+  ] {
+    w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "coordinates_to_address",
+        "matches": [{
+          "admin_levels": [
+            { "level": 2, "name": "Brasil" },
+            { "level": 4, "name": "São Paulo" },
+            { "level": 8, "name": "Santos" },
+            { "level": 10, "name": "Centro" },
+            { "level": 12, "name": "Rua Visconde de Mauá" },
+          ],
+        }],
+      }),
+    );
+  }
+}
+
+// 02.13. ambiguity: ten spellings of the same square, every one landing on the same square
+#[test]
+#[ignore]
+fn _02_13_every_spelling_of_the_jose_menino_square_lands_on_the_same_square() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "praca washington jose menino santos",
+    "Praça Washington, José Menino, Santos",
+    "PRACA WASHINGTON JOSE MENINO SANTOS",
+    "praca washington,jose menino,santos",
+    "praca washington - jose menino - santos",
+    "praca  washington   jose  menino  santos",
+    "pç. washington jose menino santos",
+    "pca. washington jose menino santos",
+    "santos, jose menino, praca washington",
+    "praça washington, josé menino, santos, são paulo",
+  ] {
+    let result = w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "text_to_address",
+        "matches": [{
+          "friendly_name": "Praça Washington, José Menino, Santos, São Paulo, Brasil",
+        }],
+      }),
+    );
+    assert_eq!(
+      levels_of(first(&result)),
+      vec![2, 4, 8, 10, 12],
+      "{input:?} must resolve the full ladder"
+    );
+  }
+}
+
+// 02.14. ambiguity: ten points around the whole square, every one landing on the same square
+#[test]
+#[ignore]
+fn _02_14_every_point_around_the_jose_menino_square_lands_on_the_same_square() {
+  let w = world();
+  let s = w.start_server();
+  for input in [
+    "-23.967017,-46.350912",
+    "-23.966730,-46.350136",
+    "-23.966392,-46.349234",
+    "-23.966175,-46.348913",
+    "-23.965170,-46.348999",
+    "-23.964902,-46.349362",
+    "-23.964897,-46.349762",
+    "-23.965344,-46.350957",
+    "-23.966124,-46.353048",
+    "-23.966073,-46.353005",
+  ] {
+    w.assert_both(
+      &s,
+      &ask(input),
+      &json!({
+        "service": "coordinates_to_address",
+        "matches": [{
+          "admin_levels": [
+            { "level": 2, "name": "Brasil" },
+            { "level": 4, "name": "São Paulo" },
+            { "level": 8, "name": "Santos" },
+            { "level": 10, "name": "José Menino" },
+            { "level": 12, "name": "Praça Washington" },
+          ],
+        }],
+      }),
+    );
+  }
+}
+
 // TODO: revisar e apagar testes pre-gerados
