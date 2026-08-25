@@ -1,6 +1,8 @@
 use crate::common::ask::ask;
 use crate::common::harness::{encode, get, scenario, world, world_cell};
-use crate::common::query::{first, levels_of, matches, name_at, way_ids};
+use crate::common::query::{first, levels_of, matches, way_ids};
+use geo::Geometry;
+use geozero::{ToGeo, wkb::SpatiaLiteWkb};
 use serde_json::{Value, json};
 
 pub static SCENARIO: scenario = scenario {
@@ -24,14 +26,24 @@ const INSIDE_POLYGON: &str =
 const OUTSIDE_POLYGON: &str =
   "POLYGON((-45.0 -25.5,-44.9 -25.5,-44.9 -25.4,-45.0 -25.4,-45.0 -25.5))";
 
+const SQL_SELECT_BOUNDARY: &str = "
+  SELECT admin_level, name, wkb
+  FROM admin_levels
+  WHERE relation_id = ?1
+";
+
+const SQL_SELECT_COUNTRY_ISO_CODE: &str = "
+  SELECT country_iso_code
+  FROM admin_levels
+  WHERE relation_id = 59470
+";
+
 fn assert_boundary(relation_id: u64, level: u8, name: &str) {
   let conn = world().open_sqlite();
-  let (stored_level, stored_name, wkb_len): (u8, String, i64) = conn
-    .query_row(
-      "SELECT admin_level, name, LENGTH(wkb) FROM admin_levels WHERE relation_id = ?1",
-      [relation_id],
-      |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )
+  let (stored_level, stored_name, wkb): (u8, String, Vec<u8>) = conn
+    .query_row(SQL_SELECT_BOUNDARY, [relation_id], |r| {
+      Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    })
     .unwrap_or_else(|e| {
       panic!("relation {relation_id} ({name}) is missing from admin_levels: {e}")
     });
@@ -43,86 +55,20 @@ fn assert_boundary(relation_id: u64, level: u8, name: &str) {
     stored_name, name,
     "relation {relation_id} has an unexpected name"
   );
+  // the blob is spatialite's own layout, not iso wkb; decode it the way the source does.
+  let geometry = SpatiaLiteWkb(wkb.as_slice())
+    .to_geo()
+    .unwrap_or_else(|e| panic!("relation {relation_id} ({name}) has an undecodable geometry: {e}"));
   assert!(
-    wkb_len > 0,
-    "relation {relation_id} ({name}) has no geometry"
+    matches!(geometry, Geometry::Polygon(_) | Geometry::MultiPolygon(_)),
+    "relation {relation_id} ({name}) is not polygonal: its ring did not close"
   );
 }
 
-// 00.00. result quality: reverse geocoding lands on the nearest street
+// 00.00. result quality
 #[test]
 #[ignore]
-fn _00_00_top_match_is_a_street_within_the_expected_distance() {
-  let result = world().run(&[COORDINATES_QUERY]);
-  let top = first(&result);
-  let distance = top["coordinates_distance_in_meters"]
-    .as_u64()
-    .expect("a coordinate match must report a distance");
-  let limit = 100;
-  assert!(
-    distance <= limit,
-    "the closest street is {distance} m away, limit is {limit}"
-  );
-  assert!(
-    levels_of(top).contains(&12),
-    "a coordinate match must resolve down to a street"
-  );
-}
-
-// 00.01. result quality
-#[test]
-#[ignore]
-fn _00_01_top_match_carries_the_full_ladder() {
-  let result = world().run(&[COORDINATES_QUERY]);
-  let top = first(&result);
-  for (level, name) in [
-    (2, "Brasil"),
-    (4, "São Paulo"),
-    (8, "Santos"),
-    (10, "Embaré"),
-    (12, "Rua Castro Alves"),
-  ] {
-    assert_eq!(
-      name_at(top, level).as_deref(),
-      Some(name),
-      "level {level} resolved to the wrong name"
-    );
-  }
-}
-
-// 00.02. result quality: the readme example is the executable proof of the documented address
-#[test]
-#[ignore]
-fn _00_02_the_documented_example_resolves_to_the_documented_address() {
-  let w = world();
-  let result = w.assert_cli(
-    &ask(TEXT_QUERY),
-    &json!({
-      "service": "text_to_address",
-      "matches": [{
-        "friendly_name": "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil",
-        "similarity": 1.0,
-      }],
-    }),
-  );
-  assert_eq!(levels_of(first(&result)), vec![2, 4, 8, 10, 12]);
-}
-
-// 00.03. result quality: the street is split in two ways; both must come back, order aside
-#[test]
-#[ignore]
-fn _00_03_every_segment_of_the_street_comes_back() {
-  // segments tie on score, so their relative order follows the tantivy segment layout.
-  // assert the set, never the order.
-  let mut expected = vec![255710390, 729205713];
-  expected.sort_unstable();
-  assert_eq!(way_ids(&world().run(&[TEXT_QUERY])), expected);
-}
-
-// 00.04. result quality
-#[test]
-#[ignore]
-fn _00_04_a_house_number_on_the_street_resolves_as_exact() {
+fn _00_00_a_house_number_on_the_street_resolves_as_exact() {
   // rua januario dos santos is a single segment carrying 70, 197, 232 and 235 — no tie to break,
   // so the ranking is stable.
   let w = world();
@@ -138,10 +84,10 @@ fn _00_04_a_house_number_on_the_street_resolves_as_exact() {
   assert!(levels_of(first(&result)).contains(&30));
 }
 
-// 00.05. result quality
+// 00.01. result quality
 #[test]
 #[ignore]
-fn _00_05_a_house_number_between_two_known_ones_resolves_as_interpolated() {
+fn _00_01_a_house_number_between_two_known_ones_resolves_as_interpolated() {
   let w = world();
   let result = w.assert_cli(
     &ask("rua januario dos santos, santos 210"),
@@ -150,10 +96,10 @@ fn _00_05_a_house_number_between_two_known_ones_resolves_as_interpolated() {
   assert!(levels_of(first(&result)).contains(&30));
 }
 
-// 00.06. result quality
+// 00.02. result quality
 #[test]
 #[ignore]
-fn _00_06_an_out_of_range_house_number_resolves_as_absent() {
+fn _00_02_an_out_of_range_house_number_resolves_as_absent() {
   let w = world();
   let bare = world().run(&["rua januario dos santos, santos"]);
   let numbered = w.assert_cli(
@@ -172,32 +118,10 @@ fn _00_06_an_out_of_range_house_number_resolves_as_absent() {
   );
 }
 
-// 00.07. result quality
+// 00.03. result quality
 #[test]
 #[ignore]
-fn _00_07_friendly_name_format_renders_the_requested_placeholders() {
-  let w = world();
-  for (format, expected) in [
-    (
-      "{admin_level_12_name} - {admin_level_8_name}",
-      "Rua Castro Alves - Santos",
-    ),
-    (
-      "{admin_level_12_name}, {admin_level_6_name}, {admin_level_8_name}",
-      "Rua Castro Alves, Santos",
-    ),
-  ] {
-    w.assert_cli(
-      &ask(TEXT_QUERY).friendly_name_format(format),
-      &json!({ "matches": [{ "friendly_name": expected }] }),
-    );
-  }
-}
-
-// 00.08. result quality
-#[test]
-#[ignore]
-fn _00_08_friendly_name_format_house_number_alias() {
+fn _00_03_friendly_name_format_house_number_alias() {
   let w = world();
   w.assert_cli(
     &ask("rua januario dos santos, santos 197")
@@ -206,10 +130,10 @@ fn _00_08_friendly_name_format_house_number_alias() {
   );
 }
 
-// 00.09. result quality: the full payload for the documented text query, compared whole
+// 00.04. result quality: the full payload for the documented text query, compared whole
 #[test]
 #[ignore]
-fn _00_09_the_text_query_matches_are_exactly_these() {
+fn _00_04_the_text_query_matches_are_exactly_these() {
   // every match, whole. the two segments tie on score, so the array is sorted by id before
   // comparing — their order follows the tantivy segment layout and must never be asserted.
   let result = world().run(&[TEXT_QUERY]);
@@ -312,10 +236,10 @@ fn _00_09_the_text_query_matches_are_exactly_these() {
   );
 }
 
-// 00.10. result quality: the full top match for the documented coordinate, compared whole
+// 00.05. result quality: the full top match for the documented coordinate, compared whole
 #[test]
 #[ignore]
-fn _00_10_the_coordinate_query_top_match_is_exactly_this() {
+fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
   let actual = first(&world().run(&[COORDINATES_QUERY])).clone();
   world().assert_exact(
     &actual,
@@ -373,35 +297,10 @@ fn _00_10_the_coordinate_query_top_match_is_exactly_this() {
   );
 }
 
-// 00.11. result quality
+// 01.00. precision guarantee
 #[test]
 #[ignore]
-fn _00_11_an_accented_query_is_url_decoded() {
-  let w = world();
-  let s = w.start_server();
-  let r = get(s.port, &ask("rua castro alves, embaré, santos").http_path());
-  assert_eq!(r.status, 200);
-  assert!(
-    !r.json()["matches"].as_array().expect("matches").is_empty(),
-    "the accented spelling must be found"
-  );
-}
-
-// 01.00. precision guarantee: only reachable when the level 2 ring closed
-#[test]
-#[ignore]
-fn _01_00_the_country_iso_code_is_resolved() {
-  let w = world();
-  w.assert_cli(
-    &ask(COORDINATES_QUERY),
-    &json!({ "matches": [{ "attributes": { "country_iso_3166_1_alpha_2_code": "BR" } }] }),
-  );
-}
-
-// 01.01. precision guarantee
-#[test]
-#[ignore]
-fn _01_01_min_quality_one_keeps_only_fully_covered_matches() {
+fn _01_00_min_quality_one_keeps_only_fully_covered_matches() {
   let result = world().run(&[TEXT_QUERY, "--min-quality", "1.0"]);
   assert!(
     !matches(&result).is_empty(),
@@ -415,10 +314,10 @@ fn _01_01_min_quality_one_keeps_only_fully_covered_matches() {
   }
 }
 
-// 01.02. precision guarantee
+// 01.01. precision guarantee
 #[test]
 #[ignore]
-fn _01_02_bounding_wkt_keeps_only_matches_inside_the_polygon() {
+fn _01_01_bounding_wkt_keeps_only_matches_inside_the_polygon() {
   let bounded = world().run(&[TEXT_QUERY, "--bounding-wkt", INSIDE_POLYGON]);
   assert!(
     !matches(&bounded).is_empty(),
@@ -431,10 +330,10 @@ fn _01_02_bounding_wkt_keeps_only_matches_inside_the_polygon() {
   );
 }
 
-// 01.03. precision guarantee
+// 01.02. precision guarantee
 #[test]
 #[ignore]
-fn _01_03_a_bounding_polygon_over_open_water_excludes_everything() {
+fn _01_02_a_bounding_polygon_over_open_water_excludes_everything() {
   let result = world().run(&[TEXT_QUERY, "--bounding-wkt", OUTSIDE_POLYGON]);
   assert!(
     matches(&result).is_empty(),
@@ -442,10 +341,10 @@ fn _01_03_a_bounding_polygon_over_open_water_excludes_everything() {
   );
 }
 
-// 01.04. precision guarantee
+// 01.03. precision guarantee
 #[test]
 #[ignore]
-fn _01_04_last_admin_levels_keeps_only_the_requested_leaf() {
+fn _01_03_last_admin_levels_keeps_only_the_requested_leaf() {
   let result = world().run(&["santos, sao paulo", "--last-admin-levels", "8"]);
   assert!(!matches(&result).is_empty());
   for m in matches(&result) {
@@ -477,39 +376,10 @@ fn _02_01_the_preset_expands_the_street_abbreviation() {
   assert!(!way_ids(&abbreviated).is_empty());
 }
 
-// 02.02. ambiguity: one expectation, both surfaces, and the two must agree byte for byte
+// 02.02. ambiguity
 #[test]
 #[ignore]
-fn _02_02_the_surfaces_agree_on_a_text_query() {
-  let w = world();
-  let s = w.start_server();
-  w.assert_both(
-    &s,
-    &ask(TEXT_QUERY),
-    &json!({
-      "service": "text_to_address",
-      "matches": [{ "friendly_name": "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil" }],
-    }),
-  );
-}
-
-// 02.03. ambiguity
-#[test]
-#[ignore]
-fn _02_03_the_surfaces_agree_on_a_coordinate_query() {
-  let w = world();
-  let s = w.start_server();
-  w.assert_both(
-    &s,
-    &ask(COORDINATES_QUERY),
-    &json!({ "service": "coordinates_to_address" }),
-  );
-}
-
-// 02.04. ambiguity
-#[test]
-#[ignore]
-fn _02_04_the_surfaces_agree_under_every_flag() {
+fn _02_02_the_surfaces_agree_under_every_flag() {
   let w = world();
   let s = w.start_server();
   let query = TEXT_QUERY;
@@ -520,12 +390,19 @@ fn _02_04_the_surfaces_agree_under_every_flag() {
     &ask(query).friendly_name_format("{admin_level_12_name} - {admin_level_8_name}"),
     &json!({ "matches": [{ "friendly_name": "Rua Castro Alves - Santos" }] }),
   );
+  // a level the preset never extracts (6) must vanish without leaving its separator behind.
+  w.assert_both(
+    &s,
+    &ask(query)
+      .friendly_name_format("{admin_level_12_name}, {admin_level_6_name}, {admin_level_8_name}"),
+    &json!({ "matches": [{ "friendly_name": "Rua Castro Alves, Santos" }] }),
+  );
   w.assert_both(&s, &ask(query).min_quality("1.0"), &any);
   w.assert_both(&s, &ask(query).bounding_wkt(INSIDE_POLYGON), &any);
   w.assert_both(&s, &ask(query).last_admin_levels("12"), &any);
 }
 
-// 03.00. regression guard: a clipped boundary becomes a MultiLineString and can never be an ancestor
+// 03.00. regression guard: a clipped boundary becomes a MultiLineString and never an ancestor
 #[test]
 #[ignore]
 fn _03_00_boundary_relations_are_polygonal_not_linestrings() {
@@ -545,11 +422,7 @@ fn _03_01_the_country_relation_carries_its_iso_code() {
   let w = world();
   let conn = w.open_sqlite();
   let stored: Option<String> = conn
-    .query_row(
-      "SELECT country_iso_code FROM admin_levels WHERE relation_id = 59470",
-      [],
-      |r| r.get(0),
-    )
+    .query_row(SQL_SELECT_COUNTRY_ISO_CODE, [], |r| r.get(0))
     .expect("the brazil relation must be in admin_levels");
   assert_eq!(stored.as_deref(), Some("BR"));
 }
@@ -569,7 +442,7 @@ fn _03_02_the_friendly_name_never_repeats_an_admin_level_name() {
   }
 }
 
-// 03.03. regression guard: the leaf filter runs at retrieval (leaf 12) and again after enrichment (30)
+// 03.03. regression guard: the leaf filter runs at retrieval (12) and again after enrichment (30)
 #[test]
 #[ignore]
 fn _03_03_a_house_number_leaf_needs_both_the_street_and_the_house_number_level() {
@@ -694,13 +567,14 @@ fn _06_00_a_typo_falls_back_to_the_loose_query() {
 ///////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////
 
-// 02.05. ambiguity: ten spellings of the same address, every one landing on the same street
+// 02.03. ambiguity: the documented query plus ten spellings, every one landing on the same street
 #[test]
 #[ignore]
-fn _02_05_every_spelling_of_the_address_lands_on_the_same_street() {
+fn _02_03_every_spelling_of_the_address_lands_on_the_same_street() {
   let w = world();
   let s = w.start_server();
   for input in [
+    TEXT_QUERY,
     "rua castro alves embare santos",
     "Rua Castro Alves, Embaré, Santos",
     "RUA CASTRO ALVES EMBARE SANTOS",
@@ -728,13 +602,14 @@ fn _02_05_every_spelling_of_the_address_lands_on_the_same_street() {
   }
 }
 
-// 02.06. ambiguity: ten points along the whole street, every one landing on the same street
+// 02.04. ambiguity: the documented coordinate plus ten points along the street, each landing on it
 #[test]
 #[ignore]
-fn _02_06_every_point_along_the_street_lands_on_the_same_street() {
+fn _02_04_every_point_along_the_street_lands_on_the_same_street() {
   let w = world();
   let s = w.start_server();
   for input in [
+    COORDINATES_QUERY,
     "-23.971817,-46.319467",
     "-23.971283,-46.319041",
     "-23.970752,-46.318611",
@@ -765,10 +640,10 @@ fn _02_06_every_point_along_the_street_lands_on_the_same_street() {
   }
 }
 
-// 02.07. ambiguity: ten spellings of the same square, every one landing on the same square
+// 02.05. ambiguity: ten spellings of the same square, every one landing on the same square
 #[test]
 #[ignore]
-fn _02_07_every_spelling_of_the_square_lands_on_the_same_square() {
+fn _02_05_every_spelling_of_the_square_lands_on_the_same_square() {
   let w = world();
   let s = w.start_server();
   for input in [
@@ -801,10 +676,10 @@ fn _02_07_every_spelling_of_the_square_lands_on_the_same_square() {
   }
 }
 
-// 02.08. ambiguity: ten points along the whole square, every one landing on the same square
+// 02.06. ambiguity: ten points along the whole square, every one landing on the same square
 #[test]
 #[ignore]
-fn _02_08_every_point_along_the_square_lands_on_the_same_square() {
+fn _02_06_every_point_along_the_square_lands_on_the_same_square() {
   let w = world();
   let s = w.start_server();
   for input in [
@@ -838,10 +713,10 @@ fn _02_08_every_point_along_the_square_lands_on_the_same_square() {
   }
 }
 
-// 02.09. ambiguity: ten spellings of the same numbered address, every one landing on the same house
+// 02.07. ambiguity: ten spellings of the same numbered address, every one landing on the same house
 #[test]
 #[ignore]
-fn _02_09_every_spelling_of_the_numbered_address_lands_on_the_same_house() {
+fn _02_07_every_spelling_of_the_numbered_address_lands_on_the_same_house() {
   let w = world();
   let s = w.start_server();
   for input in [
@@ -875,10 +750,10 @@ fn _02_09_every_spelling_of_the_numbered_address_lands_on_the_same_house() {
   }
 }
 
-// 02.10. ambiguity: five points along the whole street, every one landing on the same street
+// 02.08. ambiguity: five points along the whole street, every one landing on the same street
 #[test]
 #[ignore]
-fn _02_10_every_point_along_the_numbered_street_lands_on_the_same_street() {
+fn _02_08_every_point_along_the_numbered_street_lands_on_the_same_street() {
   let w = world();
   let s = w.start_server();
   for input in [
@@ -907,10 +782,10 @@ fn _02_10_every_point_along_the_numbered_street_lands_on_the_same_street() {
   }
 }
 
-// 02.11. ambiguity: twelve spellings of the same square address, every one landing on the same street
+// 02.09. ambiguity: twelve spellings of the square address, every one landing on the same street
 #[test]
 #[ignore]
-fn _02_11_every_spelling_of_the_square_address_lands_on_the_street_along_it() {
+fn _02_09_every_spelling_of_the_square_address_lands_on_the_street_along_it() {
   let w = world();
   let s = w.start_server();
   for input in [
@@ -946,10 +821,10 @@ fn _02_11_every_spelling_of_the_square_address_lands_on_the_street_along_it() {
   }
 }
 
-// 02.12. ambiguity: five points along the street that borders the square, every one landing on it
+// 02.10. ambiguity: five points along the street that borders the square, every one landing on it
 #[test]
 #[ignore]
-fn _02_12_every_point_along_the_street_that_borders_the_square_lands_on_the_same_street() {
+fn _02_10_every_point_along_the_street_that_borders_the_square_lands_on_the_same_street() {
   let w = world();
   let s = w.start_server();
   for input in [
@@ -978,10 +853,10 @@ fn _02_12_every_point_along_the_street_that_borders_the_square_lands_on_the_same
   }
 }
 
-// 02.13. ambiguity: ten spellings of the same square, every one landing on the same square
+// 02.11. ambiguity: ten spellings of the same square, every one landing on the same square
 #[test]
 #[ignore]
-fn _02_13_every_spelling_of_the_jose_menino_square_lands_on_the_same_square() {
+fn _02_11_every_spelling_of_the_jose_menino_square_lands_on_the_same_square() {
   let w = world();
   let s = w.start_server();
   for input in [
@@ -1014,10 +889,10 @@ fn _02_13_every_spelling_of_the_jose_menino_square_lands_on_the_same_square() {
   }
 }
 
-// 02.14. ambiguity: ten points around the whole square, every one landing on the same square
+// 02.12. ambiguity: ten points around the whole square, every one landing on the same square
 #[test]
 #[ignore]
-fn _02_14_every_point_around_the_jose_menino_square_lands_on_the_same_square() {
+fn _02_12_every_point_around_the_jose_menino_square_lands_on_the_same_square() {
   let w = world();
   let s = w.start_server();
   for input in [
@@ -1050,5 +925,3 @@ fn _02_14_every_point_around_the_jose_menino_square_lands_on_the_same_square() {
     );
   }
 }
-
-// TODO: revisar e apagar testes pre-gerados
