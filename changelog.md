@@ -1,5 +1,15 @@
 # changelog
 
+## **2026-XX-XX** - 0.0.6
+
+1. REMOVED unit tests redundant with e2e tests.
+
+## **2026-08-30** - 0.0.5
+
+1. REMOVED unit test files from crates publish.
+1. MODIFIED build command to not download pbf index.
+1. ADDED initial end to end test solution.
+
 ## **2026-08-04** - 0.0.4
 
 1. REMOVED dead code from the cli download command handler (the download runner never returns without output).

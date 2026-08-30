@@ -1,6 +1,6 @@
 [package]
 name = "geolite"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2024"
 description = "open source geocode solution"
 license = "AGPL-3.0-only"
@@ -10,7 +10,7 @@ repository = "https://github.com/pjpimentel/geolite"
 homepage = "https://geolite.pimentel.co"
 keywords = ["geocode", "openstreetmap", "osm"]
 categories = ["command-line-utilities", "science::geo"]
-include = ["src/**/*", "readme.md", "LICENSE"]
+include = ["src/**/*", "!src/**/*.test.rs", "readme.md", "LICENSE"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
