@@ -4,7 +4,7 @@
 
 1. REMOVED unit tests redundant with e2e tests.
 
-## **2026-XX-XX** - 0.0.5
+## **2026-08-30** - 0.0.5
 
 1. REMOVED unit test files from crates publish.
 1. MODIFIED build command to not download pbf index.
