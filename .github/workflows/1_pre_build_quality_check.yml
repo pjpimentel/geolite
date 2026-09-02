@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
 
       - name: typos check
-        uses: crate-ci/typos@1a51d4b5a03bb97576af186c813af67e9137ba7c
+        uses: crate-ci/typos@d43b6c087ac471e2ea7b8af622ff15f05c0c365b
 
       - name: setup rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
