@@ -1,0 +1,213 @@
+name: docker_publish
+
+# constroi e publica a imagem A PARTIR DO CRATE JA PUBLICADO (`cargo install`),
+# nao do checkout. roda depois do release, entao a imagem vira prova de que o que
+# esta no crates.io compila e funciona. o `on: release` cobre releases criados na
+# ui; o job `release` do 11_crates_publish acorda esse workflow por
+# `workflow_dispatch` porque o `GITHUB_TOKEN` nao dispara eventos `release`.
+#
+# cadeia: resolve -> build (nativo por arch, sem qemu) -> quality_check -> push
+# (ghcr, staging por arch) -> publish (manifest multi-arch no docker hub). a
+# imagem buildada viaja como artifact entre os jobs, entao o que e publicado e
+# exatamente o que passou no QC, sem rebuild.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'versao ja publicada no crates.io (ex.: 0.0.6)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-publish-${{ github.event.release.tag_name || inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: resolve version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.detect.outputs.version }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - name: resolve version and build matrix
+        id: detect
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${INPUT_VERSION:-${TAG#v}}"
+          if [ -z "$version" ]; then
+            echo "::error::nao foi possivel resolver a versao (sem input e sem tag de release)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "versao resolvida: $version"
+          # arch e runner nativo declarados uma vez so; os tres jobs por-arch
+          # abaixo consomem essa lista via fromJSON.
+          echo 'matrix=[{"arch":"amd64","runner":"ubuntu-latest"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' >> "$GITHUB_OUTPUT"
+
+      # o cargo publish acabou de rodar; o indice do crates.io leva alguns
+      # segundos pra expor a versao. sem essa espera o `cargo install` do
+      # Dockerfile falha com "could not find geolite ... in registry".
+      - name: wait for crates.io
+        env:
+          VERSION: ${{ steps.detect.outputs.version }}
+        run: |
+          for attempt in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -A "geolite-release (github actions)" \
+              "https://crates.io/api/v1/crates/geolite/$VERSION" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "geolite v$VERSION disponivel no crates.io"
+              exit 0
+            fi
+            echo "tentativa $attempt: crates.io respondeu $code; aguardando 10s"
+            sleep 10
+          done
+          echo "::error::geolite v$VERSION nao apareceu no crates.io em 5 minutos"
+          exit 1
+
+  # build nativo da arch, carregado no daemon e salvo como artifact pro
+  # quality_check e pro push (mesma imagem QC'd, sem rebuild).
+  build:
+    name: docker build (${{ matrix.arch }})
+    needs: resolve
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: build (load)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: geolite:build
+          build-args: |
+            VERSION=${{ needs.resolve.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.resolve.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: save image (qc artifact)
+        run: docker save geolite:build -o image.tar
+
+      - name: upload qc artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: geolite-image-${{ matrix.arch }}
+          path: image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  quality_check:
+    needs: [resolve, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    uses: ./.github/workflows/3_image_quality_check.yml
+    with:
+      image: geolite:build
+      artifact: geolite-image-${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
+      version: ${{ needs.resolve.outputs.version }}
+
+  # `needs` entre jobs com matrix espera TODAS as entradas: nada sobe pro ghcr
+  # enquanto as duas arch nao passarem no QC. quando o build era um workflow_call
+  # invocado uma vez por arch, o amd64 subia mesmo com o arm64 reprovado, e o
+  # manifest quebrava depois com metade das tags no lugar.
+  push:
+    name: push to ghcr (${{ matrix.arch }})
+    needs: [resolve, quality_check]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    steps:
+      - name: download image
+        uses: actions/download-artifact@v8
+        with:
+          name: geolite-image-${{ matrix.arch }}
+          path: image
+
+      - name: load image
+        run: docker load -i image/image.tar
+
+      - name: login to ghcr
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # empurra exatamente a imagem que passou no quality_check, com a tag
+      # versionada por arch. sem rebuild, sem buildx.
+      - name: tag and push
+        env:
+          TAG: ghcr.io/pjpimentel/geolite:${{ needs.resolve.outputs.version }}-${{ matrix.arch }}
+        run: |
+          docker tag geolite:build "$TAG"
+          docker push "$TAG"
+
+  # monta o manifest multi-arch no docker hub a partir das tags por-arch do ghcr.
+  # imagetools copia blobs cross-registry; sem build, sem skopeo.
+  publish:
+    name: publish to docker hub (multi-arch)
+    needs: [resolve, push]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: setup buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: login to ghcr
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: login to docker hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: pjpimentel
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: publish manifest (overwrite tags)
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          docker buildx imagetools create \
+            --tag pjpimentel/geolite:$VERSION \
+            --tag pjpimentel/geolite:latest \
+            ghcr.io/pjpimentel/geolite:$VERSION-amd64 \
+            ghcr.io/pjpimentel/geolite:$VERSION-arm64
