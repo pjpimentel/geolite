@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: tag da imagem-binario base (pjpimentel/geolite:<version>)
+        description: tag of the base binary image (pjpimentel/geolite:<version>)
         required: false
         default: latest
         type: string
       country:
-        description: pais a buildar
+        description: country to build
         required: true
         type: choice
         options:
@@ -29,7 +29,7 @@ on:
           - netherlands
           - switzerland
   schedule:
-    - cron: '0 6 * * 5' # toda sexta-feira 06:00 UTC
+    - cron: '0 6 * * 5'
 
 permissions:
   contents: read
@@ -44,10 +44,6 @@ jobs:
       countries: ${{ steps.matrix.outputs.countries }}
       version: ${{ steps.matrix.outputs.version }}
     steps:
-
-      # tem input de pais? usa ele. senao, builda todos (portugal + america do sul).
-      # (independe do trigger: schedule/push nao tem inputs, entao COUNTRY vem
-      # vazio e cai no default.)
       - name: resolve countries and version
         id: matrix
         env:
@@ -67,13 +63,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # serializa por pais: evita que um cron e um dispatch do mesmo pais colidam.
     concurrency:
       group: prebuilt-${{ matrix.country }}
       cancel-in-progress: true
     strategy:
       fail-fast: false
-      # no maximo 3 paises buildando em paralelo
       max-parallel: 3
       matrix:
         country: ${{ fromJSON(needs.setup.outputs.countries) }}

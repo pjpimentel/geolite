@@ -1,10 +1,5 @@
 name: pre-quality-check
 
-# os dois gates que autorizam merge e release, na ordem: qualidade estatica
-# (typos/fmt/clippy/audit/cobertura/sonar) e depois o e2e. moram no mesmo
-# workflow_call pra que o 10_ci_before_merge e o 11_crates_publish nao possam
-# divergir na sequencia — antes cada caller declarava a propria cadeia de `needs`.
-# o equivalente do lado da imagem e o 3_image_quality_check.
 on:
   workflow_call:
 
@@ -56,8 +51,8 @@ jobs:
         with:
           args: -Dsonar.qualitygate.wait=true
 
-  # o e2e compila em --release e leva ate 30 min; roda so depois que typos/fmt/
-  # clippy/audit passaram, pra nao queimar runner num commit que ja falhou barato.
+  # e2e builds in --release and takes up to 30 min; gating it on the cheap
+  # checks keeps a commit that already failed fmt or clippy from burning a runner.
   e2e:
     name: e2e
     needs: pre_build_quality_check
