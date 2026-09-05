@@ -54,7 +54,7 @@ jobs:
 
   checks:
     needs: pre_release_check
-    uses: ./.github/workflows/1_pre_quality_check.yml
+    uses: ./.github/workflows/1_code_quality_check.yml
     secrets: inherit
 
   distribute:

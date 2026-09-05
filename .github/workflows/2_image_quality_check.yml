@@ -1,4 +1,4 @@
-name: image-quality-check
+name: image_quality_check
 
 on:
   workflow_call:

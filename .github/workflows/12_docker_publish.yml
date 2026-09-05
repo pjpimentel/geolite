@@ -117,7 +117,7 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
-    uses: ./.github/workflows/3_image_quality_check.yml
+    uses: ./.github/workflows/2_image_quality_check.yml
     with:
       image: geolite:build
       artifact: geolite-image-${{ matrix.arch }}

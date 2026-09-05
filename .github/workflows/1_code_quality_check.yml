@@ -1,4 +1,4 @@
-name: pre-quality-check
+name: code_quality_check
 
 on:
   workflow_call:
@@ -7,8 +7,8 @@ permissions:
   contents: read
 
 jobs:
-  pre_build_quality_check:
-    name: pre-build-quality-check
+  fast_checks:
+    name: fast checks
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -55,7 +55,7 @@ jobs:
   # checks keeps a commit that already failed fmt or clippy from burning a runner.
   e2e:
     name: e2e
-    needs: pre_build_quality_check
+    needs: fast_checks
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -75,6 +75,9 @@ jobs:
 
       - name: cargo test e2e
         run: cargo test --release --test '*' -- --ignored --nocapture
+
+      - name: build maldives
+        run: ./target/release/geolite build maldives
 
       - name: upload the e2e workspace on failure
         if: failure()
