@@ -17,9 +17,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pre_build_quality_check:
-    uses: ./.github/workflows/1_pre_build_quality_check.yml
+  checks:
+    uses: ./.github/workflows/1_code_quality_check.yml
     secrets: inherit
-
-  e2e:
-    uses: ./.github/workflows/4_e2e.yml

@@ -2,7 +2,7 @@
 ##### _making openstreetmap data usable by anyone: from `.osm.pbf` to the first query answer._
 ## open source geocode
 
-[![actions](https://github.com/pjpimentel/geolite/actions/workflows/11_ci_master.yml/badge.svg?branch=master)](https://github.com/pjpimentel/geolite/actions/workflows/11_ci_master.yml)
+[![actions](https://github.com/pjpimentel/geolite/actions/workflows/11_crates_publish.yml/badge.svg?branch=master)](https://github.com/pjpimentel/geolite/actions/workflows/11_crates_publish.yml)
 [![quality](https://sonarcloud.io/api/project_badges/measure?branch=master&project=geolite&metric=alert_status)](https://sonarcloud.io/dashboard?branch=master&id=geolite)
 [![coverage](https://sonarcloud.io/api/project_badges/measure?branch=master&project=geolite&metric=coverage)](https://sonarcloud.io/dashboard?branch=master&id=geolite)
 [![crates downloads](https://img.shields.io/crates/d/geolite)](https://crates.io/crates/geolite)

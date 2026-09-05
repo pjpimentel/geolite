@@ -1,0 +1,119 @@
+name: crates_publish
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  pre_release_check:
+    name: check release needed
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.detect.outputs.version }}
+      needs_release: ${{ steps.detect.outputs.needs_release }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+      - name: detect release needed
+        id: detect
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "needs_release=false" >> "$GITHUB_OUTPUT"
+            echo "release v$version already exists; distribute and release will be skipped"
+          else
+            echo "needs_release=true" >> "$GITHUB_OUTPUT"
+            echo "release v$version does not exist; distributing and releasing"
+          fi
+      - name: fail if the version is already on crates.io
+        if: steps.detect.outputs.needs_release == 'true'
+        env:
+          VERSION: ${{ steps.detect.outputs.version }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -A "geolite-release (github actions)" \
+            "https://crates.io/api/v1/crates/geolite/$VERSION")
+          if [ "$code" = "200" ]; then
+            echo "::error::geolite v$VERSION already exists on crates.io; bump the version in Cargo.toml"
+            exit 1
+          fi
+          echo "geolite v$VERSION is not on crates.io yet; proceeding"
+
+  checks:
+    needs: pre_release_check
+    uses: ./.github/workflows/1_code_quality_check.yml
+    secrets: inherit
+
+  distribute:
+    name: crates.io
+    needs:
+      - pre_release_check
+      - checks
+    if: needs.pre_release_check.outputs.needs_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+
+      - name: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
+# TODO: remove token and use trusted publishers.
+
+  release:
+    name: release
+    needs:
+      - pre_release_check
+      - distribute
+    if: needs.pre_release_check.outputs.needs_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: github release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          tag_name: v${{ needs.pre_release_check.outputs.version }}
+          name: v${{ needs.pre_release_check.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ## docker
+
+            ```
+            docker run --rm pjpimentel/geolite:${{ needs.pre_release_check.outputs.version }} --version
+            ```
+
+            image: https://hub.docker.com/r/pjpimentel/geolite
+
+      # a `release` event created with GITHUB_TOKEN does not trigger other
+      # workflows; `workflow_dispatch` is the documented exception, so the
+      # docker publish is dispatched explicitly here.
+      - name: trigger docker publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.pre_release_check.outputs.version }}
+        run: |
+          gh workflow run 12_docker_publish.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "$GITHUB_REF_NAME" \
+            -f version="$VERSION"

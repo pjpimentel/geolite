@@ -1,8 +1,6 @@
-name: image-quality-check
+name: image_quality_check
 
 on:
-  # chamado em sequencia (workflow_call) recebendo a imagem como artifact
-  # (`docker save`) — valida antes do push. `runner` permite rodar na arch nativa.
   workflow_call:
     inputs:
       image:
@@ -10,7 +8,7 @@ on:
         required: true
         type: string
       version:
-        description: versao autorizada (do pre_release_check) pra validar contra `geolite --version`; vazio pula o check
+        description: release version to validate against `geolite --version`; empty skips the check
         required: false
         default: ''
         type: string
@@ -20,35 +18,28 @@ on:
         default: ''
         type: string
       runner:
-        description: runner pra rodar os checks (use a arch nativa da imagem)
+        description: runner to execute the checks on (use the image's native arch)
         required: false
         default: ubuntu-latest
         type: string
-  # disparavel individualmente com uma tag ja publicada (faz pull e checa).
   workflow_dispatch:
     inputs:
       image:
-        description: 'docker image tag (ex.: pjpimentel/geolite:latest)'
+        description: 'docker image tag (e.g. pjpimentel/geolite:latest)'
         required: true
         type: string
       version:
-        description: 'versao esperada pra validar contra `geolite --version` (vazio pula o check)'
+        description: 'expected version to validate against `geolite --version` (empty skips the check)'
         required: false
         default: ''
         type: string
 
 jobs:
-  # checks sequenciais num job so: carrega a imagem uma vez e roda os steps em
-  # ordem (version > size > maldives). step que falha aborta os seguintes
-  # (`if: success()` implicito); o step de version e pulado quando version e
-  # vazia (PR) sem afetar os demais.
   quality_check:
     name: image quality check
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
     permissions:
       contents: read
-    # inputs vao pro env do job (nunca interpolados direto num `run:`) pra evitar
-    # script injection; todos os steps abaixo referenciam "$IMAGE"/"$VERSION".
     env:
       IMAGE: ${{ inputs.image }}
       VERSION: ${{ inputs.version }}

@@ -1,0 +1,198 @@
+name: docker_publish
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'version already published on crates.io (e.g. 0.0.6)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-publish-${{ github.event.release.tag_name || inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: resolve version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.detect.outputs.version }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - name: resolve version and build matrix
+        id: detect
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${INPUT_VERSION:-${TAG#v}}"
+          if [ -z "$version" ]; then
+            echo "::error::could not resolve the version (no input and no release tag)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "resolved version: $version"
+          echo 'matrix=[{"arch":"amd64","runner":"ubuntu-latest"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' >> "$GITHUB_OUTPUT"
+
+      # the crates.io index takes a few seconds to expose a freshly published
+      # version; without this wait the `cargo install` in the Dockerfile fails
+      # with "could not find geolite ... in registry".
+      - name: wait for crates.io
+        env:
+          VERSION: ${{ steps.detect.outputs.version }}
+        run: |
+          for attempt in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              -A "geolite-release (github actions)" \
+              "https://crates.io/api/v1/crates/geolite/$VERSION" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "geolite v$VERSION is available on crates.io"
+              exit 0
+            fi
+            echo "attempt $attempt: crates.io returned $code; waiting 10s"
+            sleep 10
+          done
+          echo "::error::geolite v$VERSION did not show up on crates.io within 5 minutes"
+          exit 1
+
+  build:
+    name: docker build (${{ matrix.arch }})
+    needs: resolve
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: build (load)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: geolite:build
+          build-args: |
+            VERSION=${{ needs.resolve.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.resolve.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: save image (qc artifact)
+        run: docker save geolite:build -o image.tar
+
+      - name: upload qc artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: geolite-image-${{ matrix.arch }}
+          path: image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  quality_check:
+    needs:
+      - resolve
+      - build
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    uses: ./.github/workflows/2_image_quality_check.yml
+    with:
+      image: geolite:build
+      artifact: geolite-image-${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
+      version: ${{ needs.resolve.outputs.version }}
+
+  push:
+    name: push to ghcr (${{ matrix.arch }})
+    needs:
+      - resolve
+      - quality_check
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.resolve.outputs.matrix) }}
+    steps:
+      - name: download image
+        uses: actions/download-artifact@v8
+        with:
+          name: geolite-image-${{ matrix.arch }}
+          path: image
+
+      - name: load image
+        run: docker load -i image/image.tar
+
+      - name: login to ghcr
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: tag and push
+        env:
+          TAG: ghcr.io/pjpimentel/geolite:${{ needs.resolve.outputs.version }}-${{ matrix.arch }}
+        run: |
+          docker tag geolite:build "$TAG"
+          docker push "$TAG"
+
+  publish:
+    name: publish to docker hub (multi-arch)
+    needs:
+      - resolve
+      - push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: setup buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: login to ghcr
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: login to docker hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: pjpimentel
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: publish manifest (overwrite tags)
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          docker buildx imagetools create \
+            --tag pjpimentel/geolite:$VERSION \
+            --tag pjpimentel/geolite:latest \
+            ghcr.io/pjpimentel/geolite:$VERSION-amd64 \
+            ghcr.io/pjpimentel/geolite:$VERSION-arm64

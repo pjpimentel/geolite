@@ -3,6 +3,8 @@
 ## **2026-XX-XX** - 0.0.6
 
 1. REMOVED unit tests redundant with e2e tests.
+1. MODIFIED release pipeline, splitting `try_publish` into `crates_publish` and `docker_publish`.
+1. MODIFIED `Dockerfile` to build from `cargo install` instead of the local source tree.
 
 ## **2026-08-30** - 0.0.5
 

@@ -1,4 +1,4 @@
-name: pre-build-quality-check
+name: code_quality_check
 
 on:
   workflow_call:
@@ -7,8 +7,8 @@ permissions:
   contents: read
 
 jobs:
-  pre_build_quality_check:
-    name: pre-build-quality-check
+  fast_checks:
+    name: fast checks
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -50,3 +50,43 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: -Dsonar.qualitygate.wait=true
+
+  # e2e builds in --release and takes up to 30 min; gating it on the cheap
+  # checks keeps a commit that already failed fmt or clippy from burning a runner.
+  e2e:
+    name: e2e
+    needs: fast_checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUSTFLAGS: -C target-cpu=x86-64-v2
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: checkout
+        uses: actions/checkout@v7
+
+      - name: setup rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+
+      - name: cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: e2e-release
+
+      - name: cargo test e2e
+        run: cargo test --release --test '*' -- --ignored --nocapture
+
+      - name: build maldives
+        run: ./target/release/geolite build maldives
+
+      - name: upload the e2e workspace on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-workspace
+          path: |
+            target/tmp/*/build.stdout
+            target/tmp/*/build.stderr
+            target/tmp/*/server-*.stderr
+          if-no-files-found: ignore
+          retention-days: 3
