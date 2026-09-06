@@ -1,3 +1,4 @@
+use super::resolved_input;
 use std::io::Write;
 
 pub fn command_handler_extract_osm_pbf_header(
@@ -8,45 +9,14 @@ pub fn command_handler_extract_osm_pbf_header(
   let conn = crate::database::open_write(sqlite_path);
 
   for (i, input) in inputs.iter().enumerate() {
-    if i > 0 {
-      println!();
-    }
-
-    let is_path = std::path::Path::new(input.as_str()).exists()
-      || std::path::Path::new(data_path)
-        .join(input.as_str())
-        .exists();
-
-    if !is_path {
-      print!("\x1b[1;32mresolving\x1b[0m '{input}'...");
-      let _ = std::io::stdout().flush();
-    }
-
-    let resolved = crate::resolve_osm_pbf_path(data_path, sqlite_path, input);
-
-    let osm_pbf_file_path = match resolved {
-      Some(p) => {
-        if !is_path {
-          println!(" done");
-        }
-        p
-      }
-      None => {
-        if !is_path {
-          println!();
-        }
-        eprintln!("\x1b[1;31merror\x1b[0m: could not resolve '{input}'");
-        continue;
-      }
+    let Some(resolved_input {
+      path: osm_pbf_file_path,
+      name: fname,
+      id: file_id,
+    }) = super::resolve_input(&conn, data_path, sqlite_path, i, input)
+    else {
+      continue;
     };
-
-    let fname = std::path::Path::new(&osm_pbf_file_path)
-      .file_name()
-      .unwrap_or_default()
-      .to_string_lossy()
-      .into_owned();
-
-    let file_id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, &osm_pbf_file_path);
 
     print!("\x1b[1;32mextracting\x1b[0m header from {fname}...");
     let _ = std::io::stdout().flush();
