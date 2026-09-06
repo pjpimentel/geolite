@@ -1,6 +1,6 @@
 use super::*;
 use crate::domain::osm_pbf_file::message::relation_msg;
-use crate::domain::osm_pbf_file::osm_data::tag_policy;
+use crate::domain::osm_tag::tag_policy;
 
 fn default_opts() -> tag_policy {
   tag_policy::default()

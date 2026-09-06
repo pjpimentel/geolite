@@ -17,9 +17,12 @@ osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   header            the file's first blob → the `osm_header_*` columns
   blob_index        the file's byte layout — the `osm_data.osm_pbf_blob_chunks` table
   blob_scanner      the pass that walks the file and fills it
-  osm_data          the pass that walks the data blobs and fills the three element tables — and
-                    `tag_policy`, lodged here until `osm_tag` exists
+  osm_data          the pass that walks the data blobs and fills the three element tables
   http_client       the one ureq agent the slice uses
+osm_tag/        the openstreetmap tag vocabulary — shared, and not a table
+  key               the shape of a key: the json path that reads it, and what a valid key looks like
+  policy            which keys survive extraction: an include list, an ignore list, or neither
+  select            the sql that reads a tag out of a stored payload
 osm_node/       an openstreetmap node — the `osm_data.osm_nodes` table
   entity            the node itself: id, coordinates, tags
   decoder           the pbf wire form, plain and dense, into nodes
@@ -33,10 +36,10 @@ osm_relation/   an openstreetmap relation — the `osm_data.osm_relations` table
 
 every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
 objects and services sit alongside. everything a concept needs is in one place, and the only write
-path into a table is through its entity. `osm_pbf_file` is a folder without an `entity`, for the
-reason given below; `osm_node`, `osm_way` and `osm_relation` arrived with their entity and decoder
-only — their payload encoding and their persistence still sit in `src/database` and come with each
-one's own slice.
+path into a table is through its entity. `osm_pbf_file` is a folder without an `entity` and
+`osm_tag` the one that is not a table, both for reasons given below; `osm_node`, `osm_way` and
+`osm_relation` arrived with their entity and decoder only — their payload encoding and their
+persistence still sit in `src/database` and come with each one's own slice.
 
 ## the shape every folder holds to
 
@@ -204,10 +207,51 @@ mistake would hide:
   remains. the bytes accounted to a flush are proportional to the rows drained: an approximation,
   good enough to throttle the decoders by.
 
-`tag_policy` — which tag keys survive extraction: an include list, an ignore list, or neither — is
-what `--tags-include-list` and `--tags-ignore-list` fill and what every decoder consults. it is not
-the file's: the format does not care which tags you keep. it lodges here only because `osm_tag`,
-the folder that will own the tag vocabulary, does not exist yet.
+which tag keys survive extraction is `osm_tag::tag_policy`, filled by `--tags-include-list` and
+`--tags-ignore-list` and consulted by every decoder. `data_opts` carries it and never reads it: the
+format does not care which tags you keep.
+
+## osm_tag
+
+the only folder here that is **not a table**. it is shared vocabulary rather than a row, and it sits
+under `domain` rather than beside the file's format because a tag carries meaning:
+`osm_pbf_file::message` is the format, this is what the format is saying.
+
+### two boundaries, and they matter more than the contents
+
+**it owns the key and the shape of its value** — the json path that reads a key, what a valid key
+looks like, and the sql that coalesces one tag out of several. it does **not** own what a
+*combination* of tags means. "a way with a `highway` tag and no `building` tag is a street" belongs
+to the way; which tags carry a house number belongs to the house number. today those rules still
+sit in `src/database/osm_ways.rs` and in the presets, and they move into their own folders, not
+here.
+
+**it names the interpreted vocabulary, not the stored one.** `policy` is the filter the pipeline
+runs while decoding — an absent include list means "every tag" — and stays stringly-typed, because
+the pipeline stores keys nobody here has heard of. the closed, typed set of the keys the code
+reasons about (`name`, `admin_level`, `place`, `highway`, the postcode and country aliases) arrives
+with its first consumer, the way and relation repositories, so that a misspelled key becomes a
+compile error rather than a query that quietly returns nothing.
+
+`policy` sits beside `key` because a policy belongs with the vocabulary it filters. it is **not**
+the pbf file's — the format does not care which tags you keep, `osm_pbf_file` never reads it, and
+what fills it are the `--tags-include-list` and `--tags-ignore-list` flags at the edge.
+
+### why the path is always quoted
+
+sqlite is forgiving about a bare key in a json path — `:` and `-` both work unquoted, which is why
+the hand-written paths `select` replaced were correct. two characters are not forgiving:
+
+| key | bare path | quoted path |
+|---|---|---|
+| `addr:postcode` | works | works |
+| `ISO3166-1` | works | works |
+| `a.b` | **NULL, no error** — read as a nested path | works |
+| `c[1]` | **NULL, no error** — read as an array index | works |
+
+no key osm uses today contains either, and `is_valid_key` rejects both at the cli, so this is a
+latent hazard rather than a live bug. quoting always is simply the one form that cannot be silently
+wrong — and it is what the name select had been doing since before this folder existed.
 
 ## osm_node, osm_way, osm_relation
 

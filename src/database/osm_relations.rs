@@ -134,7 +134,7 @@ pub(crate) fn relation_coords_chunk(
   name_priority: &[&str],
 ) -> Vec<relation_coord_row> {
   let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-  let name_select = super::build_name_select("osm_data.osm_relations.payload", name_priority);
+  let name_select = crate::domain::osm_tag::select::coalesce_of("osm_data.osm_relations.payload", name_priority);
   let sql = format!(
     "WITH way_members AS (
        SELECT

@@ -1,5 +1,6 @@
 use super::resolved_input;
-use crate::domain::osm_pbf_file::{data_opts, tag_policy};
+use crate::domain::osm_pbf_file::data_opts;
+use crate::domain::osm_tag::tag_policy;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::time::Instant;

@@ -16,48 +16,13 @@ use crate::domain::osm_node::decoder::{
 use crate::domain::osm_node::osm_node;
 use crate::domain::osm_relation::decoder::decode as decode_relations;
 use crate::domain::osm_relation::osm_relation;
+use crate::domain::osm_tag::tag_policy;
 use crate::domain::osm_way::decoder::decode as decode_ways;
 use crate::domain::osm_way::osm_way;
 
 use super::blob_index::{chunk_type, osm_pbf_blob_chunk};
 use super::compression;
 use super::message::{blob_msg, primitive_block_msg, string_table_msg};
-
-#[derive(Default)]
-pub struct tag_policy {
-  pub include: Option<Vec<String>>,
-  pub ignore: Option<Vec<String>>,
-}
-
-impl tag_policy {
-  pub fn passes(&self, key: &str) -> bool {
-    self
-      .include
-      .as_ref()
-      .is_none_or(|l| l.iter().any(|i| i == key))
-      && self
-        .ignore
-        .as_ref()
-        .is_none_or(|l| !l.iter().any(|i| i == key))
-  }
-
-  pub fn filter<'a>(
-    &self,
-    strings: &[&'a str],
-    keys: &[u32],
-    vals: &[u32],
-  ) -> Vec<(&'a str, &'a str)> {
-    keys
-      .iter()
-      .zip(vals.iter())
-      .filter_map(|(&k_idx, &v_idx)| {
-        let k = strings.get(k_idx as usize)?;
-        let v = strings.get(v_idx as usize)?;
-        if self.passes(k) { Some((*k, *v)) } else { None }
-      })
-      .collect()
-  }
-}
 
 pub struct data_opts {
   pub include_nodes: bool,

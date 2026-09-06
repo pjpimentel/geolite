@@ -1,6 +1,6 @@
 use super::entity::osm_way;
 use crate::domain::osm_pbf_file::message::way_msg;
-use crate::domain::osm_pbf_file::osm_data::tag_policy;
+use crate::domain::osm_tag::tag_policy;
 
 pub fn decode(ways: &[way_msg], strings: &[&str], tags: &tag_policy) -> Vec<osm_way> {
   let mut elements = Vec::new();

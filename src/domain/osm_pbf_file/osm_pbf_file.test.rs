@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::domain::osm_tag::tag_policy;
 use crate::extract::pbf_fixtures::{header_chunk, indexed_scene, temp_scene, tiny_pbf, write_pbf};
 
 fn data_dir(scene: &temp_scene) -> String {

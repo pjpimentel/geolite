@@ -30,21 +30,6 @@ pub mod osm_nodes;
 pub mod osm_relations;
 pub mod osm_ways;
 
-// builds a COALESCE(JSON_EXTRACT(...), ...) over a list of osm name tags ordered by
-// priority. `payload_expr` is the qualified column expression, e.g.
-// `osm_data.osm_ways.payload`. tags must be pre-validated by the cli.
-pub fn build_name_select(payload_expr: &str, priority: &[&str]) -> String {
-  let parts: Vec<String> = priority
-    .iter()
-    .map(|tag| format!("JSON_EXTRACT({payload_expr}, '$.tags.\"{tag}\"')"))
-    .collect();
-  match parts.len() {
-    0 => format!("JSON_EXTRACT({payload_expr}, '$.tags.name')"),
-    1 => parts.into_iter().next().unwrap(),
-    _ => format!("COALESCE({})", parts.join(", ")),
-  }
-}
-
 pub fn osm_data_path(main_path: &str) -> String {
   if main_path == ":memory:" {
     return ":memory:".to_string();

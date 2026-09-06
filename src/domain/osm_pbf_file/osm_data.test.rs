@@ -795,49 +795,9 @@ fn _02_01_buffer_row_count_sums_every_queue() {
   assert_eq!(data.row_count(), 3);
 }
 
-// 02.02: tag_policy aplica include e ignore de forma independente
+// 02.02: bloco sem stringtable usa uma tabela vazia em vez de falhar
 #[test]
-fn _02_02_tag_policy_applies_include_and_ignore_lists() {
-  let none = tag_policy::default();
-  assert!(none.passes("name"), "sem listas tudo passa");
-
-  let include = tag_policy {
-    include: Some(vec!["name".to_string()]),
-    ignore: None,
-  };
-  assert!(include.passes("name"));
-  assert!(!include.passes("amenity"));
-
-  let ignore = tag_policy {
-    include: None,
-    ignore: Some(vec!["amenity".to_string()]),
-  };
-  assert!(ignore.passes("name"));
-  assert!(!ignore.passes("amenity"));
-}
-
-// 02.03: indices fora da tabela de strings sao descartados em vez de causar panico
-#[test]
-fn _02_03_tag_policy_filter_drops_out_of_range_string_indices() {
-  let strings = ["", "name", "Alfa"];
-  let policy = tag_policy::default();
-
-  let ok = policy.filter(&strings, &[1], &[2]);
-  assert_eq!(ok, vec![("name", "Alfa")]);
-
-  assert!(
-    policy.filter(&strings, &[99], &[2]).is_empty(),
-    "chave fora do range deve ser descartada"
-  );
-  assert!(
-    policy.filter(&strings, &[1], &[99]).is_empty(),
-    "valor fora do range deve ser descartado"
-  );
-}
-
-// 02.04: bloco sem stringtable usa uma tabela vazia em vez de falhar
-#[test]
-fn _02_04_decode_blob_uses_an_empty_string_table_when_absent() {
+fn _02_02_decode_blob_uses_an_empty_string_table_when_absent() {
   use prost::Message;
 
   let block = crate::domain::osm_pbf_file::message::primitive_block_msg {
@@ -866,9 +826,9 @@ fn _02_04_decode_blob_uses_an_empty_string_table_when_absent() {
   assert!(out.nodes[0].tags.is_empty());
 }
 
-// 02.05: invalid utf-8 strings become "" instead of breaking the decode
+// 02.03: invalid utf-8 strings become "" instead of breaking the decode
 #[test]
-fn _02_05_decode_blob_tolerates_invalid_utf8_in_string_table() {
+fn _02_03_decode_blob_tolerates_invalid_utf8_in_string_table() {
   use prost::Message;
 
   let block = crate::domain::osm_pbf_file::message::primitive_block_msg {
@@ -901,22 +861,5 @@ fn _02_05_decode_blob_tolerates_invalid_utf8_in_string_table() {
     out.nodes[0].tags.get(""),
     Some(&"Alfa".to_string()),
     "a chave invalida vira string vazia"
-  );
-}
-
-// 02.06: tag reprovada pela politica e descartada por filter
-#[test]
-fn _02_06_tag_policy_filter_drops_tags_rejected_by_the_lists() {
-  let strings = ["", "name", "Alfa", "amenity", "cafe"];
-  let policy = tag_policy {
-    include: None,
-    ignore: Some(vec!["amenity".to_string()]),
-  };
-
-  let kept = policy.filter(&strings, &[1, 3], &[2, 4]);
-  assert_eq!(
-    kept,
-    vec![("name", "Alfa")],
-    "apenas a tag aprovada deve sobreviver"
   );
 }

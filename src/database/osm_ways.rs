@@ -171,7 +171,7 @@ pub fn way_coords_chunk(
   name_priority: &[&str],
 ) -> Vec<way_coord_row> {
   let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-  let name_select = super::build_name_select("osm_data.osm_ways.payload", name_priority);
+  let name_select = crate::domain::osm_tag::select::coalesce_of("osm_data.osm_ways.payload", name_priority);
   let sql = format!(
     "SELECT
            osm_data.osm_ways.id AS way_id,

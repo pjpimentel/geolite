@@ -4,6 +4,7 @@
 
 1. REMOVED `extract/osm_data` mod.
 1. ADDED `osm_node`, `osm_way` and `osm_relation` domains with their decoders.
+1. ADDED `osm_tag` domain, absorbing `build_name_select` and the tag key validation of the cli.
 1. MODIFIED `osm_pbf_file` domain, adding `extract_blob_chunks`, `extract_osm_header` and `extract_osm_data` to its facade.
 1. MODIFIED `database` mod, adding the `jsonb` encoder moved from `extract/osm_data`.
 

@@ -1,6 +1,6 @@
 use super::entity::{osm_member_type, osm_relation, osm_relation_member};
 use crate::domain::osm_pbf_file::message::relation_msg;
-use crate::domain::osm_pbf_file::osm_data::tag_policy;
+use crate::domain::osm_tag::tag_policy;
 
 pub fn decode(
   relations: &[relation_msg],

@@ -1,6 +1,6 @@
 use super::entity::osm_node;
 use crate::domain::osm_pbf_file::message::{dense_nodes_msg, node_msg};
-use crate::domain::osm_pbf_file::osm_data::tag_policy;
+use crate::domain::osm_tag::tag_policy;
 
 #[derive(Clone, Copy)]
 pub struct block_scale {

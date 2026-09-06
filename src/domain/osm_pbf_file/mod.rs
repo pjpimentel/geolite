@@ -11,7 +11,7 @@ pub mod repository;
 
 pub use blob_index::osm_pbf_blob_chunks;
 pub use catalog::{listing, source};
-pub use osm_data::{data_opts, tag_policy};
+pub use osm_data::data_opts;
 pub use repository::{origin, osm_pbf_files};
 
 pub struct osm_pbf_file<'a> {
