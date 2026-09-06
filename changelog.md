@@ -1,6 +1,11 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.6
+## **2026-XX-XX** - 0.0.7
+
+1. REMOVED `extract` mod.
+1. MODIFIED `osm_pbf_file` domain.
+
+## **2026-09-06** - 0.0.6
 
 1. REMOVED unit tests redundant with e2e tests.
 1. MODIFIED release pipeline, splitting `try_publish` into `crates_publish` and `docker_publish`.
