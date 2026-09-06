@@ -1,15 +1,24 @@
 use super::osm_pbf_file_ls_source;
+use crate::domain::osm_pbf_file::{listing, osm_pbf_file};
 
 pub fn command_handler_osm_pbf_file_ls(
   data_path: &str,
   sqlite_path: &str,
-  source: &osm_pbf_file_ls_source,
-  ls_endpoint: &str,
+  from: &osm_pbf_file_ls_source,
+  ls_endpoint: Option<&str>,
   recreate_cache: &bool,
 ) {
-  match source {
+  let found = match from {
     osm_pbf_file_ls_source::geofabrik => {
-      let items = crate::osm_pbf_file::ls::geofabrik(sqlite_path, *recreate_cache, ls_endpoint);
+      let conn = crate::database::open_write(sqlite_path);
+      osm_pbf_file::open(Some(&conn), data_path).list((*from).into(), ls_endpoint, *recreate_cache)
+    }
+    osm_pbf_file_ls_source::local => {
+      osm_pbf_file::open(None, data_path).list((*from).into(), ls_endpoint, *recreate_cache)
+    }
+  };
+  match found {
+    listing::geofabrik(items) => {
       let id_w = items.iter().map(|i| i.id.len()).max().unwrap_or(0).max(2);
       let name_w = items.iter().map(|i| i.name.len()).max().unwrap_or(0).max(4);
       let url_w = items.iter().map(|i| i.url.len()).max().unwrap_or(0).max(3);
@@ -22,8 +31,7 @@ pub fn command_handler_osm_pbf_file_ls(
         );
       }
     }
-    osm_pbf_file_ls_source::local => {
-      let files = crate::osm_pbf_file::ls::list_local(data_path);
+    listing::local(files) => {
       if files.is_empty() {
         println!("no pbf files found in {data_path}/");
         return;

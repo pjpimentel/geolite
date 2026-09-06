@@ -23,8 +23,6 @@ pub mod admin_levels_hierarchy;
 pub mod house_numbers;
 pub mod merge;
 pub mod osm_nodes;
-pub mod osm_pbf_blob_chunks;
-pub mod osm_pbf_files;
 pub mod osm_relations;
 pub mod osm_ways;
 
@@ -110,7 +108,7 @@ pub fn open_write_main(path: &str) -> Connection {
   conn
     .pragma_update(None, "user_version", SCHEMA_VERSION)
     .expect("failed to set user_version");
-  osm_pbf_files::create_table(&conn);
+  crate::domain::osm_pbf_file::repository::create_table(&conn);
   admin_levels::create_table(&conn);
   admin_levels_hierarchy::create_table(&conn);
   admin_levels::create_rtree(&conn);
@@ -131,7 +129,7 @@ pub fn open_write(path: &str) -> Connection {
        PRAGMA osm_data.cache_size=-32768;",
     )
     .expect("failed to set osm_data pragmas");
-  osm_pbf_blob_chunks::create_table(&conn);
+  crate::domain::osm_pbf_file::blob_index::create_table(&conn);
   osm_nodes::create_table(&conn);
   osm_ways::create_table(&conn);
   osm_relations::create_table(&conn);

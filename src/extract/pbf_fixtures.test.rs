@@ -938,8 +938,8 @@ pub(crate) fn indexed_scene(tag: &str, chunks: &[Vec<u8>]) -> (temp_scene, u32) 
   write_pbf(&scene.pbf_path, chunks);
 
   let conn = crate::database::open_write(&scene.db_path);
-  let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, &scene.pbf_path);
-  super::blob_chunks::run(&scene.pbf_path, &conn, file_id, |_| {});
+  let file_id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, &scene.pbf_path);
+  crate::domain::osm_pbf_file::blob_scanner::run(&scene.pbf_path, &conn, file_id, |_| {});
   drop(conn);
 
   (scene, file_id)

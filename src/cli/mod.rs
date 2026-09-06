@@ -35,8 +35,6 @@ pub(crate) fn progress_draw_target() -> indicatif::ProgressDrawTarget {
   }
 }
 
-const DEFAULT_GEOFABRIK_ENDPOINT: &str = "https://download.geofabrik.de/index-v1.json";
-
 fn default_threads() -> u8 {
   std::thread::available_parallelism()
     .map(|n| ((n.get() - 1).max(1)) as u8)
@@ -97,8 +95,8 @@ enum commands {
     #[command(subcommand)]
     command: osm_pbf_file_commands,
 
-    #[arg(long, name = "ls-endpoint", default_value = DEFAULT_GEOFABRIK_ENDPOINT)]
-    ls_endpoint: String,
+    #[arg(long, name = "ls-endpoint", help = "overrides the geofabrik index url")]
+    ls_endpoint: Option<String>,
   },
   #[command(override_usage = "geolite extract [OPTIONS] <COMMAND> [OSM_PBF_FILE_PATH]")]
   extract {
@@ -222,7 +220,7 @@ pub fn run() {
         &args.data_path,
         &sqlite_path,
         &source,
-        &ls_endpoint,
+        ls_endpoint.as_deref(),
         &recreate_cache,
       ),
       osm_pbf_file_commands::download { id_from_ls_or_url } => {
@@ -231,7 +229,7 @@ pub fn run() {
           &args.threads,
           &sqlite_path,
           &id_from_ls_or_url,
-          &ls_endpoint,
+          ls_endpoint.as_deref(),
           args.abort_on_any_error,
         )
       }
@@ -289,7 +287,7 @@ pub fn run() {
         &sqlite_path,
         &index_path,
         &source,
-        DEFAULT_GEOFABRIK_ENDPOINT,
+        None,
         args.abort_on_any_error,
         &preset,
       )

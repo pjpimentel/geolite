@@ -1,5 +1,11 @@
 # decisions
 
+## **2026-09-05**
+
+1. added e2e tests to ensure regression quality.
+2. split the cargo release from the docker release to decouple them.
+3. the domain refactor is delivered one domain at a time, and each domain gets a patch version.
+
 ## **2026-08-02**
 
 1. add more unit tests to cover more than 90% before start refactoring some parts.

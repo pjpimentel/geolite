@@ -1,8 +1,9 @@
 use std::{fs, path::PathBuf};
 
+use rusqlite::Connection;
 use serde::Deserialize;
 
-use crate::database;
+use super::{http_client, repository};
 
 #[derive(Deserialize)]
 struct geofabrik_index {
@@ -29,7 +30,24 @@ struct geofabrik_urls {
   pbf: Option<String>,
 }
 
-pub struct ls_output_item {
+pub const GEOFABRIK_ENDPOINT: &str = "https://download.geofabrik.de/index-v1.json";
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum source {
+  geofabrik,
+  local,
+}
+
+impl source {
+  pub fn default_endpoint(self) -> Option<&'static str> {
+    match self {
+      source::geofabrik => Some(GEOFABRIK_ENDPOINT),
+      source::local => None,
+    }
+  }
+}
+
+pub struct geofabrik_entry {
   pub id: String,
   pub name: String,
   pub url: String,
@@ -40,18 +58,26 @@ pub struct local_pbf {
   pub size_bytes: u64,
 }
 
-pub fn geofabrik(sqlite_path: &str, recreate_cache: bool, endpoint: &str) -> Vec<ls_output_item> {
-  let conn = database::open_write(sqlite_path);
+pub enum listing {
+  geofabrik(Vec<geofabrik_entry>),
+  local(Vec<local_pbf>),
+}
+
+pub(super) fn geofabrik(
+  conn: &Connection,
+  recreate_cache: bool,
+  endpoint: &str,
+) -> Vec<geofabrik_entry> {
   if !recreate_cache {
-    let cached = database::osm_pbf_files::list_geofabrik_index(&conn);
+    let cached = repository::list_geofabrik_index(conn);
     if !cached.is_empty() {
       return cached
         .into_iter()
-        .map(|(id, name, url)| ls_output_item { id, name, url })
+        .map(|(id, name, url)| geofabrik_entry { id, name, url })
         .collect();
     }
   }
-  let body = super::agent()
+  let body = http_client::agent()
     .get(endpoint)
     .call()
     .expect("failed to fetch geofabrik index")
@@ -70,7 +96,7 @@ pub fn geofabrik(sqlite_path: &str, recreate_cache: bool, endpoint: &str) -> Vec
       .as_ref()
       .and_then(|u| u.pbf.as_deref())
       .unwrap_or("-");
-    database::osm_pbf_files::upsert_geofabrik_index_item(
+    repository::upsert_geofabrik_index_item(
       &tx,
       &f.properties.id,
       &f.properties.name,
@@ -79,27 +105,25 @@ pub fn geofabrik(sqlite_path: &str, recreate_cache: bool, endpoint: &str) -> Vec
     );
   }
   tx.commit().expect("failed to commit transaction");
-  database::osm_pbf_files::list_geofabrik_index(&conn)
+  repository::list_geofabrik_index(conn)
     .into_iter()
-    .map(|(id, name, url)| ls_output_item { id, name, url })
+    .map(|(id, name, url)| geofabrik_entry { id, name, url })
     .collect()
 }
 
-pub fn resolve_geofabrik_url(sqlite_path: &str, id: &str, endpoint: &str) -> Option<String> {
-  let conn = database::open_write(sqlite_path);
-  if let Some(url) = database::osm_pbf_files::get_geofabrik_url(&conn, id)
+pub(super) fn resolve_geofabrik_url(conn: &Connection, id: &str, endpoint: &str) -> Option<String> {
+  if let Some(url) = repository::get_geofabrik_url(conn, id)
     && url != "-"
   {
     return Some(url);
   }
-  drop(conn);
-  geofabrik(sqlite_path, false, endpoint)
+  geofabrik(conn, false, endpoint)
     .into_iter()
     .find(|i| i.id == id)
     .and_then(|i| if i.url == "-" { None } else { Some(i.url) })
 }
 
-pub fn list_local(data_path: &str) -> Vec<local_pbf> {
+pub(super) fn list_local(data_path: &str) -> Vec<local_pbf> {
   let pbf_dir = PathBuf::from(data_path);
   let Ok(entries) = fs::read_dir(&pbf_dir) else {
     return vec![];
@@ -125,5 +149,5 @@ pub fn list_local(data_path: &str) -> Vec<local_pbf> {
 }
 
 #[cfg(test)]
-#[path = "ls.test.rs"]
-mod ls_test;
+#[path = "catalog.test.rs"]
+mod tests;

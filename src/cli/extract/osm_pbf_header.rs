@@ -46,12 +46,12 @@ pub fn command_handler_extract_osm_pbf_header(
       .to_string_lossy()
       .into_owned();
 
-    let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, &osm_pbf_file_path);
+    let file_id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, &osm_pbf_file_path);
 
     print!("\x1b[1;32mextracting\x1b[0m header from {fname}...");
     let _ = std::io::stdout().flush();
 
-    let hdr = crate::extract::header::run(&osm_pbf_file_path, &conn, file_id);
+    let hdr = crate::domain::osm_pbf_file::header::run(&osm_pbf_file_path, &conn, file_id);
 
     println!(" done");
 

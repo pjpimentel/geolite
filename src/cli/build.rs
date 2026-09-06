@@ -16,7 +16,7 @@ pub fn command_handler_build(
   sqlite_path: &str,
   index_path: &str,
   source: &str,
-  ls_endpoint: &str,
+  ls_endpoint: Option<&str>,
   abort_on_any_error: bool,
   preset: &crate::presets::preset,
 ) {

@@ -74,7 +74,7 @@ fn run_scene(tag: &str, chunks: &[Vec<u8>], opts: data_opts, threads: u8) -> out
   let (scene, file_id) = pbf_fixtures::indexed_scene(tag, chunks);
 
   let conn = crate::database::open_write(&scene.db_path);
-  let blob_chunks = crate::database::osm_pbf_blob_chunks::get_data_chunks(&conn, file_id);
+  let blob_chunks = crate::domain::osm_pbf_file::blob_index::get_data_chunks(&conn, file_id);
   drop(conn);
 
   let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -414,8 +414,8 @@ fn _00_13_second_run_does_not_duplicate_rows() {
   let out = tiny_scene("od_00_13");
 
   let conn = crate::database::open_write(&out.scene.db_path);
-  let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, &out.scene.pbf_path);
-  let blob_chunks = crate::database::osm_pbf_blob_chunks::get_data_chunks(&conn, file_id);
+  let file_id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, &out.scene.pbf_path);
+  let blob_chunks = crate::domain::osm_pbf_file::blob_index::get_data_chunks(&conn, file_id);
   drop(conn);
 
   let write_conn = crate::database::open_write(&out.scene.db_path);
@@ -452,15 +452,15 @@ fn empty_queue(reader_done: bool) -> Arc<raw_queue> {
   })
 }
 
-fn dummy_chunk(id: u32) -> crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk {
-  crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk {
+fn dummy_chunk(id: u32) -> crate::domain::osm_pbf_file::osm_pbf_blob_chunk {
+  crate::domain::osm_pbf_file::osm_pbf_blob_chunk {
     id,
     file_id: 1,
     first_byte: 0,
     chunk_size: 0,
     data_first_byte: 0,
     data_size: 0,
-    chunk_type: crate::database::osm_pbf_blob_chunks::chunk_type::data,
+    chunk_type: crate::domain::osm_pbf_file::chunk_type::data,
   }
 }
 
@@ -523,14 +523,14 @@ fn _01_00_reader_blocks_while_the_queue_is_full() {
     .zip(sizes.iter())
     .enumerate()
     .map(|(i, (&first, &(data_first, data_size)))| {
-      crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk {
+      crate::domain::osm_pbf_file::osm_pbf_blob_chunk {
         id: i as u32 + 1,
         file_id: 1,
         first_byte: first,
         chunk_size: 0,
         data_first_byte: data_first,
         data_size,
-        chunk_type: crate::database::osm_pbf_blob_chunks::chunk_type::data,
+        chunk_type: crate::domain::osm_pbf_file::chunk_type::data,
       }
     })
     .collect();

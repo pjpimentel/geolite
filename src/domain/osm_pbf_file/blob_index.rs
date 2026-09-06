@@ -51,7 +51,18 @@ const SQL_CREATE_INDEXES: &str = "
     ON osm_pbf_blob_chunks(file_id, chunk_type);
 ";
 
-impl_table_ops!(pub(super), SQL_CREATE, SQL_DROP);
+pub(crate) fn create_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_CREATE)
+    .expect("failed to create osm_pbf_blob_chunks");
+}
+
+#[allow(dead_code)]
+pub(crate) fn drop_table(conn: &Connection) {
+  conn
+    .execute_batch(SQL_DROP)
+    .expect("failed to drop osm_pbf_blob_chunks");
+}
 
 pub fn create_indexes(conn: &Connection) {
   conn
@@ -59,58 +70,38 @@ pub fn create_indexes(conn: &Connection) {
     .expect("failed to create blob_chunks indexes");
 }
 
-pub fn batch_insert(conn: &Connection, chunks: &[osm_pbf_blob_chunk]) {
-  let tx = conn
-    .unchecked_transaction()
-    .expect("failed to begin transaction");
-  {
-    let mut stmt = tx
-      .prepare(
-        "INSERT INTO osm_data.osm_pbf_blob_chunks
-           (file_id, first_byte, chunk_size, data_first_byte, data_size, chunk_type)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-           ON CONFLICT (file_id, first_byte) DO UPDATE SET
-             chunk_size = excluded.chunk_size,
-             data_first_byte = excluded.data_first_byte,
-             data_size = excluded.data_size,
-             chunk_type = excluded.chunk_type",
-      )
-      .expect("failed to prepare statement");
-    for chunk in chunks {
-      stmt
-        .execute(rusqlite::params![
-          chunk.file_id,
-          chunk.first_byte,
-          chunk.chunk_size,
-          chunk.data_first_byte,
-          chunk.data_size,
-          chunk.chunk_type,
-        ])
-        .expect("failed to insert blob chunk");
-    }
-  }
-  tx.commit().expect("failed to commit");
-}
+const SQL_COUNT_BY_FILE_ID: &str = "
+  SELECT COUNT(*)
+  FROM osm_data.osm_pbf_blob_chunks
+  WHERE file_id = ?1
+";
 
 pub fn count_by_file_id(conn: &Connection, file_id: u32) -> i64 {
   conn
-    .query_row(
-      "SELECT COUNT(*) FROM osm_data.osm_pbf_blob_chunks WHERE file_id = ?1",
-      rusqlite::params![file_id],
-      |row| row.get(0),
-    )
+    .query_row(SQL_COUNT_BY_FILE_ID, rusqlite::params![file_id], |row| {
+      row.get(0)
+    })
     .expect("failed to count blob chunks")
 }
 
+const SQL_HEADER_CHUNK: &str = "
+  SELECT
+    id,
+    first_byte,
+    chunk_size,
+    data_first_byte,
+    data_size,
+    chunk_type
+  FROM osm_data.osm_pbf_blob_chunks
+  WHERE chunk_type = 0
+  AND file_id = ?1
+  LIMIT 1
+";
+
 pub fn get_header_chunk(conn: &Connection, file_id: u32) -> Option<osm_pbf_blob_chunk> {
   let mut stmt = conn
-    .prepare(
-      "SELECT id, first_byte, chunk_size, data_first_byte, data_size, chunk_type
-       FROM osm_data.osm_pbf_blob_chunks
-       WHERE chunk_type = 0 AND file_id = ?1
-       LIMIT 1",
-    )
-    .expect("failed to prepare");
+    .prepare(SQL_HEADER_CHUNK)
+    .expect("failed to prepare header chunk query");
 
   stmt
     .query_row(rusqlite::params![file_id], |row| {
@@ -127,15 +118,23 @@ pub fn get_header_chunk(conn: &Connection, file_id: u32) -> Option<osm_pbf_blob_
     .ok()
 }
 
+const SQL_DATA_CHUNKS: &str = "
+  SELECT
+    id,
+    first_byte,
+    chunk_size,
+    data_first_byte,
+    data_size,
+    chunk_type
+  FROM osm_data.osm_pbf_blob_chunks
+  WHERE file_id = ?1
+  ORDER BY first_byte ASC
+";
+
 pub fn get_data_chunks(conn: &Connection, file_id: u32) -> Vec<osm_pbf_blob_chunk> {
   let mut statement = conn
-    .prepare(
-      "SELECT id, first_byte, chunk_size, data_first_byte, data_size, chunk_type
-       FROM osm_data.osm_pbf_blob_chunks
-       WHERE file_id = ?1
-       ORDER BY first_byte ASC",
-    )
-    .expect("failed to prepare");
+    .prepare(SQL_DATA_CHUNKS)
+    .expect("failed to prepare data chunks query");
 
   statement
     .query_map(rusqlite::params![file_id], |row| {
@@ -149,7 +148,54 @@ pub fn get_data_chunks(conn: &Connection, file_id: u32) -> Vec<osm_pbf_blob_chun
         chunk_type: row.get(5).unwrap(),
       })
     })
-    .expect("failed to query")
+    .expect("failed to query blob chunks")
     .collect::<Result<Vec<_>, _>>()
-    .expect("failed to collect")
+    .expect("failed to collect blob chunks")
+}
+
+const SQL_INSERT: &str = "
+  INSERT INTO osm_data.osm_pbf_blob_chunks (
+    file_id,
+    first_byte,
+    chunk_size,
+    data_first_byte,
+    data_size,
+    chunk_type
+  ) VALUES (
+    ?1,
+    ?2,
+    ?3,
+    ?4,
+    ?5,
+    ?6
+  )
+  ON CONFLICT (file_id, first_byte) DO UPDATE SET
+    chunk_size = excluded.chunk_size,
+    data_first_byte = excluded.data_first_byte,
+    data_size = excluded.data_size,
+    chunk_type = excluded.chunk_type
+";
+
+pub fn batch_insert(conn: &Connection, chunks: &[osm_pbf_blob_chunk]) {
+  let tx = conn
+    .unchecked_transaction()
+    .expect("failed to begin transaction");
+  {
+    let mut stmt = tx
+      .prepare(SQL_INSERT)
+      .expect("failed to prepare osm_pbf_blob_chunks insert");
+    for chunk in chunks {
+      stmt
+        .execute(rusqlite::params![
+          chunk.file_id,
+          chunk.first_byte,
+          chunk.chunk_size,
+          chunk.data_first_byte,
+          chunk.data_size,
+          chunk.chunk_type,
+        ])
+        .expect("failed to insert blob chunk");
+    }
+  }
+  tx.commit().expect("failed to commit");
 }

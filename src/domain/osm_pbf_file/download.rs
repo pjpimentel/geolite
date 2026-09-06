@@ -69,7 +69,7 @@ pub fn run(
 
   fs::create_dir_all(data_path).expect("failed to create data dir");
 
-  let head = super::agent()
+  let head = super::http_client::agent()
     .head(url)
     .call()
     .expect("head request failed");
@@ -131,7 +131,7 @@ fn download_range(
   on_event: &(dyn Fn(download_event) + Send + Sync),
 ) {
   let range = format!("bytes={start}-{end}");
-  let response = super::agent()
+  let response = super::http_client::agent()
     .get(url)
     .header("range", &range)
     .call()
@@ -186,7 +186,7 @@ fn compute_md5(dest: &Path) -> String {
 
 fn verify_md5(url: &str, actual: &str) -> md5_status {
   let md5_url = format!("{url}.md5");
-  let Ok(response) = super::agent().get(&md5_url).call() else {
+  let Ok(response) = super::http_client::agent().get(&md5_url).call() else {
     return md5_status::unavailable;
   };
   let Ok(body) = response.into_body().read_to_string() else {
@@ -208,4 +208,4 @@ fn verify_md5(url: &str, actual: &str) -> md5_status {
 
 #[cfg(test)]
 #[path = "download.test.rs"]
-mod download_test;
+mod tests;

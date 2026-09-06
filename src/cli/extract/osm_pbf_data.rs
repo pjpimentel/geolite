@@ -108,10 +108,10 @@ pub fn command_handler_extract_osm_pbf_data(
 
     println!("\x1b[1;32mfile\x1b[0m {osm_pbf_file_path}");
 
-    let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, &osm_pbf_file_path);
+    let file_id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(&conn, &osm_pbf_file_path);
     print!("\x1b[1;32mloading\x1b[0m blob-chunks index...");
     let _ = std::io::stdout().flush();
-    let chunk_count = crate::database::osm_pbf_blob_chunks::count_by_file_id(&conn, file_id);
+    let chunk_count = crate::domain::osm_pbf_file::blob_index::count_by_file_id(&conn, file_id);
 
     if chunk_count == 0 {
       println!();
@@ -123,7 +123,7 @@ pub fn command_handler_extract_osm_pbf_data(
 
     println!(" done ({chunk_count} chunks)");
 
-    let chunks = crate::database::osm_pbf_blob_chunks::get_data_chunks(&conn, file_id);
+    let chunks = crate::domain::osm_pbf_file::blob_index::get_data_chunks(&conn, file_id);
 
     let decoder_threads = threads.saturating_sub(1).max(1);
     let multi = MultiProgress::with_draw_target(crate::cli::progress_draw_target());
@@ -211,7 +211,7 @@ pub fn command_handler_extract_osm_pbf_data(
     decoder_bar.finish();
     writer_bar.finish();
 
-    crate::database::osm_pbf_files::update_counts(
+    crate::domain::osm_pbf_file::repository::update_counts(
       &conn,
       file_id,
       node_count as u64,

@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf, sync::Arc};
 
-use crate::osm_pbf_file::http_stubs::{md5_reply, start_file_server};
+use crate::domain::osm_pbf_file::http_stubs::{md5_reply, start_file_server};
 
 use super::{download_event, md5_status, run};
 
@@ -11,7 +11,6 @@ fn tmp(name: &str) -> PathBuf {
   p
 }
 
-// 00: downloads file from url and saves to data_path root.
 #[test]
 fn _00_downloads_file_to_data_path_root() {
   let dir = tmp("dl_t00");
@@ -22,7 +21,6 @@ fn _00_downloads_file_to_data_path_root() {
   assert_eq!(fs::read(dir.join("file.osm.pbf")).unwrap(), content);
 }
 
-// 01: reports md5_status::ok when checksum matches.
 #[test]
 fn _01_reports_md5_ok_when_checksum_matches() {
   let dir = tmp("dl_t01");
@@ -33,7 +31,6 @@ fn _01_reports_md5_ok_when_checksum_matches() {
   assert!(matches!(out.md5, md5_status::ok));
 }
 
-// 02: reports md5_status::unavailable when .md5 endpoint returns 404.
 #[test]
 fn _02_reports_md5_unavailable_when_md5_endpoint_is_not_found() {
   let dir = tmp("dl_t02");
@@ -43,7 +40,6 @@ fn _02_reports_md5_unavailable_when_md5_endpoint_is_not_found() {
   assert!(matches!(out.md5, md5_status::unavailable));
 }
 
-// 03: reports md5_status::mismatch without panicking when hash does not match.
 #[test]
 fn _03_reports_md5_mismatch_without_panicking() {
   let dir = tmp("dl_t03");
@@ -56,8 +52,6 @@ fn _03_reports_md5_mismatch_without_panicking() {
   assert!(matches!(out.md5, md5_status::mismatch { .. }));
 }
 
-// 04: parallel download reassembles chunks in order and emits one cumulative
-// merge_progress event per part.
 #[test]
 fn _04_parallel_download_reassembles_and_reports_merge_progress() {
   use std::sync::Mutex;
@@ -79,7 +73,6 @@ fn _04_parallel_download_reassembles_and_reports_merge_progress() {
   assert_eq!(events[3].1, content.len() as u64);
 }
 
-// 05: reuses existing file (does not redownload) and emits file_already_exists.
 #[test]
 fn _05_reuses_existing_file_without_redownloading() {
   use std::sync::Mutex;
@@ -101,7 +94,6 @@ fn _05_reuses_existing_file_without_redownloading() {
   assert_eq!(fs::read(dir.join("file.osm.pbf")).unwrap(), existing);
 }
 
-// 06: reports md5_status::unavailable when the .md5 body is empty.
 #[test]
 fn _06_reports_md5_unavailable_when_md5_body_is_empty() {
   let dir = tmp("dl_t06");
@@ -111,7 +103,6 @@ fn _06_reports_md5_unavailable_when_md5_body_is_empty() {
   assert!(matches!(out.md5, md5_status::unavailable));
 }
 
-// 07: reports md5_status::unavailable when the .md5 body is not valid utf-8.
 #[test]
 fn _07_reports_md5_unavailable_when_md5_body_is_invalid_utf8() {
   let dir = tmp("dl_t07");

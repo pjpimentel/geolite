@@ -1,6 +1,6 @@
 use super::command_handler_osm_pbf_file_download;
 use crate::extract::pbf_fixtures::tempdir_guard;
-use crate::osm_pbf_file::http_stubs::{md5_reply, start_file_server, start_json_server};
+use crate::domain::osm_pbf_file::http_stubs::{md5_reply, start_file_server, start_json_server};
 
 fn scene(tag: &str) -> (tempdir_guard, String, String) {
   let guard = tempdir_guard::new(tag);
@@ -18,7 +18,7 @@ fn _00_00_downloads_a_url_with_two_threads_and_saves_it() {
     &2,
     &db,
     &[url],
-    "http://127.0.0.1:1/unused.json",
+    Some("http://127.0.0.1:1/unused.json"),
     false,
   );
   let saved = guard.path.join("file.osm.pbf");
@@ -40,7 +40,7 @@ fn _00_01_warns_on_md5_mismatch_but_keeps_the_file() {
     &1,
     &db,
     &[url],
-    "http://127.0.0.1:1/unused.json",
+    Some("http://127.0.0.1:1/unused.json"),
     false,
   );
   assert!(guard.path.join("file.osm.pbf").exists());
@@ -56,7 +56,7 @@ fn _00_02_reuses_an_existing_file_without_downloading() {
     &1,
     &db,
     &[url],
-    "http://127.0.0.1:1/unused.json",
+    Some("http://127.0.0.1:1/unused.json"),
     false,
   );
   assert_eq!(
@@ -73,7 +73,7 @@ fn _00_03_resolves_a_geofabrik_id_through_the_stub_index() {
   let endpoint = start_json_server(format!(
     r#"{{"features":[{{"properties":{{"id":"tiny","name":"Tiny","urls":{{"pbf":"{url}"}}}}}}]}}"#
   ));
-  command_handler_osm_pbf_file_download(&data, &1, &db, &["tiny".to_string()], &endpoint, false);
+  command_handler_osm_pbf_file_download(&data, &1, &db, &["tiny".to_string()], Some(&endpoint), false);
   assert!(guard.path.join("file.osm.pbf").exists());
 }
 
@@ -87,7 +87,7 @@ fn _00_04_continues_past_an_unknown_id_when_not_aborting() {
     &1,
     &db,
     &["nope".to_string(), url],
-    &endpoint,
+    Some(&endpoint),
     false,
   );
   assert!(
@@ -101,7 +101,7 @@ fn _00_04_continues_past_an_unknown_id_when_not_aborting() {
 fn _90_download_unknown_id_with_abort() {
   let (_guard, data, db) = scene("cli_download_abort");
   let endpoint = start_json_server(r#"{"features":[]}"#.to_string());
-  command_handler_osm_pbf_file_download(&data, &1, &db, &["nope".to_string()], &endpoint, true);
+  command_handler_osm_pbf_file_download(&data, &1, &db, &["nope".to_string()], Some(&endpoint), true);
 }
 
 #[test]
