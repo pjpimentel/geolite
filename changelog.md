@@ -8,6 +8,7 @@
 1. REMOVED `osm_pbf_file` mod.
 1. ADDED `osm_pbf_file` domain.
 1. MODIFIED `osm_pbf_files` structure (not backward compatible)
+1. MODIFIED `build` to accept a direct url as source; it was refused as a missing local file.
 
 ## **2026-08-30** - 0.0.5
 

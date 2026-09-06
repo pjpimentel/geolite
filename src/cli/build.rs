@@ -24,7 +24,9 @@ pub fn command_handler_build(
   println!();
   let source_path = std::path::Path::new(source);
   let source_in_data = std::path::Path::new(data_path).join(source);
-  let looks_like_path = source.ends_with(".pbf") || source.contains('/') || source.contains('\\');
+  let is_url = source.starts_with("http://") || source.starts_with("https://");
+  let looks_like_path =
+    !is_url && (source.ends_with(".pbf") || source.contains('/') || source.contains('\\'));
   if looks_like_path && !source_path.exists() && !source_in_data.exists() {
     eprintln!("\x1b[1;31merror\x1b[0m: source file not found: {source}");
     std::process::exit(1);

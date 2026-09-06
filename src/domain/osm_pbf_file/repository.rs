@@ -199,7 +199,7 @@ pub fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
 const SQL_GET_FILE_PATH: &str = "
   SELECT path
   FROM osm_pbf_files
-  WHERE (origin_id = ?1 OR CAST(id AS TEXT) = ?1)
+  WHERE (origin_id = ?1 OR url = ?1 OR CAST(id AS TEXT) = ?1)
     AND path IS NOT NULL
   LIMIT 1
 ";

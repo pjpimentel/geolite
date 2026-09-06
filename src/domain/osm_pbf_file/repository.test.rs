@@ -204,3 +204,12 @@ fn _09_a_local_path_is_never_recorded_as_downloaded() {
     "md5",
   );
 }
+
+#[test]
+fn _10_get_file_path_resolves_a_downloaded_url() {
+  let conn = database("t10");
+  let url = "http://mirror.invalid/alpha.osm.pbf";
+  update_downloaded(&conn, &origin::url(url.into()), "/data/alpha.osm.pbf", 10, "md5");
+  assert_eq!(get_file_path(&conn, url).as_deref(), Some("/data/alpha.osm.pbf"));
+  assert_eq!(get_file_path(&conn, "http://mirror.invalid/other.osm.pbf"), None);
+}
