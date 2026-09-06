@@ -82,33 +82,33 @@ fn file_name_of(path_or_url: &str) -> &str {
     .unwrap_or(path_or_url)
 }
 
-const SQL_PROMOTE_URL_TO_GEOFABRIK: &str = "
-  UPDATE OR IGNORE osm_pbf_files SET
-    origin = 1,
-    origin_id = ?1,
-    origin_name = ?2
-  WHERE url = ?3
-    AND origin = 2
-";
-
-const SQL_UPSERT_GEOFABRIK: &str = "
-  INSERT INTO osm_pbf_files (
-    origin,
-    origin_id,
-    origin_name,
-    url
-  ) VALUES (
-    1,
-    ?1,
-    ?2,
-    ?3
-  )
-  ON CONFLICT(origin, origin_id) DO UPDATE SET
-    origin_name = excluded.origin_name,
-    url = excluded.url
-";
-
 pub fn upsert_geofabrik_index_item(conn: &Connection, geofabrik_id: &str, name: &str, url: &str) {
+  const SQL_PROMOTE_URL_TO_GEOFABRIK: &str = "
+    UPDATE OR IGNORE osm_pbf_files SET
+      origin = 1,
+      origin_id = ?1,
+      origin_name = ?2
+    WHERE url = ?3
+      AND origin = 2
+  ";
+
+  const SQL_UPSERT_GEOFABRIK: &str = "
+    INSERT INTO osm_pbf_files (
+      origin,
+      origin_id,
+      origin_name,
+      url
+    ) VALUES (
+      1,
+      ?1,
+      ?2,
+      ?3
+    )
+    ON CONFLICT(origin, origin_id) DO UPDATE SET
+      origin_name = excluded.origin_name,
+      url = excluded.url
+  ";
+
   let promoted = conn
     .execute(
       SQL_PROMOTE_URL_TO_GEOFABRIK,
@@ -122,17 +122,17 @@ pub fn upsert_geofabrik_index_item(conn: &Connection, geofabrik_id: &str, name: 
   }
 }
 
-const SQL_LIST_GEOFABRIK_INDEX: &str = "
-  SELECT
-    origin_id,
-    origin_name,
-    url
-  FROM osm_pbf_files
-  WHERE origin = 1
-  ORDER BY origin_id
-";
-
 pub fn list_geofabrik_index(conn: &Connection) -> Vec<(String, String, String)> {
+  const SQL_LIST_GEOFABRIK_INDEX: &str = "
+    SELECT
+      origin_id,
+      origin_name,
+      url
+    FROM osm_pbf_files
+    WHERE origin = 1
+    ORDER BY origin_id
+  ";
+
   conn
     .prepare(SQL_LIST_GEOFABRIK_INDEX)
     .expect("failed to prepare list_geofabrik_index")
@@ -148,15 +148,15 @@ pub fn list_geofabrik_index(conn: &Connection) -> Vec<(String, String, String)> 
     .expect("failed to collect geofabrik index rows")
 }
 
-const SQL_GET_GEOFABRIK_URL_BY_ID: &str = "
-  SELECT url
-  FROM osm_pbf_files
-  WHERE origin = 1
-    AND origin_id = ?1
-  LIMIT 1
-";
-
 pub fn get_geofabrik_url(conn: &Connection, geofabrik_id: &str) -> Option<String> {
+  const SQL_GET_GEOFABRIK_URL_BY_ID: &str = "
+    SELECT url
+    FROM osm_pbf_files
+    WHERE origin = 1
+      AND origin_id = ?1
+    LIMIT 1
+  ";
+
   conn
     .query_row(
       SQL_GET_GEOFABRIK_URL_BY_ID,
@@ -167,21 +167,21 @@ pub fn get_geofabrik_url(conn: &Connection, geofabrik_id: &str) -> Option<String
     .flatten()
 }
 
-const SQL_ENSURE_LOCAL_PATH: &str = "
-  INSERT OR IGNORE INTO osm_pbf_files (
-    origin,
-    origin_name,
-    path
-  ) VALUES (
-    ?1,
-    ?2,
-    ?3
-  )
-";
-
-const SQL_GET_ID_BY_PATH: &str = "SELECT id FROM osm_pbf_files WHERE path = ?1";
-
 pub fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
+  const SQL_ENSURE_LOCAL_PATH: &str = "
+    INSERT OR IGNORE INTO osm_pbf_files (
+      origin,
+      origin_name,
+      path
+    ) VALUES (
+      ?1,
+      ?2,
+      ?3
+    )
+  ";
+
+  const SQL_GET_ID_BY_PATH: &str = "SELECT id FROM osm_pbf_files WHERE path = ?1";
+
   let from = origin::local_path(file_path.to_string());
   conn
     .execute(
@@ -196,15 +196,15 @@ pub fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
     .expect("failed to get id after ensure")
 }
 
-const SQL_GET_FILE_PATH: &str = "
-  SELECT path
-  FROM osm_pbf_files
-  WHERE (origin_id = ?1 OR url = ?1 OR CAST(id AS TEXT) = ?1)
-    AND path IS NOT NULL
-  LIMIT 1
-";
-
 pub fn get_file_path(conn: &Connection, id_or_geofabrik_id: &str) -> Option<String> {
+  const SQL_GET_FILE_PATH: &str = "
+    SELECT path
+    FROM osm_pbf_files
+    WHERE (origin_id = ?1 OR url = ?1 OR CAST(id AS TEXT) = ?1)
+      AND path IS NOT NULL
+    LIMIT 1
+  ";
+
   conn
     .query_row(
       SQL_GET_FILE_PATH,
@@ -214,19 +214,6 @@ pub fn get_file_path(conn: &Connection, id_or_geofabrik_id: &str) -> Option<Stri
     .ok()
     .flatten()
 }
-
-const SQL_UPDATE_OSM_HEADER: &str = "
-  UPDATE osm_pbf_files SET
-    osm_header_bbox_wkt = ?1,
-    osm_header_required_features = ?2,
-    osm_header_optional_features = ?3,
-    osm_header_writingprogram = ?4,
-    osm_header_source = ?5,
-    osm_header_osmosis_replication_timestamp = ?6,
-    osm_header_osmosis_replication_sequence_number = ?7,
-    osm_header_osmosis_replication_base_url = ?8
-  WHERE path = ?9
-";
 
 #[allow(clippy::too_many_arguments)]
 pub fn update_osm_header(
@@ -241,6 +228,19 @@ pub fn update_osm_header(
   osmosis_replication_sequence_number: Option<u32>,
   osmosis_replication_base_url: Option<&str>,
 ) {
+  const SQL_UPDATE_OSM_HEADER: &str = "
+    UPDATE osm_pbf_files SET
+      osm_header_bbox_wkt = ?1,
+      osm_header_required_features = ?2,
+      osm_header_optional_features = ?3,
+      osm_header_writingprogram = ?4,
+      osm_header_source = ?5,
+      osm_header_osmosis_replication_timestamp = ?6,
+      osm_header_osmosis_replication_sequence_number = ?7,
+      osm_header_osmosis_replication_base_url = ?8
+    WHERE path = ?9
+  ";
+
   ensure_by_file_path(conn, osm_pbf_file_path);
   conn
     .execute(
@@ -260,15 +260,6 @@ pub fn update_osm_header(
     .expect("failed to update osm header");
 }
 
-const SQL_UPDATE_COUNTS: &str = "
-  UPDATE osm_pbf_files SET
-    node_count = ?1,
-    way_count = ?2,
-    relation_count = ?3,
-    osm_data_extracted_at = UNIXEPOCH()
-  WHERE id = ?4
-";
-
 pub fn update_counts(
   conn: &Connection,
   file_id: u32,
@@ -276,6 +267,15 @@ pub fn update_counts(
   way_count: u64,
   relation_count: u64,
 ) {
+  const SQL_UPDATE_COUNTS: &str = "
+    UPDATE osm_pbf_files SET
+      node_count = ?1,
+      way_count = ?2,
+      relation_count = ?3,
+      osm_data_extracted_at = UNIXEPOCH()
+    WHERE id = ?4
+  ";
+
   conn
     .execute(
       SQL_UPDATE_COUNTS,
@@ -284,55 +284,6 @@ pub fn update_counts(
     .expect("failed to update osm_pbf_files counts");
 }
 
-const SQL_UPDATE_DOWNLOADED_GEOFABRIK: &str = "
-  UPDATE osm_pbf_files SET
-    path = ?1,
-    size_bytes = ?2,
-    md5 = ?3,
-    downloaded_at = UNIXEPOCH()
-  WHERE origin = 1
-    AND origin_id = ?4
-";
-
-const SQL_UPDATE_DOWNLOADED_URL: &str = "
-  UPDATE osm_pbf_files SET
-    path = ?1,
-    size_bytes = ?2,
-    md5 = ?3,
-    downloaded_at = UNIXEPOCH()
-  WHERE url = ?4
-";
-
-const SQL_INSERT_DOWNLOADED: &str = "
-  INSERT INTO osm_pbf_files (
-    origin,
-    origin_id,
-    origin_name,
-    url,
-    path,
-    size_bytes,
-    md5,
-    downloaded_at
-  ) VALUES (
-    ?1,
-    ?2,
-    ?3,
-    ?4,
-    ?5,
-    ?6,
-    ?7,
-    UNIXEPOCH()
-  )
-  ON CONFLICT(path) DO UPDATE SET
-    origin = excluded.origin,
-    origin_id = excluded.origin_id,
-    origin_name = excluded.origin_name,
-    url = excluded.url,
-    size_bytes = excluded.size_bytes,
-    md5 = excluded.md5,
-    downloaded_at = excluded.downloaded_at
-";
-
 pub fn update_downloaded(
   conn: &Connection,
   from: &origin,
@@ -340,6 +291,55 @@ pub fn update_downloaded(
   size_bytes: u64,
   md5: &str,
 ) {
+  const SQL_UPDATE_DOWNLOADED_GEOFABRIK: &str = "
+    UPDATE osm_pbf_files SET
+      path = ?1,
+      size_bytes = ?2,
+      md5 = ?3,
+      downloaded_at = UNIXEPOCH()
+    WHERE origin = 1
+      AND origin_id = ?4
+  ";
+
+  const SQL_UPDATE_DOWNLOADED_URL: &str = "
+    UPDATE osm_pbf_files SET
+      path = ?1,
+      size_bytes = ?2,
+      md5 = ?3,
+      downloaded_at = UNIXEPOCH()
+    WHERE url = ?4
+  ";
+
+  const SQL_INSERT_DOWNLOADED: &str = "
+    INSERT INTO osm_pbf_files (
+      origin,
+      origin_id,
+      origin_name,
+      url,
+      path,
+      size_bytes,
+      md5,
+      downloaded_at
+    ) VALUES (
+      ?1,
+      ?2,
+      ?3,
+      ?4,
+      ?5,
+      ?6,
+      ?7,
+      UNIXEPOCH()
+    )
+    ON CONFLICT(path) DO UPDATE SET
+      origin = excluded.origin,
+      origin_id = excluded.origin_id,
+      origin_name = excluded.origin_name,
+      url = excluded.url,
+      size_bytes = excluded.size_bytes,
+      md5 = excluded.md5,
+      downloaded_at = excluded.downloaded_at
+  ";
+
   let (update, key, origin_id, url) = match from {
     origin::geofabrik { id, url } => (SQL_UPDATE_DOWNLOADED_GEOFABRIK, id.as_str(), Some(id.as_str()), url.as_str()),
     origin::url(url) => (SQL_UPDATE_DOWNLOADED_URL, url.as_str(), None, url.as_str()),
@@ -358,97 +358,97 @@ pub fn update_downloaded(
   }
 }
 
-const SQL_UPDATE_ADMIN_LEVELS_COUNT: &str = "
-  WITH way_to_file AS (
-    SELECT
-      osm_data.osm_ways.id AS osm_id,
-      osm_data.osm_pbf_blob_chunks.file_id AS file_id
-    FROM osm_data.osm_ways
-    JOIN osm_data.osm_pbf_blob_chunks
-      ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_ways.osm_pbf_chunk_id
-  ),
-  relation_to_file AS (
-    SELECT
-      osm_data.osm_relations.id AS osm_id,
-      osm_data.osm_pbf_blob_chunks.file_id AS file_id
-    FROM osm_data.osm_relations
-    JOIN osm_data.osm_pbf_blob_chunks
-      ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_relations.osm_pbf_chunk_id
-  ),
-  admin_to_file AS (
-    SELECT
-      admin_levels.id AS admin_id,
-      COALESCE(way_to_file.file_id, relation_to_file.file_id) AS file_id
-    FROM admin_levels
-    LEFT JOIN way_to_file ON way_to_file.osm_id = admin_levels.way_id
-    LEFT JOIN relation_to_file ON relation_to_file.osm_id = admin_levels.relation_id
-    WHERE admin_levels.wkb IS NOT NULL
-  ),
-  counts_per_file AS (
-    SELECT
-      file_id,
-      COUNT(*) AS total
-    FROM admin_to_file
-    WHERE file_id IS NOT NULL
-    GROUP BY file_id
-  )
-  UPDATE osm_pbf_files SET
-    admin_levels_count = COALESCE(
-      (SELECT total FROM counts_per_file WHERE counts_per_file.file_id = osm_pbf_files.id),
-      0
-    )
-  WHERE path IS NOT NULL
-";
-
 pub fn update_admin_levels_count(conn: &Connection) {
+  const SQL_UPDATE_ADMIN_LEVELS_COUNT: &str = "
+    WITH way_to_file AS (
+      SELECT
+        osm_data.osm_ways.id AS osm_id,
+        osm_data.osm_pbf_blob_chunks.file_id AS file_id
+      FROM osm_data.osm_ways
+      JOIN osm_data.osm_pbf_blob_chunks
+        ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_ways.osm_pbf_chunk_id
+    ),
+    relation_to_file AS (
+      SELECT
+        osm_data.osm_relations.id AS osm_id,
+        osm_data.osm_pbf_blob_chunks.file_id AS file_id
+      FROM osm_data.osm_relations
+      JOIN osm_data.osm_pbf_blob_chunks
+        ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_relations.osm_pbf_chunk_id
+    ),
+    admin_to_file AS (
+      SELECT
+        admin_levels.id AS admin_id,
+        COALESCE(way_to_file.file_id, relation_to_file.file_id) AS file_id
+      FROM admin_levels
+      LEFT JOIN way_to_file ON way_to_file.osm_id = admin_levels.way_id
+      LEFT JOIN relation_to_file ON relation_to_file.osm_id = admin_levels.relation_id
+      WHERE admin_levels.wkb IS NOT NULL
+    ),
+    counts_per_file AS (
+      SELECT
+        file_id,
+        COUNT(*) AS total
+      FROM admin_to_file
+      WHERE file_id IS NOT NULL
+      GROUP BY file_id
+    )
+    UPDATE osm_pbf_files SET
+      admin_levels_count = COALESCE(
+        (SELECT total FROM counts_per_file WHERE counts_per_file.file_id = osm_pbf_files.id),
+        0
+      )
+    WHERE path IS NOT NULL
+  ";
+
   conn
     .execute(SQL_UPDATE_ADMIN_LEVELS_COUNT, [])
     .expect("failed to update osm_pbf_files admin_levels_count");
 }
 
-const SQL_UPDATE_HOUSE_NUMBERS_COUNT: &str = "
-  WITH way_to_file AS (
-    SELECT
-      osm_data.osm_ways.id AS osm_id,
-      osm_data.osm_pbf_blob_chunks.file_id AS file_id
-    FROM osm_data.osm_ways
-    JOIN osm_data.osm_pbf_blob_chunks
-      ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_ways.osm_pbf_chunk_id
-  ),
-  relation_to_file AS (
-    SELECT
-      osm_data.osm_relations.id AS osm_id,
-      osm_data.osm_pbf_blob_chunks.file_id AS file_id
-    FROM osm_data.osm_relations
-    JOIN osm_data.osm_pbf_blob_chunks
-      ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_relations.osm_pbf_chunk_id
-  ),
-  admin_to_file AS (
-    SELECT
-      admin_levels.id AS admin_id,
-      COALESCE(way_to_file.file_id, relation_to_file.file_id) AS file_id
-    FROM admin_levels
-    LEFT JOIN way_to_file ON way_to_file.osm_id = admin_levels.way_id
-    LEFT JOIN relation_to_file ON relation_to_file.osm_id = admin_levels.relation_id
-  ),
-  counts_per_file AS (
-    SELECT
-      admin_to_file.file_id AS file_id,
-      COUNT(*) AS total
-    FROM house_numbers
-    JOIN admin_to_file ON admin_to_file.admin_id = house_numbers.admin_level_id
-    WHERE admin_to_file.file_id IS NOT NULL
-    GROUP BY admin_to_file.file_id
-  )
-  UPDATE osm_pbf_files SET
-    house_numbers_count = COALESCE(
-      (SELECT total FROM counts_per_file WHERE counts_per_file.file_id = osm_pbf_files.id),
-      0
-    )
-  WHERE path IS NOT NULL
-";
-
 pub fn update_house_numbers_count(conn: &Connection) {
+  const SQL_UPDATE_HOUSE_NUMBERS_COUNT: &str = "
+    WITH way_to_file AS (
+      SELECT
+        osm_data.osm_ways.id AS osm_id,
+        osm_data.osm_pbf_blob_chunks.file_id AS file_id
+      FROM osm_data.osm_ways
+      JOIN osm_data.osm_pbf_blob_chunks
+        ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_ways.osm_pbf_chunk_id
+    ),
+    relation_to_file AS (
+      SELECT
+        osm_data.osm_relations.id AS osm_id,
+        osm_data.osm_pbf_blob_chunks.file_id AS file_id
+      FROM osm_data.osm_relations
+      JOIN osm_data.osm_pbf_blob_chunks
+        ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_relations.osm_pbf_chunk_id
+    ),
+    admin_to_file AS (
+      SELECT
+        admin_levels.id AS admin_id,
+        COALESCE(way_to_file.file_id, relation_to_file.file_id) AS file_id
+      FROM admin_levels
+      LEFT JOIN way_to_file ON way_to_file.osm_id = admin_levels.way_id
+      LEFT JOIN relation_to_file ON relation_to_file.osm_id = admin_levels.relation_id
+    ),
+    counts_per_file AS (
+      SELECT
+        admin_to_file.file_id AS file_id,
+        COUNT(*) AS total
+      FROM house_numbers
+      JOIN admin_to_file ON admin_to_file.admin_id = house_numbers.admin_level_id
+      WHERE admin_to_file.file_id IS NOT NULL
+      GROUP BY admin_to_file.file_id
+    )
+    UPDATE osm_pbf_files SET
+      house_numbers_count = COALESCE(
+        (SELECT total FROM counts_per_file WHERE counts_per_file.file_id = osm_pbf_files.id),
+        0
+      )
+    WHERE path IS NOT NULL
+  ";
+
   conn
     .execute(SQL_UPDATE_HOUSE_NUMBERS_COUNT, [])
     .expect("failed to update osm_pbf_files house_numbers_count");

@@ -33,8 +33,9 @@ reason given below.
 - **inside a repository, the ddl comes first**: `SQL_CREATE` and `SQL_CREATE_INDEXES` grouped at
   the top, then a type named after the table that implements `domain::table` with them; the trait
   carries `create_table` and `create_indexes`, so they are never written twice. a table nobody
-  drops has no `SQL_DROP`. **every other `SQL_` const sits immediately above the one function that
-  uses it**, so the const travels with its query rather than piling up in a wall at the top.
+  drops has no `SQL_DROP`. **every other `SQL_` const is declared inside the one function that uses
+  it, as its first item**; only sql that two functions share stays at module level, so the scope of
+  a query says who runs it.
 - **the ddl is the exception on purpose.** it is the schema rather than a query: it is what you open
   the file to find, and it is the anchor a release is compared against, byte for byte, with
   `sed -n '/^const SQL_CREATE: /,/^";$/p'`: a difference there is a schema change, and a schema
