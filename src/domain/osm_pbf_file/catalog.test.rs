@@ -214,7 +214,7 @@ fn _14_local_listing_needs_no_database() {
 }
 
 #[test]
-#[should_panic(expected = "the geofabrik catalogue needs a database")]
+#[should_panic(expected = "only `ls local` runs without a database")]
 fn _15_geofabrik_listing_without_a_database_panics() {
   let dir = tmp("ls_t15");
   osm_pbf_file::open(None, dir.to_str().unwrap()).list(

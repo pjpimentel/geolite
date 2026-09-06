@@ -14,8 +14,7 @@ fn default_opts() -> data_opts {
     include_ways: true,
     include_relations: true,
     ignore_info: true,
-    tags_include: None,
-    tags_ignore: None,
+    tags: tag_policy::default(),
     // nunca use buffer_bytes < 2: soft_threshold = buffer_bytes * 4 / 5 viraria 0
     // e o writer entraria em laco de flush vazio sem nunca checar decoders_done
     buffer_bytes: 1_073_741_824,
@@ -283,7 +282,10 @@ fn _00_07_filters_tags_with_tags_include() {
     "od_00_07",
     &[chunk],
     data_opts {
-      tags_include: Some(vec!["name".to_string()]),
+      tags: tag_policy {
+        include: Some(vec!["name".to_string()]),
+        ignore: None,
+      },
       ..default_opts()
     },
     1,
@@ -308,7 +310,10 @@ fn _00_08_filters_tags_with_tags_ignore() {
     "od_00_08",
     &[chunk],
     data_opts {
-      tags_ignore: Some(vec!["amenity".to_string()]),
+      tags: tag_policy {
+        include: None,
+        ignore: Some(vec!["amenity".to_string()]),
+      },
       ..default_opts()
     },
     1,
@@ -452,15 +457,15 @@ fn empty_queue(reader_done: bool) -> Arc<raw_queue> {
   })
 }
 
-fn dummy_chunk(id: u32) -> crate::domain::osm_pbf_file::osm_pbf_blob_chunk {
-  crate::domain::osm_pbf_file::osm_pbf_blob_chunk {
+fn dummy_chunk(id: u32) -> osm_pbf_blob_chunk {
+  osm_pbf_blob_chunk {
     id,
     file_id: 1,
     first_byte: 0,
     chunk_size: 0,
     data_first_byte: 0,
     data_size: 0,
-    chunk_type: crate::domain::osm_pbf_file::chunk_type::data,
+    chunk_type: chunk_type::data,
   }
 }
 
@@ -523,14 +528,14 @@ fn _01_00_reader_blocks_while_the_queue_is_full() {
     .zip(sizes.iter())
     .enumerate()
     .map(|(i, (&first, &(data_first, data_size)))| {
-      crate::domain::osm_pbf_file::osm_pbf_blob_chunk {
+      osm_pbf_blob_chunk {
         id: i as u32 + 1,
         file_id: 1,
         first_byte: first,
         chunk_size: 0,
         data_first_byte: data_first,
         data_size,
-        chunk_type: crate::domain::osm_pbf_file::chunk_type::data,
+        chunk_type: chunk_type::data,
       }
     })
     .collect();
@@ -790,42 +795,42 @@ fn _02_01_buffer_row_count_sums_every_queue() {
   assert_eq!(data.row_count(), 3);
 }
 
-// 02.02: tag_passes aplica include e ignore de forma independente
+// 02.02: tag_policy aplica include e ignore de forma independente
 #[test]
-fn _02_02_tag_passes_applies_include_and_ignore_lists() {
-  let none = default_opts();
-  assert!(tag_passes("name", &none), "sem listas tudo passa");
+fn _02_02_tag_policy_applies_include_and_ignore_lists() {
+  let none = tag_policy::default();
+  assert!(none.passes("name"), "sem listas tudo passa");
 
-  let include = data_opts {
-    tags_include: Some(vec!["name".to_string()]),
-    ..default_opts()
+  let include = tag_policy {
+    include: Some(vec!["name".to_string()]),
+    ignore: None,
   };
-  assert!(tag_passes("name", &include));
-  assert!(!tag_passes("amenity", &include));
+  assert!(include.passes("name"));
+  assert!(!include.passes("amenity"));
 
-  let ignore = data_opts {
-    tags_ignore: Some(vec!["amenity".to_string()]),
-    ..default_opts()
+  let ignore = tag_policy {
+    include: None,
+    ignore: Some(vec!["amenity".to_string()]),
   };
-  assert!(tag_passes("name", &ignore));
-  assert!(!tag_passes("amenity", &ignore));
+  assert!(ignore.passes("name"));
+  assert!(!ignore.passes("amenity"));
 }
 
 // 02.03: indices fora da tabela de strings sao descartados em vez de causar panico
 #[test]
-fn _02_03_filter_tags_drops_out_of_range_string_indices() {
+fn _02_03_tag_policy_filter_drops_out_of_range_string_indices() {
   let strings = ["", "name", "Alfa"];
-  let opts = default_opts();
+  let policy = tag_policy::default();
 
-  let ok = filter_tags(&strings, &[1], &[2], &opts);
+  let ok = policy.filter(&strings, &[1], &[2]);
   assert_eq!(ok, vec![("name", "Alfa")]);
 
   assert!(
-    filter_tags(&strings, &[99], &[2], &opts).is_empty(),
+    policy.filter(&strings, &[99], &[2]).is_empty(),
     "chave fora do range deve ser descartada"
   );
   assert!(
-    filter_tags(&strings, &[1], &[99], &opts).is_empty(),
+    policy.filter(&strings, &[1], &[99]).is_empty(),
     "valor fora do range deve ser descartado"
   );
 }
@@ -899,16 +904,16 @@ fn _02_05_decode_blob_tolerates_invalid_utf8_in_string_table() {
   );
 }
 
-// 02.06: tag reprovada pelos filtros e descartada por filter_tags
+// 02.06: tag reprovada pela politica e descartada por filter
 #[test]
-fn _02_06_filter_tags_drops_tags_rejected_by_the_filters() {
+fn _02_06_tag_policy_filter_drops_tags_rejected_by_the_lists() {
   let strings = ["", "name", "Alfa", "amenity", "cafe"];
-  let opts = data_opts {
-    tags_ignore: Some(vec!["amenity".to_string()]),
-    ..default_opts()
+  let policy = tag_policy {
+    include: None,
+    ignore: Some(vec!["amenity".to_string()]),
   };
 
-  let kept = filter_tags(&strings, &[1, 3], &[2, 4], &opts);
+  let kept = policy.filter(&strings, &[1, 3], &[2, 4]);
   assert_eq!(
     kept,
     vec![("name", "Alfa")],

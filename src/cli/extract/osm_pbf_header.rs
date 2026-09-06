@@ -7,12 +7,13 @@ pub fn command_handler_extract_osm_pbf_header(
   inputs: &[String],
 ) {
   let conn = crate::database::open_write(sqlite_path);
+  let file = crate::domain::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved_input {
       path: osm_pbf_file_path,
       name: fname,
-      id: file_id,
+      id: _,
     }) = super::resolve_input(&conn, data_path, sqlite_path, i, input)
     else {
       continue;
@@ -21,7 +22,7 @@ pub fn command_handler_extract_osm_pbf_header(
     print!("\x1b[1;32mextracting\x1b[0m header from {fname}...");
     let _ = std::io::stdout().flush();
 
-    let hdr = crate::domain::osm_pbf_file::header::run(&osm_pbf_file_path, &conn, file_id);
+    let hdr = file.extract_osm_header(&osm_pbf_file_path);
 
     println!(" done");
 

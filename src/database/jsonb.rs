@@ -108,7 +108,7 @@ impl encoder {
   pub fn encode_osm_node(
     &mut self,
     out: &mut Vec<u8>,
-    node: &super::osm_nodes::osm_node,
+    node: &crate::domain::osm_node::osm_node,
   ) {
     self.write_object(out, |enc, body| {
       write_text(body, "lat");
@@ -128,7 +128,7 @@ impl encoder {
   pub fn encode_osm_way(
     &mut self,
     out: &mut Vec<u8>,
-    way: &super::osm_ways::osm_way,
+    way: &crate::domain::osm_way::osm_way,
   ) {
     self.write_object(out, |enc, body| {
       write_text(body, "refs");
@@ -150,7 +150,7 @@ impl encoder {
   pub fn encode_osm_relation(
     &mut self,
     out: &mut Vec<u8>,
-    rel: &super::osm_relations::osm_relation,
+    rel: &crate::domain::osm_relation::osm_relation,
   ) {
     self.write_object(out, |enc, body| {
       write_text(body, "tags");
@@ -177,8 +177,8 @@ impl encoder {
   }
 }
 
-fn member_type_str(t: &super::osm_relations::osm_member_type) -> &'static str {
-  use super::osm_relations::osm_member_type;
+fn member_type_str(t: &crate::domain::osm_relation::osm_member_type) -> &'static str {
+  use crate::domain::osm_relation::osm_member_type;
   match t {
     osm_member_type::node => "n",
     osm_member_type::way => "w",
@@ -187,5 +187,5 @@ fn member_type_str(t: &super::osm_relations::osm_member_type) -> &'static str {
 }
 
 #[cfg(test)]
-#[path = "jsonb_encode.test.rs"]
+#[path = "jsonb.test.rs"]
 mod tests;

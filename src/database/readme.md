@@ -21,3 +21,5 @@ layer 1  ·  osm_pbf_files              one row per .osm.pbf — origin (local_p
 layers are built roughly bottom-up (back-references: `house_numbers → admin_levels`, and the `*_count` columns on `osm_pbf_files`). `destroy_data` selectively drops upper layers — deleting the `osm_data` sibling file for layers 2–3 — then vacuums; `osm_pbf_files` is kept.
 
 every writable connection runs in WAL mode; the schema is stamped via `PRAGMA user_version` (`SCHEMA_VERSION`): a writable open refuses a database stamped with another version, and `geolite merge` refuses to combine builds with an incompatible one.
+
+`jsonb.rs` is the encoder behind every `payload` column: sqlite's jsonb binary format, written once per element in the extraction's decoder threads and read back with `JSON(payload)`.

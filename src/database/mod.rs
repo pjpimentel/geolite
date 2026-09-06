@@ -24,6 +24,7 @@ pub const SCHEMA_VERSION: u32 = 2;
 pub mod admin_levels;
 pub mod admin_levels_hierarchy;
 pub mod house_numbers;
+pub mod jsonb;
 pub mod merge;
 pub mod osm_nodes;
 pub mod osm_relations;

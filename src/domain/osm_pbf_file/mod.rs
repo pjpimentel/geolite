@@ -6,11 +6,13 @@ pub mod download;
 pub mod header;
 pub mod http_client;
 pub mod message;
+pub mod osm_data;
 pub mod repository;
 
-pub use blob_index::{chunk_type, osm_pbf_blob_chunk, osm_pbf_blob_chunks};
-pub use repository::{origin, osm_pbf_files};
+pub use blob_index::osm_pbf_blob_chunks;
 pub use catalog::{listing, source};
+pub use osm_data::{data_opts, tag_policy};
+pub use repository::{origin, osm_pbf_files};
 
 pub struct osm_pbf_file<'a> {
   conn: Option<&'a rusqlite::Connection>,
@@ -37,14 +39,56 @@ impl<'a> osm_pbf_file<'a> {
     catalog::resolve_geofabrik_url(self.database(), id, endpoint)
   }
 
+  pub fn extract_blob_chunks(
+    &self,
+    path: &str,
+    on_progress: impl Fn(blob_scanner::progress),
+  ) -> usize {
+    let file_id = repository::ensure_by_file_path(self.database(), path);
+    blob_scanner::run(path, self.database(), file_id, on_progress)
+  }
+
+  pub fn extract_osm_header(&self, path: &str) -> header::header_output {
+    let file_id = repository::ensure_by_file_path(self.database(), path);
+    header::run(path, self.database(), file_id)
+  }
+
+  pub fn extract_osm_data(
+    &self,
+    path: &str,
+    write_conn: rusqlite::Connection,
+    opts: data_opts,
+    threads: u8,
+    on_progress: impl Fn(osm_data::progress) + Send + 'static,
+  ) -> Option<osm_data::osm_data_counts> {
+    let conn = self.database();
+    let file_id = repository::ensure_by_file_path(conn, path);
+    let chunks = blob_index::get_data_chunks(conn, file_id);
+    if chunks.is_empty() {
+      return None;
+    }
+    let (nodes, ways, relations) =
+      osm_data::run(path, chunks, write_conn, opts, &threads, on_progress);
+    repository::update_counts(conn, file_id, nodes as u64, ways as u64, relations as u64);
+    Some(osm_data::osm_data_counts {
+      nodes,
+      ways,
+      relations,
+    })
+  }
+
   fn database(&self) -> &'a rusqlite::Connection {
-    self.conn.expect("the geofabrik catalogue needs a database")
+    self.conn.expect("only `ls local` runs without a database")
   }
 }
 
 #[cfg(test)]
 #[path = "http_stubs.test.rs"]
 pub(crate) mod http_stubs;
+
+#[cfg(test)]
+#[path = "osm_pbf_file.test.rs"]
+mod tests;
 
 fn endpoint_of(from: source, custom_endpoint: Option<&str>) -> &str {
   custom_endpoint

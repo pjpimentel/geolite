@@ -6,14 +6,58 @@ use std::{
   sync::{Arc, Condvar, Mutex},
 };
 
-use crate::domain::osm_pbf_file::message::{
-  blob_msg, dense_nodes_msg, node_msg, primitive_block_msg, relation_msg, string_table_msg, way_msg,
+use crate::database::jsonb;
+use crate::database::osm_nodes::osm_node_row;
+use crate::database::osm_relations::osm_relation_row;
+use crate::database::osm_ways::osm_way_row;
+use crate::domain::osm_node::decoder::{
+  block_scale, decode as decode_nodes, decode_dense as decode_dense_nodes,
 };
+use crate::domain::osm_node::osm_node;
+use crate::domain::osm_relation::decoder::decode as decode_relations;
+use crate::domain::osm_relation::osm_relation;
+use crate::domain::osm_way::decoder::decode as decode_ways;
+use crate::domain::osm_way::osm_way;
 
-pub mod jsonb_encode;
-pub mod osm_nodes;
-pub mod osm_relations;
-pub mod osm_ways;
+use super::blob_index::{chunk_type, osm_pbf_blob_chunk};
+use super::compression;
+use super::message::{blob_msg, primitive_block_msg, string_table_msg};
+
+#[derive(Default)]
+pub struct tag_policy {
+  pub include: Option<Vec<String>>,
+  pub ignore: Option<Vec<String>>,
+}
+
+impl tag_policy {
+  pub fn passes(&self, key: &str) -> bool {
+    self
+      .include
+      .as_ref()
+      .is_none_or(|l| l.iter().any(|i| i == key))
+      && self
+        .ignore
+        .as_ref()
+        .is_none_or(|l| !l.iter().any(|i| i == key))
+  }
+
+  pub fn filter<'a>(
+    &self,
+    strings: &[&'a str],
+    keys: &[u32],
+    vals: &[u32],
+  ) -> Vec<(&'a str, &'a str)> {
+    keys
+      .iter()
+      .zip(vals.iter())
+      .filter_map(|(&k_idx, &v_idx)| {
+        let k = strings.get(k_idx as usize)?;
+        let v = strings.get(v_idx as usize)?;
+        if self.passes(k) { Some((*k, *v)) } else { None }
+      })
+      .collect()
+  }
+}
 
 pub struct data_opts {
   pub include_nodes: bool,
@@ -21,28 +65,33 @@ pub struct data_opts {
   pub include_relations: bool,
   #[allow(dead_code)]
   pub ignore_info: bool,
-  pub tags_include: Option<Vec<String>>,
-  pub tags_ignore: Option<Vec<String>>,
+  pub tags: tag_policy,
   pub buffer_bytes: usize,
 }
 
+pub struct osm_data_counts {
+  pub nodes: usize,
+  pub ways: usize,
+  pub relations: usize,
+}
+
 struct decoded_blob_output {
-  nodes: Vec<osm_nodes::osm_node>,
-  ways: Vec<osm_ways::osm_way>,
-  relations: Vec<osm_relations::osm_relation>,
+  nodes: Vec<osm_node>,
+  ways: Vec<osm_way>,
+  relations: Vec<osm_relation>,
 }
 
 struct decoded_blob {
-  nodes: Vec<crate::database::osm_nodes::osm_node_row>,
-  ways: Vec<crate::database::osm_ways::osm_way_row>,
-  relations: Vec<crate::database::osm_relations::osm_relation_row>,
+  nodes: Vec<osm_node_row>,
+  ways: Vec<osm_way_row>,
+  relations: Vec<osm_relation_row>,
 }
 
 #[derive(Default)]
 struct buffer_data {
-  nodes: VecDeque<crate::database::osm_nodes::osm_node_row>,
-  ways: VecDeque<crate::database::osm_ways::osm_way_row>,
-  relations: VecDeque<crate::database::osm_relations::osm_relation_row>,
+  nodes: VecDeque<osm_node_row>,
+  ways: VecDeque<osm_way_row>,
+  relations: VecDeque<osm_relation_row>,
 }
 
 impl buffer_data {
@@ -52,7 +101,7 @@ impl buffer_data {
 }
 
 struct raw_blob {
-  chunk: crate::domain::osm_pbf_file::osm_pbf_blob_chunk,
+  chunk: osm_pbf_blob_chunk,
   data: Vec<u8>,
 }
 
@@ -80,22 +129,19 @@ struct write_buffer {
   soft_threshold: usize,
   hard_limit: usize,
   row_threshold: usize,
-  // max rows que o writer drena por flush — limita o tamanho de cada transacao
-  // pra evitar flushes monstruosos quando o buffer eh enorme e o writer cai atras
+  // caps the rows drained per flush, so one transaction never grows with the backlog when the
+  // writer falls behind a large buffer
   flush_cap_rows: usize,
 }
 
 fn decoded_blob_bytes(blob: &decoded_blob) -> usize {
-  let nodes_stack =
-    blob.nodes.capacity() * std::mem::size_of::<crate::database::osm_nodes::osm_node_row>();
+  let nodes_stack = blob.nodes.capacity() * std::mem::size_of::<osm_node_row>();
   let nodes_heap: usize = blob.nodes.iter().map(|r| r.payload.capacity()).sum();
 
-  let ways_stack =
-    blob.ways.capacity() * std::mem::size_of::<crate::database::osm_ways::osm_way_row>();
+  let ways_stack = blob.ways.capacity() * std::mem::size_of::<osm_way_row>();
   let ways_heap: usize = blob.ways.iter().map(|r| r.payload.capacity()).sum();
 
-  let rels_stack = blob.relations.capacity()
-    * std::mem::size_of::<crate::database::osm_relations::osm_relation_row>();
+  let rels_stack = blob.relations.capacity() * std::mem::size_of::<osm_relation_row>();
   let rels_heap: usize = blob.relations.iter().map(|r| r.payload.capacity()).sum();
 
   nodes_stack + nodes_heap + ways_stack + ways_heap + rels_stack + rels_heap
@@ -126,16 +172,15 @@ pub struct progress {
 
 pub fn run(
   pbf: &str,
-  chunks: Vec<crate::domain::osm_pbf_file::osm_pbf_blob_chunk>,
+  chunks: Vec<osm_pbf_blob_chunk>,
   write_conn: rusqlite::Connection,
   opts: data_opts,
   threads: &u8,
   on_progress: impl Fn(progress) + Send + 'static,
 ) -> (usize, usize, usize) {
   let total_chunks = chunks.len();
-  // n-1 decoders (reader+writer compartilham com decoders no scheduler);
-  // 1 writer dedicado. reader eh leve (~0.3s work em 80s total) e nao precisa
-  // de core dedicado.
+  // threads - 1 decoders and one dedicated writer: the reader is light (about 0.3s of work in an
+  // 80s run) and shares a core with the decoders instead of taking one
   let worker_threads = threads.saturating_sub(1).max(1);
   let queue_cap = worker_threads as usize * 2;
 
@@ -236,7 +281,6 @@ pub fn run(
     (nodes_decoded, ways_decoded, relations_decoded)
   });
 
-  // decoders: empurram rows direto no write_buf compartilhado
   let mut handles = Vec::new();
   for thread_id in 0..worker_threads as usize {
     handles.push(decode_thread(
@@ -249,14 +293,12 @@ pub fn run(
   }
   drop(prog_tx);
 
-  // leitor: le blobs do pbf e injeta na fila ate encher
   let reader = reader_thread(pbf.to_string(), chunks, read_q.clone(), queue_cap);
 
   reader.join().unwrap();
   for h in handles {
     h.join().unwrap();
   }
-  // sinalizar fim pro writer: nao vem mais row nenhum
   {
     let mut state = write_buf.inner.lock().unwrap();
     state.decoders_done = true;
@@ -265,11 +307,8 @@ pub fn run(
   writer.join().unwrap();
   progress_handle.join().unwrap()
 }
-/////////////////////////////////////////////////////////////////////////////////
-fn read_blob_bytes(
-  file: &mut fs::File,
-  chunk: &crate::domain::osm_pbf_file::osm_pbf_blob_chunk,
-) -> Vec<u8> {
+
+fn read_blob_bytes(file: &mut fs::File, chunk: &osm_pbf_blob_chunk) -> Vec<u8> {
   use io::Seek;
   file
     .seek(io::SeekFrom::Start(chunk.data_first_byte))
@@ -284,19 +323,19 @@ fn read_blob_bytes(
 fn decode_raw_blob(
   raw: &raw_blob,
   opts: &data_opts,
-  encoder: &mut jsonb_encode::encoder,
+  encoder: &mut jsonb::encoder,
 ) -> decoded_blob {
   let mut nodes = Vec::new();
   let mut ways = Vec::new();
   let mut relations = Vec::new();
 
   match raw.chunk.chunk_type {
-    crate::domain::osm_pbf_file::chunk_type::data => {
+    chunk_type::data => {
       let output = decode_blob(&raw.data, opts);
       for n in output.nodes {
         let mut payload = Vec::with_capacity(128);
         encoder.encode_osm_node(&mut payload, &n);
-        nodes.push(crate::database::osm_nodes::osm_node_row {
+        nodes.push(osm_node_row {
           id: n.id as u64,
           osm_pbf_chunk_id: raw.chunk.id,
           payload,
@@ -305,7 +344,7 @@ fn decode_raw_blob(
       for w in output.ways {
         let mut payload = Vec::with_capacity(128 + w.refs.len() * 4);
         encoder.encode_osm_way(&mut payload, &w);
-        ways.push(crate::database::osm_ways::osm_way_row {
+        ways.push(osm_way_row {
           id: w.id as u64,
           osm_pbf_chunk_id: raw.chunk.id,
           payload,
@@ -314,14 +353,14 @@ fn decode_raw_blob(
       for r in output.relations {
         let mut payload = Vec::with_capacity(128 + r.members.len() * 32);
         encoder.encode_osm_relation(&mut payload, &r);
-        relations.push(crate::database::osm_relations::osm_relation_row {
+        relations.push(osm_relation_row {
           id: r.id as u64,
           osm_pbf_chunk_id: raw.chunk.id,
           payload,
         });
       }
     }
-    crate::domain::osm_pbf_file::chunk_type::header => {}
+    chunk_type::header => {}
   }
 
   decoded_blob {
@@ -331,15 +370,9 @@ fn decode_raw_blob(
   }
 }
 
-// struct decode_blob_output {
-//     ways: Vec<>,
-//     nodes: Vec<>,
-//     relations: Vec<>,
-// }
-
 fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
   let blob = blob_msg::decode(blob_data).expect("failed to decode blob");
-  let raw = crate::domain::osm_pbf_file::compression::decompress(&blob);
+  let raw = compression::decompress(&blob);
   let block =
     primitive_block_msg::decode(raw.as_slice()).expect("failed to decode primitive block");
 
@@ -351,10 +384,11 @@ fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
     .map(|b| std::str::from_utf8(b).unwrap_or(""))
     .collect();
 
-  let granularity = block.granularity.unwrap_or(100) as i64;
-  let lat_offset = block.lat_offset.unwrap_or(0);
-  let lon_offset = block.lon_offset.unwrap_or(0);
-  let date_granularity = block.date_granularity.unwrap_or(1000) as i64;
+  let scale = block_scale {
+    granularity: block.granularity.unwrap_or(100) as i64,
+    lat_offset: block.lat_offset.unwrap_or(0),
+    lon_offset: block.lon_offset.unwrap_or(0),
+  };
 
   let mut nodes = Vec::new();
   let mut ways = Vec::new();
@@ -362,31 +396,15 @@ fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
 
   for group in &block.primitivegroup {
     if opts.include_ways {
-      ways.extend(osm_ways::decode(&group.ways, &strings, opts));
+      ways.extend(decode_ways(&group.ways, &strings, &opts.tags));
     }
     if opts.include_relations {
-      relations.extend(osm_relations::decode(&group.relations, &strings, opts));
+      relations.extend(decode_relations(&group.relations, &strings, &opts.tags));
     }
     if opts.include_nodes {
-      nodes.extend(osm_nodes::decode_nodes(
-        &group.nodes,
-        &strings,
-        granularity,
-        lat_offset,
-        lon_offset,
-        date_granularity,
-        opts,
-      ));
+      nodes.extend(decode_nodes(&group.nodes, &strings, scale, &opts.tags));
       if let Some(dense) = &group.dense {
-        nodes.extend(osm_nodes::decode_dense_nodes(
-          dense,
-          &strings,
-          granularity,
-          lat_offset,
-          lon_offset,
-          date_granularity,
-          opts,
-        ));
+        nodes.extend(decode_dense_nodes(dense, &strings, scale, &opts.tags));
       }
     }
   }
@@ -398,43 +416,9 @@ fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
   }
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-fn tag_passes(k: &str, opts: &data_opts) -> bool {
-  opts
-    .tags_include
-    .as_ref()
-    .is_none_or(|l| l.iter().any(|i| i == k))
-    && opts
-      .tags_ignore
-      .as_ref()
-      .is_none_or(|l| !l.iter().any(|i| i == k))
-}
-
-fn filter_tags<'a>(
-  strings: &[&'a str],
-  keys: &[u32],
-  vals: &[u32],
-  opts: &data_opts,
-) -> Vec<(&'a str, &'a str)> {
-  keys
-    .iter()
-    .zip(vals.iter())
-    .filter_map(|(&k_idx, &v_idx)| {
-      let k = strings.get(k_idx as usize)?;
-      let v = strings.get(v_idx as usize)?;
-      if tag_passes(k, opts) {
-        Some((*k, *v))
-      } else {
-        None
-      }
-    })
-    .collect()
-}
-
-/////////////////////////////////////////////////////////////////////////////////
 fn reader_thread(
   pbf: String,
-  chunks: Vec<crate::domain::osm_pbf_file::osm_pbf_blob_chunk>,
+  chunks: Vec<osm_pbf_blob_chunk>,
   queue: Arc<raw_queue>,
   queue_cap: usize,
 ) -> std::thread::JoinHandle<()> {
@@ -466,7 +450,7 @@ fn decode_thread(
   prog_tx: std::sync::mpsc::Sender<prog_event>,
 ) -> std::thread::JoinHandle<()> {
   std::thread::spawn(move || {
-    let mut encoder = jsonb_encode::encoder::new();
+    let mut encoder = jsonb::encoder::new();
     loop {
       let raw = {
         let mut state = read_q.inner.lock().unwrap();
@@ -494,7 +478,6 @@ fn decode_thread(
       };
       prog_tx.send(prog_event::decoded(counts)).ok();
 
-      // push rows direto no buffer compartilhado; bloqueia se ultrapassar hard_limit
       let mut state = write_buf.inner.lock().unwrap();
       while state.bytes_current >= write_buf.hard_limit {
         state = write_buf.not_too_full.wait(state).unwrap();
@@ -539,8 +522,6 @@ fn writer_thread(
 ) -> std::thread::JoinHandle<()> {
   std::thread::spawn(move || {
     loop {
-      // pega o buffer cheio (ou aguarda ate ter trabalho); troca por um vazio
-      // dentro do lock pra que decoders possam continuar empurrando no novo
       let (nodes_taken, ways_taken, relations_taken, bytes_taken) = {
         let mut state = write_buf.inner.lock().unwrap();
         loop {
@@ -550,7 +531,6 @@ fn writer_thread(
             break;
           }
           if state.decoders_done {
-            // drena qualquer resto e sai
             if state.bytes_current == 0 {
               return;
             }
@@ -562,11 +542,10 @@ fn writer_thread(
         let rows_before = state.current.row_count();
         let bytes_before = state.bytes_current;
 
-        // drena ate flush_cap_rows do INICIO de cada deque (FIFO — ordem de
-        // insercao). VecDeque::drain eh O(n_drenado): avanca o head do ring,
-        // sem shift dos elementos remanescentes (que seria O(len) num Vec).
-        // ordem de prioridade: nodes -> ways -> relations, pra esvaziar primeiro
-        // a tabela mais volumosa que tipicamente domina a fila
+        // drains up to flush_cap_rows from the front of each deque, in insertion order: nodes
+        // first, the table that usually dominates the queue, then ways, then relations.
+        // VecDeque::drain is O(drained) — it advances the ring's head without shifting what
+        // remains, which a Vec would do in O(len)
         let cap = write_buf.flush_cap_rows;
         let take_nodes = cap.min(state.current.nodes.len());
         let mut nodes_taken: Vec<_> = Vec::with_capacity(take_nodes);
@@ -580,19 +559,18 @@ fn writer_thread(
         let mut relations_taken: Vec<_> = Vec::with_capacity(take_relations);
         relations_taken.extend(state.current.relations.drain(..take_relations));
 
-        // bytes_taken proporcional ao numero de rows drenados (aproximacao)
+        // bytes_taken is proportional to the rows drained: an approximation, good enough to
+        // throttle the decoders by
         let drained = take_nodes + take_ways + take_relations;
         let bytes_taken = (bytes_before * drained).checked_div(rows_before).unwrap_or(0);
         state.bytes_current = state.bytes_current.saturating_sub(bytes_taken);
 
-        // libera decoders bloqueados so se o buffer caiu de fato abaixo de hard_limit
         if was_full && state.bytes_current < write_buf.hard_limit {
           write_buf.not_too_full.notify_all();
         }
         (nodes_taken, ways_taken, relations_taken, bytes_taken)
       };
 
-      // flush fora do lock: decoders empurram no novo buffer em paralelo
       let nodes_n = nodes_taken.len();
       let ways_n = ways_taken.len();
       let relations_n = relations_taken.len();
@@ -615,6 +593,7 @@ fn writer_thread(
     }
   })
 }
+
 #[cfg(test)]
 #[path = "osm_data.test.rs"]
 mod tests;

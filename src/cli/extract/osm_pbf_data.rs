@@ -1,4 +1,5 @@
 use super::resolved_input;
+use crate::domain::osm_pbf_file::{data_opts, tag_policy};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::time::Instant;
@@ -67,6 +68,7 @@ pub fn command_handler_extract_osm_pbf_data(
   }
 
   let conn = crate::database::open_write(sqlite_path);
+  let file = crate::domain::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved_input {
@@ -92,8 +94,6 @@ pub fn command_handler_extract_osm_pbf_data(
     }
 
     println!(" done ({chunk_count} chunks)");
-
-    let chunks = crate::domain::osm_pbf_file::blob_index::get_data_chunks(&conn, file_id);
 
     let decoder_threads = threads.saturating_sub(1).max(1);
     let multi = MultiProgress::with_draw_target(crate::cli::progress_draw_target());
@@ -133,20 +133,21 @@ pub fn command_handler_extract_osm_pbf_data(
     let decoder_bar_cb = decoder_bar.clone();
     let writer_bar_cb = writer_bar.clone();
     let write_conn = crate::database::open_write(sqlite_path);
-    let (node_count, way_count, relation_count) = crate::extract::osm_data::run(
+    let Some(counts) = file.extract_osm_data(
       &osm_pbf_file_path,
-      chunks,
       write_conn,
-      crate::extract::osm_data::data_opts {
+      data_opts {
         include_nodes,
         include_ways,
         include_relations,
         ignore_info,
-        tags_include,
-        tags_ignore,
+        tags: tag_policy {
+          include: tags_include,
+          ignore: tags_ignore,
+        },
         buffer_bytes,
       },
-      threads,
+      *threads,
       move |p| {
         if decoder_bar_cb.length().is_none() {
           decoder_bar_cb.set_length(p.total_chunks as u64);
@@ -176,25 +177,19 @@ pub fn command_handler_extract_osm_pbf_data(
           fmt_bytes(p.bytes_flushed),
         ));
       },
-    );
+    ) else {
+      continue;
+    };
 
     decoder_bar.finish();
     writer_bar.finish();
 
-    crate::domain::osm_pbf_file::repository::update_counts(
-      &conn,
-      file_id,
-      node_count as u64,
-      way_count as u64,
-      relation_count as u64,
-    );
-
     let elapsed = start.elapsed().as_secs_f64();
     println!(
       "\x1b[1;32mextracted\x1b[0m {fname}  nodes: {}  ways: {}  relations: {}  in {elapsed:.1}s  ×{threads} threads",
-      fmt_count(node_count),
-      fmt_count(way_count),
-      fmt_count(relation_count),
+      fmt_count(counts.nodes),
+      fmt_count(counts.ways),
+      fmt_count(counts.relations),
     );
   }
 

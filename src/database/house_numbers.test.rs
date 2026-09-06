@@ -10,7 +10,7 @@ fn setup_db() -> Connection {
 }
 
 fn make_node(id: u64, tags: Vec<(&str, &str)>) -> crate::database::osm_nodes::osm_node_row {
-  let node = crate::extract::osm_data::osm_nodes::osm_node {
+  let node = crate::domain::osm_node::osm_node {
     id: id as i64,
     lat: -23.5505,
     lon: -46.6333,
@@ -20,7 +20,7 @@ fn make_node(id: u64, tags: Vec<(&str, &str)>) -> crate::database::osm_nodes::os
       .collect(),
   };
   let mut payload = Vec::new();
-  crate::extract::osm_data::jsonb_encode::encoder::new().encode_osm_node(&mut payload, &node);
+  crate::database::jsonb::encoder::new().encode_osm_node(&mut payload, &node);
   crate::database::osm_nodes::osm_node_row {
     id,
     osm_pbf_chunk_id: 0,
