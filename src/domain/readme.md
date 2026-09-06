@@ -30,18 +30,18 @@ reason given below.
 - **the code carries its own explanation.** a comment is written only for a workaround or where
   there is real risk of a performance mistake. what a thing is and what it does belongs in its name
   and its type, and what a *folder* is belongs here, in this file.
-- **inside a repository, the ddl comes first**: `SQL_CREATE`, `SQL_DROP`, `SQL_CREATE_INDEXES`
-  grouped at the top, then `create_table`, `drop_table`, `create_indexes` in that order. **every
-  other `SQL_` const sits immediately above the one function that uses it**, so the const travels
-  with its query rather than piling up in a wall at the top.
+- **inside a repository, the ddl comes first**: `SQL_CREATE` and `SQL_CREATE_INDEXES` grouped at
+  the top, then a type named after the table that implements `domain::table` with them; the trait
+  carries `create_table` and `create_indexes`, so they are never written twice. a table nobody
+  drops has no `SQL_DROP`. **every other `SQL_` const sits immediately above the one function that
+  uses it**, so the const travels with its query rather than piling up in a wall at the top.
 - **the ddl is the exception on purpose.** it is the schema rather than a query: it is what you open
-  the file to find, and it is the anchor every migration in this refactor is verified against, byte
-  for byte, with `sed -n '/^const SQL_CREATE: /,/^";$/p'`.
-- `create_table` and `drop_table` are `pub(crate)` — only the connection lifecycle calls them.
-  everything else a repository exposes is `pub`.
-- an index is named `<table>_search_by_<purpose>`. `blob_chunks_search_by_file_and_type` keeps its
-  0.0.5 name on purpose: renaming an index is a schema change, and a schema change is a release of
-  its own.
+  the file to find, and it is the anchor a release is compared against, byte for byte, with
+  `sed -n '/^const SQL_CREATE: /,/^";$/p'`: a difference there is a schema change, and a schema
+  change bumps `SCHEMA_VERSION`.
+- `table` is `pub(crate)`: only the connection lifecycle creates tables, and only the stage that
+  fills a table creates its indexes. everything else a repository exposes is `pub`.
+- an index is named `<table>_search_by_<purpose>`.
 - **a folder's use cases are methods on one type declared in `mod.rs`** — `osm_pbf_file::list` is
   the first; `download`, `delete` and `extract` follow. the cli parses arguments, opens the
   connection and prints, nothing else.
@@ -63,15 +63,31 @@ the row is a **ledger written in column groups**, each by a different moment of 
 
 | columns | written by |
 |---|---|
-| `geofabrik_id`, `geofabrik_name`, `geofabrik_parent`, `geofabrik_url` | `catalog` |
-| `file_path`, `size_bytes`, `md5`, `downloaded_at` | `download` |
+| `origin`, `origin_id`, `origin_name`, `url` | `catalog`, or the first stage that meets the file |
+| `path`, `size_bytes`, `md5`, `downloaded_at` | `download` |
 | `osm_header_*` | `header` |
 | `node_count`, `way_count`, `relation_count`, `osm_data_extracted_at` | the osm-data stage |
 | `admin_levels_count`, `house_numbers_count` | the admin-level and house-number stages |
 
-and it is read back only by `file_path`, `geofabrik_url` and `id`. **nothing ever reads the row
+and it is read back only by `path`, `url`, `origin_id` and `id`. **nothing ever reads the row
 whole** — the struct that could, and the query behind it, sat unused behind `#[allow(dead_code)]`
 until this slice landed and deleted them. the ddl in `repository` is the shape.
+
+### where a file comes from — `origin`
+
+`origin` is an enum with data — `local_path(path)`, `geofabrik { id, url }`, `url(url)` — stored
+as a code in the `origin` column with its payload spread over generic columns:
+
+| `origin` | code | `origin_id` | `origin_name` | `url` | `path` |
+|---|---:|---|---|---|---|
+| `local_path` | 0 | none | the file name | none | the path as given |
+| `geofabrik` | 1 | the catalogue id | the catalogue name | the pbf url | where the download landed |
+| `url` | 2 | none | the file name in the url | the url | where the download landed |
+
+`path` is the identity of a file on disk (`UNIQUE`); `UNIQUE (origin, origin_id)` only binds the
+catalogue rows. an extract stage that meets a file first records it as `local_path`; a download of
+the same path later takes the download's origin over. a `url` row whose url the catalogue turns out
+to list is promoted to `geofabrik` on the next `ls`.
 
 ### the catalogue — `catalog`
 
@@ -90,19 +106,19 @@ panics.
 for `geofabrik`:
 
 1. fetches the geofabrik GeoJSON index from the resolved endpoint
-1. caches all regions in `osm_pbf_files` (upsert by `geofabrik_id`)
+1. caches all regions in `osm_pbf_files` (upsert by `origin_id`)
 1. subsequent calls read from sqlite — skips http unless `recreate_cache` is set
 
 ### download
 
-1. resolves the source: geofabrik id → looks up `geofabrik_url` in sqlite (fetching the index if
-   not cached yet); direct url → used as-is
+1. resolves the origin: geofabrik id → looks up its `url` in sqlite (fetching the index if not
+   cached yet); direct url → used as-is
 1. if the destination file already exists, skips the download but still verifies its md5 and
    refreshes its metadata (reuses the file)
 1. splits the total size into N byte ranges and fetches them in parallel threads
 1. merges parts in order into the final `.osm.pbf` file
 1. verifies md5 checksum against `<url>.md5` (ok / mismatch / unavailable)
-1. records the result (`file_path`, `size_bytes`, `md5`, `downloaded_at`) in the matching
+1. records the result (`path`, `size_bytes`, `md5`, `downloaded_at`) in the matching
    `osm_pbf_files` row
 
 ### the wire format — `message` and `compression`

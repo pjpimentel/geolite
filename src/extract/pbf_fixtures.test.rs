@@ -1,197 +1,12 @@
-// construtores de .osm.pbf sintetico para os testes de extract.
-//
-// os structs de mensagem de producao tem campos privados, entao aqui declaramos
-// espelhos com `#[derive(prost::Message)]` e campos publicos. a compatibilidade
-// de wire e garantida por usar exatamente os mesmos numeros de tag.
-//
-// por padrao os builders populam TODOS os campos opcionais (info, denseinfo,
-// raw_size, date_granularity, campos osmosis) — cada campo so e exercitado no
-// decoder se algum fixture o emitir de fato.
 #![allow(dead_code)]
 
 use prost::Message;
 
-/////////////////////////////////////////////////////////////////////////////////
-// espelhos de wire
-/////////////////////////////////////////////////////////////////////////////////
-
-#[derive(prost::Message)]
-pub(crate) struct blob_wire {
-  #[prost(bytes = "vec", optional, tag = "1")]
-  pub raw: Option<Vec<u8>>,
-  #[prost(int32, optional, tag = "2")]
-  pub raw_size: Option<i32>,
-  #[prost(bytes = "vec", optional, tag = "3")]
-  pub zlib_data: Option<Vec<u8>>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct blob_header_wire {
-  #[prost(string, tag = "1")]
-  pub r#type: String,
-  #[prost(uint32, tag = "3")]
-  pub datasize: u32,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct header_bbox_wire {
-  #[prost(sint64, tag = "1")]
-  pub left: i64,
-  #[prost(sint64, tag = "2")]
-  pub right: i64,
-  #[prost(sint64, tag = "3")]
-  pub top: i64,
-  #[prost(sint64, tag = "4")]
-  pub bottom: i64,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct header_block_wire {
-  #[prost(message, optional, tag = "1")]
-  pub bbox: Option<header_bbox_wire>,
-  #[prost(string, repeated, tag = "4")]
-  pub required_features: Vec<String>,
-  #[prost(string, repeated, tag = "5")]
-  pub optional_features: Vec<String>,
-  #[prost(string, optional, tag = "16")]
-  pub writingprogram: Option<String>,
-  #[prost(string, optional, tag = "17")]
-  pub source: Option<String>,
-  #[prost(int64, optional, tag = "32")]
-  pub osmosis_replication_timestamp: Option<i64>,
-  #[prost(int64, optional, tag = "33")]
-  pub osmosis_replication_sequence_number: Option<i64>,
-  #[prost(string, optional, tag = "34")]
-  pub osmosis_replication_base_url: Option<String>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct string_table_wire {
-  #[prost(bytes = "vec", repeated, tag = "1")]
-  pub s: Vec<Vec<u8>>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct info_wire {
-  #[prost(int32, optional, tag = "1")]
-  pub version: Option<i32>,
-  #[prost(int64, optional, tag = "2")]
-  pub timestamp: Option<i64>,
-  #[prost(int64, optional, tag = "3")]
-  pub changeset: Option<i64>,
-  #[prost(int32, optional, tag = "4")]
-  pub uid: Option<i32>,
-  #[prost(uint32, optional, tag = "5")]
-  pub user_sid: Option<u32>,
-  #[prost(bool, optional, tag = "6")]
-  pub visible: Option<bool>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct dense_info_wire {
-  #[prost(int32, repeated, tag = "1")]
-  pub version: Vec<i32>,
-  #[prost(sint64, repeated, tag = "2")]
-  pub timestamp: Vec<i64>,
-  #[prost(sint64, repeated, tag = "3")]
-  pub changeset: Vec<i64>,
-  #[prost(sint32, repeated, tag = "4")]
-  pub uid: Vec<i32>,
-  #[prost(sint32, repeated, tag = "5")]
-  pub user_sid: Vec<i32>,
-  #[prost(bool, repeated, tag = "6")]
-  pub visible: Vec<bool>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct node_wire {
-  #[prost(sint64, tag = "1")]
-  pub id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  pub keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  pub vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  pub info: Option<info_wire>,
-  #[prost(sint64, tag = "8")]
-  pub lat: i64,
-  #[prost(sint64, tag = "9")]
-  pub lon: i64,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct dense_nodes_wire {
-  #[prost(sint64, repeated, tag = "1")]
-  pub id: Vec<i64>,
-  #[prost(message, optional, tag = "5")]
-  pub denseinfo: Option<dense_info_wire>,
-  #[prost(sint64, repeated, tag = "8")]
-  pub lat: Vec<i64>,
-  #[prost(sint64, repeated, tag = "9")]
-  pub lon: Vec<i64>,
-  #[prost(int32, repeated, tag = "10")]
-  pub keys_vals: Vec<i32>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct way_wire {
-  #[prost(int64, tag = "1")]
-  pub id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  pub keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  pub vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  pub info: Option<info_wire>,
-  #[prost(sint64, repeated, tag = "8")]
-  pub refs: Vec<i64>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct relation_wire {
-  #[prost(int64, tag = "1")]
-  pub id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  pub keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  pub vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  pub info: Option<info_wire>,
-  #[prost(int32, repeated, tag = "8")]
-  pub roles_sid: Vec<i32>,
-  #[prost(sint64, repeated, tag = "9")]
-  pub memids: Vec<i64>,
-  #[prost(int32, repeated, tag = "10")]
-  pub types: Vec<i32>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct primitive_group_wire {
-  #[prost(message, repeated, tag = "1")]
-  pub nodes: Vec<node_wire>,
-  #[prost(message, optional, tag = "2")]
-  pub dense: Option<dense_nodes_wire>,
-  #[prost(message, repeated, tag = "3")]
-  pub ways: Vec<way_wire>,
-  #[prost(message, repeated, tag = "4")]
-  pub relations: Vec<relation_wire>,
-}
-
-#[derive(prost::Message)]
-pub(crate) struct primitive_block_wire {
-  #[prost(message, optional, tag = "1")]
-  pub stringtable: Option<string_table_wire>,
-  #[prost(message, repeated, tag = "2")]
-  pub primitivegroup: Vec<primitive_group_wire>,
-  #[prost(int32, optional, tag = "17")]
-  pub granularity: Option<i32>,
-  #[prost(int32, optional, tag = "18")]
-  pub date_granularity: Option<i32>,
-  #[prost(int64, optional, tag = "19")]
-  pub lat_offset: Option<i64>,
-  #[prost(int64, optional, tag = "20")]
-  pub lon_offset: Option<i64>,
-}
+use crate::domain::osm_pbf_file::message::{
+  blob_header_msg, blob_msg, dense_info_msg, dense_nodes_msg, header_bbox_msg, header_block_msg,
+  info_msg, node_msg, primitive_block_msg, primitive_group_msg, relation_msg, string_table_msg,
+  way_msg,
+};
 
 /////////////////////////////////////////////////////////////////////////////////
 // compressao e enquadramento
@@ -207,7 +22,7 @@ pub(crate) enum blob_compression {
 
 pub(crate) fn make_blob(payload: &[u8], compression: blob_compression) -> Vec<u8> {
   let blob = match compression {
-    blob_compression::raw => blob_wire {
+    blob_compression::raw => blob_msg {
       raw: Some(payload.to_vec()),
       raw_size: Some(payload.len() as i32),
       zlib_data: None,
@@ -217,13 +32,13 @@ pub(crate) fn make_blob(payload: &[u8], compression: blob_compression) -> Vec<u8
       let mut encoder =
         flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
       encoder.write_all(payload).expect("failed to deflate blob");
-      blob_wire {
+      blob_msg {
         raw: None,
         raw_size: Some(payload.len() as i32),
         zlib_data: Some(encoder.finish().expect("failed to finish deflate")),
       }
     }
-    blob_compression::none => blob_wire {
+    blob_compression::none => blob_msg {
       raw: None,
       raw_size: Some(payload.len() as i32),
       zlib_data: None,
@@ -234,7 +49,7 @@ pub(crate) fn make_blob(payload: &[u8], compression: blob_compression) -> Vec<u8
 
 // enquadra um blob no formato do arquivo: [be_u32(header_len)][blob_header][blob]
 pub(crate) fn make_chunk(kind: &str, blob: &[u8]) -> Vec<u8> {
-  let header = blob_header_wire {
+  let header = blob_header_msg {
     r#type: kind.to_string(),
     datasize: blob.len() as u32,
   }
@@ -278,8 +93,8 @@ impl string_table {
     i
   }
 
-  fn into_wire(self) -> string_table_wire {
-    string_table_wire {
+  fn into_msg(self) -> string_table_msg {
+    string_table_msg {
       s: self.entries.into_iter().map(|e| e.into_bytes()).collect(),
     }
   }
@@ -316,8 +131,8 @@ impl Default for header_spec {
 
 pub(crate) fn header_blob(spec: &header_spec, compression: blob_compression) -> Vec<u8> {
   const NANO: f64 = 1e9;
-  let block = header_block_wire {
-    bbox: spec.bbox.map(|(left, right, top, bottom)| header_bbox_wire {
+  let block = header_block_msg {
+    bbox: spec.bbox.map(|(left, right, top, bottom)| header_bbox_msg {
       left: (left * NANO) as i64,
       right: (right * NANO) as i64,
       top: (top * NANO) as i64,
@@ -474,9 +289,9 @@ pub(crate) fn data_blob(spec: &block_spec, compression: blob_compression) -> Vec
     }
 
     let count = spec.dense.len();
-    Some(dense_nodes_wire {
+    Some(dense_nodes_msg {
       id: ids,
-      denseinfo: spec.with_info.then(|| dense_info_wire {
+      denseinfo: spec.with_info.then(|| dense_info_msg {
         version: vec![1; count],
         timestamp: vec![1_700_000; count],
         changeset: vec![0; count],
@@ -490,12 +305,12 @@ pub(crate) fn data_blob(spec: &block_spec, compression: blob_compression) -> Vec
     })
   };
 
-  let plain: Vec<node_wire> = spec
+  let plain: Vec<node_msg> = spec
     .plain
     .iter()
     .map(|n| {
       let (keys, vals) = intern_tags(&mut st, &n.tags);
-      node_wire {
+      node_msg {
         id: n.id,
         keys,
         vals,
@@ -506,7 +321,7 @@ pub(crate) fn data_blob(spec: &block_spec, compression: blob_compression) -> Vec
     })
     .collect();
 
-  let ways: Vec<way_wire> = spec
+  let ways: Vec<way_msg> = spec
     .ways
     .iter()
     .map(|w| {
@@ -521,17 +336,19 @@ pub(crate) fn data_blob(spec: &block_spec, compression: blob_compression) -> Vec
           delta
         })
         .collect();
-      way_wire {
+      way_msg {
         id: w.id,
         keys,
         vals,
         info: spec.with_info.then(default_info),
         refs,
+        lat: vec![],
+        lon: vec![],
       }
     })
     .collect();
 
-  let relations: Vec<relation_wire> = spec
+  let relations: Vec<relation_msg> = spec
     .relations
     .iter()
     .map(|r| {
@@ -546,7 +363,7 @@ pub(crate) fn data_blob(spec: &block_spec, compression: blob_compression) -> Vec
         acc = *id;
         types.push(*member_type);
       }
-      relation_wire {
+      relation_msg {
         id: r.id,
         keys,
         vals,
@@ -558,9 +375,9 @@ pub(crate) fn data_blob(spec: &block_spec, compression: blob_compression) -> Vec
     })
     .collect();
 
-  let block = primitive_block_wire {
-    stringtable: Some(st.into_wire()),
-    primitivegroup: vec![primitive_group_wire {
+  let block = primitive_block_msg {
+    stringtable: Some(st.into_msg()),
+    primitivegroup: vec![primitive_group_msg {
       nodes: plain,
       dense,
       ways,
@@ -585,8 +402,8 @@ fn intern_tags(st: &mut string_table, tags: &[(String, String)]) -> (Vec<u32>, V
   (keys, vals)
 }
 
-fn default_info() -> info_wire {
-  info_wire {
+fn default_info() -> info_msg {
+  info_msg {
     version: Some(1),
     timestamp: Some(1_700_000),
     changeset: Some(99),

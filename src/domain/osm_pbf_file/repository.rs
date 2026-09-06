@@ -1,14 +1,15 @@
 use rusqlite::Connection;
 
+use crate::domain::table;
+
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS osm_pbf_files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    geofabrik_id VARCHAR(128) UNIQUE,
-    geofabrik_name VARCHAR(128),
-    geofabrik_parent VARCHAR(128),
-    geofabrik_url VARCHAR(512),
-    geofabrik_wkt BLOB,
-    file_path VARCHAR(1024) UNIQUE,
+    origin INTEGER NOT NULL,
+    origin_id VARCHAR(128),
+    origin_name VARCHAR(128),
+    url VARCHAR(512),
+    path VARCHAR(1024) UNIQUE,
     size_bytes INTEGER,
     md5 VARCHAR(32),
     downloaded_at INTEGER,
@@ -27,7 +28,8 @@ const SQL_CREATE: &str = "
     admin_levels_count INTEGER,
     house_numbers_count INTEGER,
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE (origin, origin_id)
   );
   CREATE TRIGGER IF NOT EXISTS osm_pbf_files_updated_at
     AFTER UPDATE ON osm_pbf_files
@@ -37,90 +39,97 @@ const SQL_CREATE: &str = "
     END;
 ";
 
-const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_pbf_files;";
-
 const SQL_CREATE_INDEXES: &str = "
-  CREATE INDEX IF NOT EXISTS osm_pbf_files_search_by_geofabrik_url
-    ON osm_pbf_files(geofabrik_url);
+  CREATE INDEX IF NOT EXISTS osm_pbf_files_search_by_url
+    ON osm_pbf_files(url);
 ";
 
-pub(crate) fn create_table(conn: &Connection) {
-  conn
-    .execute_batch(SQL_CREATE)
-    .expect("failed to create osm_pbf_files");
+pub struct osm_pbf_files;
+
+impl table for osm_pbf_files {
+  const CREATE: &'static str = SQL_CREATE;
+  const INDEXES: &'static str = SQL_CREATE_INDEXES;
 }
 
-#[allow(dead_code)]
-pub(crate) fn drop_table(conn: &Connection) {
-  conn
-    .execute_batch(SQL_DROP)
-    .expect("failed to drop osm_pbf_files");
+pub enum origin {
+  local_path(String),
+  geofabrik { id: String, url: String },
+  url(String),
 }
 
-pub fn create_indexes(conn: &Connection) {
-  conn
-    .execute_batch(SQL_CREATE_INDEXES)
-    .expect("failed to create osm_pbf_files indexes");
+impl origin {
+  pub fn code(&self) -> u8 {
+    match self {
+      origin::local_path(_) => 0,
+      origin::geofabrik { .. } => 1,
+      origin::url(_) => 2,
+    }
+  }
+
+  pub fn download_url(&self) -> Option<&str> {
+    match self {
+      origin::local_path(_) => None,
+      origin::geofabrik { url, .. } => Some(url),
+      origin::url(url) => Some(url),
+    }
+  }
 }
 
-const SQL_FILL_GEOFABRIK_BY_URL: &str = "
-  UPDATE osm_pbf_files SET
-    geofabrik_id = ?1,
-    geofabrik_name = ?2,
-    geofabrik_parent = ?3
-  WHERE geofabrik_url = ?4
-    AND geofabrik_id IS NULL
+fn file_name_of(path_or_url: &str) -> &str {
+  std::path::Path::new(path_or_url)
+    .file_name()
+    .and_then(|name| name.to_str())
+    .unwrap_or(path_or_url)
+}
+
+const SQL_PROMOTE_URL_TO_GEOFABRIK: &str = "
+  UPDATE OR IGNORE osm_pbf_files SET
+    origin = 1,
+    origin_id = ?1,
+    origin_name = ?2
+  WHERE url = ?3
+    AND origin = 2
 ";
 
-const SQL_UPSERT_GEOFABRIK_BY_ID: &str = "
+const SQL_UPSERT_GEOFABRIK: &str = "
   INSERT INTO osm_pbf_files (
-    geofabrik_id,
-    geofabrik_name,
-    geofabrik_parent,
-    geofabrik_url
+    origin,
+    origin_id,
+    origin_name,
+    url
   ) VALUES (
+    1,
     ?1,
     ?2,
-    ?3,
-    ?4
+    ?3
   )
-  ON CONFLICT(geofabrik_id) DO UPDATE SET
-    geofabrik_name = excluded.geofabrik_name,
-    geofabrik_parent = excluded.geofabrik_parent,
-    geofabrik_url = excluded.geofabrik_url
+  ON CONFLICT(origin, origin_id) DO UPDATE SET
+    origin_name = excluded.origin_name,
+    url = excluded.url
 ";
 
-pub fn upsert_geofabrik_index_item(
-  conn: &Connection,
-  geofabrik_id: &str,
-  name: &str,
-  parent: Option<&str>,
-  url: &str,
-) {
-  let filled = conn
+pub fn upsert_geofabrik_index_item(conn: &Connection, geofabrik_id: &str, name: &str, url: &str) {
+  let promoted = conn
     .execute(
-      SQL_FILL_GEOFABRIK_BY_URL,
-      rusqlite::params![geofabrik_id, name, parent, url],
+      SQL_PROMOTE_URL_TO_GEOFABRIK,
+      rusqlite::params![geofabrik_id, name, url],
     )
-    .expect("failed to fill geofabrik metadata by url");
-  if filled == 0 {
+    .expect("failed to promote url row to geofabrik");
+  if promoted == 0 {
     conn
-      .execute(
-        SQL_UPSERT_GEOFABRIK_BY_ID,
-        rusqlite::params![geofabrik_id, name, parent, url],
-      )
+      .execute(SQL_UPSERT_GEOFABRIK, rusqlite::params![geofabrik_id, name, url])
       .expect("failed to upsert geofabrik index item");
   }
 }
 
 const SQL_LIST_GEOFABRIK_INDEX: &str = "
   SELECT
-    geofabrik_id,
-    geofabrik_name,
-    geofabrik_url
+    origin_id,
+    origin_name,
+    url
   FROM osm_pbf_files
-  WHERE geofabrik_id IS NOT NULL
-  ORDER BY geofabrik_id
+  WHERE origin = 1
+  ORDER BY origin_id
 ";
 
 pub fn list_geofabrik_index(conn: &Connection) -> Vec<(String, String, String)> {
@@ -140,9 +149,10 @@ pub fn list_geofabrik_index(conn: &Connection) -> Vec<(String, String, String)> 
 }
 
 const SQL_GET_GEOFABRIK_URL_BY_ID: &str = "
-  SELECT geofabrik_url
+  SELECT url
   FROM osm_pbf_files
-  WHERE geofabrik_id = ?1
+  WHERE origin = 1
+    AND origin_id = ?1
   LIMIT 1
 ";
 
@@ -157,28 +167,40 @@ pub fn get_geofabrik_url(conn: &Connection, geofabrik_id: &str) -> Option<String
     .flatten()
 }
 
-const SQL_ENSURE_FILE_PATH: &str = "INSERT OR IGNORE INTO osm_pbf_files (file_path) VALUES (?1)";
+const SQL_ENSURE_LOCAL_PATH: &str = "
+  INSERT OR IGNORE INTO osm_pbf_files (
+    origin,
+    origin_name,
+    path
+  ) VALUES (
+    ?1,
+    ?2,
+    ?3
+  )
+";
 
-const SQL_GET_ID_BY_FILE_PATH: &str = "SELECT id FROM osm_pbf_files WHERE file_path = ?1";
+const SQL_GET_ID_BY_PATH: &str = "SELECT id FROM osm_pbf_files WHERE path = ?1";
 
 pub fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
+  let from = origin::local_path(file_path.to_string());
   conn
-    .execute(SQL_ENSURE_FILE_PATH, rusqlite::params![file_path])
+    .execute(
+      SQL_ENSURE_LOCAL_PATH,
+      rusqlite::params![from.code(), file_name_of(file_path), file_path],
+    )
     .expect("failed to ensure osm_pbf_files row");
   conn
-    .query_row(
-      SQL_GET_ID_BY_FILE_PATH,
-      rusqlite::params![file_path],
-      |row| row.get(0),
-    )
+    .query_row(SQL_GET_ID_BY_PATH, rusqlite::params![file_path], |row| {
+      row.get(0)
+    })
     .expect("failed to get id after ensure")
 }
 
 const SQL_GET_FILE_PATH: &str = "
-  SELECT file_path
+  SELECT path
   FROM osm_pbf_files
-  WHERE (geofabrik_id = ?1 OR CAST(id AS TEXT) = ?1)
-    AND file_path IS NOT NULL
+  WHERE (origin_id = ?1 OR CAST(id AS TEXT) = ?1)
+    AND path IS NOT NULL
   LIMIT 1
 ";
 
@@ -203,7 +225,7 @@ const SQL_UPDATE_OSM_HEADER: &str = "
     osm_header_osmosis_replication_timestamp = ?6,
     osm_header_osmosis_replication_sequence_number = ?7,
     osm_header_osmosis_replication_base_url = ?8
-  WHERE file_path = ?9
+  WHERE path = ?9
 ";
 
 #[allow(clippy::too_many_arguments)]
@@ -262,19 +284,32 @@ pub fn update_counts(
     .expect("failed to update osm_pbf_files counts");
 }
 
-const SQL_UPDATE_DOWNLOADED: &str = "
+const SQL_UPDATE_DOWNLOADED_GEOFABRIK: &str = "
   UPDATE osm_pbf_files SET
-    file_path = ?1,
+    path = ?1,
     size_bytes = ?2,
     md5 = ?3,
     downloaded_at = UNIXEPOCH()
-  WHERE geofabrik_url = ?4
+  WHERE origin = 1
+    AND origin_id = ?4
+";
+
+const SQL_UPDATE_DOWNLOADED_URL: &str = "
+  UPDATE osm_pbf_files SET
+    path = ?1,
+    size_bytes = ?2,
+    md5 = ?3,
+    downloaded_at = UNIXEPOCH()
+  WHERE url = ?4
 ";
 
 const SQL_INSERT_DOWNLOADED: &str = "
-  INSERT OR IGNORE INTO osm_pbf_files (
-    geofabrik_url,
-    file_path,
+  INSERT INTO osm_pbf_files (
+    origin,
+    origin_id,
+    origin_name,
+    url,
+    path,
     size_bytes,
     md5,
     downloaded_at
@@ -283,28 +318,41 @@ const SQL_INSERT_DOWNLOADED: &str = "
     ?2,
     ?3,
     ?4,
+    ?5,
+    ?6,
+    ?7,
     UNIXEPOCH()
   )
+  ON CONFLICT(path) DO UPDATE SET
+    origin = excluded.origin,
+    origin_id = excluded.origin_id,
+    origin_name = excluded.origin_name,
+    url = excluded.url,
+    size_bytes = excluded.size_bytes,
+    md5 = excluded.md5,
+    downloaded_at = excluded.downloaded_at
 ";
 
 pub fn update_downloaded(
   conn: &Connection,
-  url: &str,
+  from: &origin,
   file_path: &str,
   size_bytes: u64,
   md5: &str,
 ) {
+  let (update, key, origin_id, url) = match from {
+    origin::geofabrik { id, url } => (SQL_UPDATE_DOWNLOADED_GEOFABRIK, id.as_str(), Some(id.as_str()), url.as_str()),
+    origin::url(url) => (SQL_UPDATE_DOWNLOADED_URL, url.as_str(), None, url.as_str()),
+    origin::local_path(path) => panic!("a local file is never recorded as downloaded: {path}"),
+  };
   let affected = conn
-    .execute(
-      SQL_UPDATE_DOWNLOADED,
-      rusqlite::params![file_path, size_bytes, md5, url],
-    )
+    .execute(update, rusqlite::params![file_path, size_bytes, md5, key])
     .expect("failed to update downloaded");
   if affected == 0 {
     conn
       .execute(
         SQL_INSERT_DOWNLOADED,
-        rusqlite::params![url, file_path, size_bytes, md5],
+        rusqlite::params![from.code(), origin_id, file_name_of(url), url, file_path, size_bytes, md5],
       )
       .expect("failed to insert downloaded");
   }
@@ -349,7 +397,7 @@ const SQL_UPDATE_ADMIN_LEVELS_COUNT: &str = "
       (SELECT total FROM counts_per_file WHERE counts_per_file.file_id = osm_pbf_files.id),
       0
     )
-  WHERE file_path IS NOT NULL
+  WHERE path IS NOT NULL
 ";
 
 pub fn update_admin_levels_count(conn: &Connection) {
@@ -397,7 +445,7 @@ const SQL_UPDATE_HOUSE_NUMBERS_COUNT: &str = "
       (SELECT total FROM counts_per_file WHERE counts_per_file.file_id = osm_pbf_files.id),
       0
     )
-  WHERE file_path IS NOT NULL
+  WHERE path IS NOT NULL
 ";
 
 pub fn update_house_numbers_count(conn: &Connection) {
@@ -405,3 +453,7 @@ pub fn update_house_numbers_count(conn: &Connection) {
     .execute(SQL_UPDATE_HOUSE_NUMBERS_COUNT, [])
     .expect("failed to update osm_pbf_files house_numbers_count");
 }
+
+#[cfg(test)]
+#[path = "repository.test.rs"]
+mod tests;

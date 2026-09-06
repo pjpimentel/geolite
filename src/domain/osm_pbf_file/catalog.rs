@@ -20,8 +20,6 @@ struct geofabrik_properties {
   id: String,
   name: String,
   #[serde(default)]
-  parent: Option<String>,
-  #[serde(default)]
   urls: Option<geofabrik_urls>,
 }
 
@@ -100,7 +98,6 @@ pub(super) fn geofabrik(
       &tx,
       &f.properties.id,
       &f.properties.name,
-      f.properties.parent.as_deref(),
       url,
     );
   }

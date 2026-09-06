@@ -1,5 +1,7 @@
 use rusqlite::Connection;
 
+use crate::domain::table;
+
 #[derive(Clone, Copy)]
 pub enum chunk_type {
   header = 0,
@@ -44,30 +46,16 @@ const SQL_CREATE: &str = "
   );
 ";
 
-const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_pbf_blob_chunks;";
-
 const SQL_CREATE_INDEXES: &str = "
-  CREATE INDEX IF NOT EXISTS osm_data.blob_chunks_search_by_file_and_type
+  CREATE INDEX IF NOT EXISTS osm_data.osm_pbf_blob_chunks_search_by_file_and_type
     ON osm_pbf_blob_chunks(file_id, chunk_type);
 ";
 
-pub(crate) fn create_table(conn: &Connection) {
-  conn
-    .execute_batch(SQL_CREATE)
-    .expect("failed to create osm_pbf_blob_chunks");
-}
+pub struct osm_pbf_blob_chunks;
 
-#[allow(dead_code)]
-pub(crate) fn drop_table(conn: &Connection) {
-  conn
-    .execute_batch(SQL_DROP)
-    .expect("failed to drop osm_pbf_blob_chunks");
-}
-
-pub fn create_indexes(conn: &Connection) {
-  conn
-    .execute_batch(SQL_CREATE_INDEXES)
-    .expect("failed to create blob_chunks indexes");
+impl table for osm_pbf_blob_chunks {
+  const CREATE: &'static str = SQL_CREATE;
+  const INDEXES: &'static str = SQL_CREATE_INDEXES;
 }
 
 const SQL_COUNT_BY_FILE_ID: &str = "

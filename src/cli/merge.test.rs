@@ -81,6 +81,18 @@ fn _00_open_write_main_stamps_schema_version() {
   cleanup(&path);
 }
 
+#[test]
+#[should_panic(expected = "incompatible schema version")]
+fn _10_open_write_main_refuses_a_database_stamped_with_another_version() {
+  let path = temp_path("foreign_version");
+  let conn = Connection::open(&path).expect("failed to create sqlite");
+  conn
+    .pragma_update(None, "user_version", 1)
+    .expect("failed to stamp user_version");
+  drop(conn);
+  open_write_main(&path);
+}
+
 // full pipeline (merge data -> rebuild hierarchy/rtree/tantivy -> optimize). ignored by default
 // because it builds a tantivy index on disk; run with `cargo test -- --ignored end_to_end`.
 #[test]

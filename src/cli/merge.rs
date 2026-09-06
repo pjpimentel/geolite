@@ -33,8 +33,8 @@ pub fn command_handler_merge(
   // the base may be an existing build (merged into, in-place) or a path that does not exist yet
   // (created fresh and populated entirely from the sources). only an existing base is
   // version-checked — a fresh one is created at the current SCHEMA_VERSION by open_write_main.
-  // validate BEFORE mutating the base, since open_write_main would otherwise re-stamp its
-  // user_version and mask a mismatch.
+  // validate BEFORE opening the base for writing: open_write_main would refuse a foreign version
+  // by panicking, and merge wants the exit code and message of require_compatible_version.
   if std::path::Path::new(base).exists() {
     require_compatible_version("base", base);
   } else {

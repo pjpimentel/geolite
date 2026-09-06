@@ -835,11 +835,11 @@ fn _02_03_filter_tags_drops_out_of_range_string_indices() {
 fn _02_04_decode_blob_uses_an_empty_string_table_when_absent() {
   use prost::Message;
 
-  let block = pbf_fixtures::primitive_block_wire {
+  let block = crate::domain::osm_pbf_file::message::primitive_block_msg {
     stringtable: None,
-    primitivegroup: vec![pbf_fixtures::primitive_group_wire {
+    primitivegroup: vec![crate::domain::osm_pbf_file::message::primitive_group_msg {
       nodes: Vec::new(),
-      dense: Some(pbf_fixtures::dense_nodes_wire {
+      dense: Some(crate::domain::osm_pbf_file::message::dense_nodes_msg {
         id: vec![1],
         denseinfo: None,
         lat: vec![387_000_000],
@@ -866,14 +866,14 @@ fn _02_04_decode_blob_uses_an_empty_string_table_when_absent() {
 fn _02_05_decode_blob_tolerates_invalid_utf8_in_string_table() {
   use prost::Message;
 
-  let block = pbf_fixtures::primitive_block_wire {
-    stringtable: Some(pbf_fixtures::string_table_wire {
+  let block = crate::domain::osm_pbf_file::message::primitive_block_msg {
+    stringtable: Some(crate::domain::osm_pbf_file::message::string_table_msg {
       // indice 1 e uma sequencia utf-8 invalida
       s: vec![Vec::new(), vec![0xff, 0xfe], b"Alfa".to_vec()],
     }),
-    primitivegroup: vec![pbf_fixtures::primitive_group_wire {
+    primitivegroup: vec![crate::domain::osm_pbf_file::message::primitive_group_msg {
       nodes: Vec::new(),
-      dense: Some(pbf_fixtures::dense_nodes_wire {
+      dense: Some(crate::domain::osm_pbf_file::message::dense_nodes_msg {
         id: vec![1],
         denseinfo: None,
         lat: vec![387_000_000],

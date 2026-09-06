@@ -1,7 +1,7 @@
 use prost::Message;
 
 use crate::domain::osm_pbf_file::message::blob_msg;
-use crate::extract::pbf_fixtures::{self, blob_compression, make_blob};
+use crate::extract::pbf_fixtures::{blob_compression, make_blob};
 
 use super::decompress;
 
@@ -38,7 +38,7 @@ fn _02_prefers_raw_over_zlib_when_both_are_present() {
   encoder.write_all(b"do zlib").expect("failed to deflate");
 
   let blob = decode(
-    &pbf_fixtures::blob_wire {
+    &blob_msg {
       raw: Some(b"do raw".to_vec()),
       raw_size: Some(6),
       zlib_data: Some(encoder.finish().expect("failed to finish deflate")),

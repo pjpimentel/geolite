@@ -8,7 +8,8 @@ pub mod http_client;
 pub mod message;
 pub mod repository;
 
-pub use blob_index::{chunk_type, osm_pbf_blob_chunk};
+pub use blob_index::{chunk_type, osm_pbf_blob_chunk, osm_pbf_blob_chunks};
+pub use repository::{origin, osm_pbf_files};
 pub use catalog::{listing, source};
 
 pub struct osm_pbf_file<'a> {

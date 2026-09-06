@@ -7,6 +7,7 @@
 1. MODIFIED `Dockerfile` to build from `cargo install` instead of the local source tree.
 1. REMOVED `osm_pbf_file` mod.
 1. ADDED `osm_pbf_file` domain.
+1. MODIFIED `osm_pbf_files` structure (not backward compatible)
 
 ## **2026-08-30** - 0.0.5
 

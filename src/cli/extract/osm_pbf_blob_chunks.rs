@@ -1,3 +1,4 @@
+use crate::domain::table;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::time::Instant;
@@ -82,7 +83,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
     println!("\x1b[1;32mextracted\x1b[0m {count} chunks from {fname} in {elapsed:.1}s");
   }
 
-  crate::domain::osm_pbf_file::blob_index::create_indexes(&conn);
+  crate::domain::osm_pbf_file::osm_pbf_blob_chunks::create_indexes(&conn);
 }
 
 #[cfg(test)]
