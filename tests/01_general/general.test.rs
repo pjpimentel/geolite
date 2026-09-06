@@ -10,9 +10,9 @@ pub static SCENARIO: scenario = scenario {
   preset: "brazil",
 };
 
-static WORLD: world_cell = world_cell::new();
+pub(crate) static WORLD: world_cell = world_cell::new();
 
-fn world() -> &'static world {
+pub(crate) fn world() -> &'static world {
   WORLD.get(&SCENARIO)
 }
 

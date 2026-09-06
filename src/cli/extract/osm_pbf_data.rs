@@ -1,3 +1,4 @@
+use super::resolved_input;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::time::Instant;
@@ -68,50 +69,19 @@ pub fn command_handler_extract_osm_pbf_data(
   let conn = crate::database::open_write(sqlite_path);
 
   for (i, input) in inputs.iter().enumerate() {
-    if i > 0 {
-      println!();
-    }
-
-    let is_path = std::path::Path::new(input.as_str()).exists()
-      || std::path::Path::new(data_path)
-        .join(input.as_str())
-        .exists();
-
-    if !is_path {
-      print!("\x1b[1;32mresolving\x1b[0m '{input}'...");
-      let _ = std::io::stdout().flush();
-    }
-
-    let resolved = crate::resolve_osm_pbf_path(data_path, sqlite_path, input);
-
-    let osm_pbf_file_path = match resolved {
-      Some(p) => {
-        if !is_path {
-          println!(" done");
-        }
-        p
-      }
-      None => {
-        if !is_path {
-          println!();
-        }
-        eprintln!("\x1b[1;31merror\x1b[0m: could not resolve '{input}'");
-        continue;
-      }
+    let Some(resolved_input {
+      path: osm_pbf_file_path,
+      name: fname,
+      id: file_id,
+    }) = super::resolve_input(&conn, data_path, sqlite_path, i, input)
+    else {
+      continue;
     };
-
-    let fname = std::path::Path::new(&osm_pbf_file_path)
-      .file_name()
-      .unwrap_or_default()
-      .to_string_lossy()
-      .into_owned();
-
     println!("\x1b[1;32mfile\x1b[0m {osm_pbf_file_path}");
 
-    let file_id = crate::database::osm_pbf_files::ensure_by_file_path(&conn, &osm_pbf_file_path);
     print!("\x1b[1;32mloading\x1b[0m blob-chunks index...");
     let _ = std::io::stdout().flush();
-    let chunk_count = crate::database::osm_pbf_blob_chunks::count_by_file_id(&conn, file_id);
+    let chunk_count = crate::domain::osm_pbf_file::blob_index::count_by_file_id(&conn, file_id);
 
     if chunk_count == 0 {
       println!();
@@ -123,7 +93,7 @@ pub fn command_handler_extract_osm_pbf_data(
 
     println!(" done ({chunk_count} chunks)");
 
-    let chunks = crate::database::osm_pbf_blob_chunks::get_data_chunks(&conn, file_id);
+    let chunks = crate::domain::osm_pbf_file::blob_index::get_data_chunks(&conn, file_id);
 
     let decoder_threads = threads.saturating_sub(1).max(1);
     let multi = MultiProgress::with_draw_target(crate::cli::progress_draw_target());
@@ -211,7 +181,7 @@ pub fn command_handler_extract_osm_pbf_data(
     decoder_bar.finish();
     writer_bar.finish();
 
-    crate::database::osm_pbf_files::update_counts(
+    crate::domain::osm_pbf_file::repository::update_counts(
       &conn,
       file_id,
       node_count as u64,

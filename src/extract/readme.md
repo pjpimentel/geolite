@@ -2,17 +2,8 @@
 
 parse a `.osm.pbf` file and populate the database layer by layer
 
-## blob_chunks
-
-1. scans the `.osm.pbf` file sequentially, reading 4-byte length-prefixed blob headers
-2. records each blob's byte range (`first_byte`, `chunk_size`, `data_first_byte`, `data_size`) and type (header / data)
-3. bulk-inserts all chunks into `osm_pbf_blob_chunks`
-
-## header
-
-1. reads the header blob byte range from `osm_pbf_blob_chunks`
-2. decodes the OSM header (bbox, required/optional features, writingprogram, osmosis replication metadata)
-3. updates the corresponding row in `osm_pbf_files`
+the two stages that come before these — scanning the file into byte ranges and reading its header —
+belong to the file itself and live in [`domain/osm_pbf_file`](../domain/readme.md#osm_pbf_file).
 
 ## osm_data
 

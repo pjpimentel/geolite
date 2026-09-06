@@ -9,3 +9,6 @@ pub mod query;
 
 #[path = "ask.test.rs"]
 pub mod ask;
+
+#[path = "stub.test.rs"]
+pub mod stub;

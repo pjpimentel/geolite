@@ -1,10 +1,19 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.6
+## **2026-XX-XX** - 0.0.7
+
+1. REMOVED `extract` mod.
+1. MODIFIED `osm_pbf_file` domain.
+
+## **2026-09-06** - 0.0.6
 
 1. REMOVED unit tests redundant with e2e tests.
 1. MODIFIED release pipeline, splitting `try_publish` into `crates_publish` and `docker_publish`.
 1. MODIFIED `Dockerfile` to build from `cargo install` instead of the local source tree.
+1. REMOVED `osm_pbf_file` mod.
+1. ADDED `osm_pbf_file` domain.
+1. MODIFIED `osm_pbf_files` structure (not backward compatible)
+1. MODIFIED `build` to accept a direct url as source; it was refused as a missing local file.
 
 ## **2026-08-30** - 0.0.5
 

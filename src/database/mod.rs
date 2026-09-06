@@ -1,5 +1,7 @@
 use rusqlite::{Connection, OpenFlags};
 
+use crate::domain::table;
+
 #[macro_export]
 macro_rules! impl_table_ops {
   ($vis:vis, $create:expr, $drop:expr) => {
@@ -15,16 +17,15 @@ macro_rules! impl_table_ops {
 }
 
 // bumped whenever the on-disk schema changes in a way that makes builds incompatible;
-// stamped into every writable database via PRAGMA user_version and checked by `geolite merge`.
-pub const SCHEMA_VERSION: u32 = 1;
+// stamped into every writable database via PRAGMA user_version. open_write_main refuses a
+// database stamped with another version, and `geolite merge` refuses to combine one.
+pub const SCHEMA_VERSION: u32 = 2;
 
 pub mod admin_levels;
 pub mod admin_levels_hierarchy;
 pub mod house_numbers;
 pub mod merge;
 pub mod osm_nodes;
-pub mod osm_pbf_blob_chunks;
-pub mod osm_pbf_files;
 pub mod osm_relations;
 pub mod osm_ways;
 
@@ -99,6 +100,15 @@ pub fn open_write_main(path: &str) -> Connection {
     std::fs::create_dir_all(parent).expect("failed to create sqlite parent dir");
   }
   let conn = Connection::open(path).expect("failed to open sqlite");
+  let stamped: u32 = conn
+    .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+    .map(|v| v as u32)
+    .expect("failed to read user_version");
+  if stamped != 0 && stamped != SCHEMA_VERSION {
+    panic!(
+      "incompatible schema version on {path}: found {stamped}, expected {SCHEMA_VERSION} \u{2014} rebuild required"
+    );
+  }
   conn
     .execute_batch(
       "PRAGMA journal_mode=WAL;
@@ -110,7 +120,7 @@ pub fn open_write_main(path: &str) -> Connection {
   conn
     .pragma_update(None, "user_version", SCHEMA_VERSION)
     .expect("failed to set user_version");
-  osm_pbf_files::create_table(&conn);
+  crate::domain::osm_pbf_file::osm_pbf_files::create_table(&conn);
   admin_levels::create_table(&conn);
   admin_levels_hierarchy::create_table(&conn);
   admin_levels::create_rtree(&conn);
@@ -131,7 +141,7 @@ pub fn open_write(path: &str) -> Connection {
        PRAGMA osm_data.cache_size=-32768;",
     )
     .expect("failed to set osm_data pragmas");
-  osm_pbf_blob_chunks::create_table(&conn);
+  crate::domain::osm_pbf_file::osm_pbf_blob_chunks::create_table(&conn);
   osm_nodes::create_table(&conn);
   osm_ways::create_table(&conn);
   osm_relations::create_table(&conn);

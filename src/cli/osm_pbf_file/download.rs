@@ -1,4 +1,6 @@
-use crate::osm_pbf_file::download::{download_event, md5_status, run};
+use crate::domain::osm_pbf_file::download::{download_event, md5_status, run};
+use crate::domain::osm_pbf_file::origin;
+use crate::domain::table;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::sync::{Arc, OnceLock};
@@ -9,7 +11,7 @@ pub fn command_handler_osm_pbf_file_download(
   threads: &u8,
   sqlite_path: &str,
   inputs: &[String],
-  ls_endpoint: &str,
+  ls_endpoint: Option<&str>,
   abort_on_any_error: bool,
 ) {
   for (i, input) in inputs.iter().enumerate() {
@@ -18,15 +20,23 @@ pub fn command_handler_osm_pbf_file_download(
     }
 
     let is_url = input.starts_with("http://") || input.starts_with("https://");
-    let url = if is_url {
-      input.clone()
+    let from = if is_url {
+      origin::url(input.clone())
     } else {
       print!("\x1b[1;32mresolving\x1b[0m url for '{input}'...");
       let _ = std::io::stdout().flush();
-      match crate::osm_pbf_file::ls::resolve_geofabrik_url(sqlite_path, input, ls_endpoint) {
+      let resolved = {
+        let conn = crate::database::open_write(sqlite_path);
+        crate::domain::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path)
+          .resolve_geofabrik_url(input, ls_endpoint)
+      };
+      match resolved {
         Some(u) => {
           println!(" done");
-          u
+          origin::geofabrik {
+            id: input.clone(),
+            url: u,
+          }
         }
         None => {
           eprintln!(
@@ -40,6 +50,10 @@ pub fn command_handler_osm_pbf_file_download(
       }
     };
 
+    let url = from
+      .download_url()
+      .expect("a download origin has a url")
+      .to_string();
     println!("\x1b[1;32mfetching\x1b[0m {url}");
 
     let pb: Arc<OnceLock<ProgressBar>> = Arc::new(OnceLock::new());
@@ -126,10 +140,10 @@ pub fn command_handler_osm_pbf_file_download(
       eprintln!("\x1b[1;33mwarning\x1b[0m: md5 mismatch: expected {expected} got {actual}");
     }
     let conn = crate::database::open_write(sqlite_path);
-    crate::database::osm_pbf_files::create_indexes(&conn);
-    crate::database::osm_pbf_files::update_downloaded(
+    crate::domain::osm_pbf_file::osm_pbf_files::create_indexes(&conn);
+    crate::domain::osm_pbf_file::repository::update_downloaded(
       &conn,
-      &url,
+      &from,
       output.path.to_str().unwrap_or(""),
       output.total_bytes,
       &output.actual_md5,

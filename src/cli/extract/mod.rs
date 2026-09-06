@@ -4,7 +4,10 @@ pub mod osm_pbf_blob_chunks;
 pub mod osm_pbf_data;
 pub mod osm_pbf_header;
 
+use std::io::Write;
+
 use clap::Subcommand;
+use rusqlite::Connection;
 
 #[derive(Subcommand)]
 pub enum extract_commands {
@@ -96,6 +99,51 @@ fn parse_name_priority(raw: &str) -> Result<Vec<&str>, String> {
     }
   }
   Ok(tags)
+}
+
+pub(super) struct resolved_input {
+  pub path: String,
+  pub name: String,
+  pub id: u32,
+}
+
+pub(super) fn resolve_input(
+  conn: &Connection,
+  data_path: &str,
+  sqlite_path: &str,
+  ordinal: usize,
+  input: &str,
+) -> Option<resolved_input> {
+  if ordinal > 0 {
+    println!();
+  }
+
+  let is_path =
+    std::path::Path::new(input).exists() || std::path::Path::new(data_path).join(input).exists();
+
+  if !is_path {
+    print!("\x1b[1;32mresolving\x1b[0m '{input}'...");
+    let _ = std::io::stdout().flush();
+  }
+
+  let Some(path) = crate::resolve_osm_pbf_path(data_path, sqlite_path, input) else {
+    if !is_path {
+      println!();
+    }
+    eprintln!("\x1b[1;31merror\x1b[0m: could not resolve '{input}'");
+    return None;
+  };
+  if !is_path {
+    println!(" done");
+  }
+
+  let name = std::path::Path::new(&path)
+    .file_name()
+    .unwrap_or_default()
+    .to_string_lossy()
+    .into_owned();
+  let id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(conn, &path);
+  Some(resolved_input { path, name, id })
 }
 
 pub fn command_handler_extract(

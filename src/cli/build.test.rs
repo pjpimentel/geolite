@@ -4,7 +4,7 @@ use crate::cli::tests::street_row;
 use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
 use crate::database::{open_write, osm_data_path};
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
-use crate::osm_pbf_file::http_stubs::start_json_server;
+use crate::domain::osm_pbf_file::http_stubs::start_json_server;
 use crate::presets::{BRAZIL, DEFAULT};
 use crate::query;
 use rusqlite::Connection;
@@ -226,7 +226,7 @@ fn _03_full_pipeline_from_local_pbf_fixture_runs_every_stage() {
     &work.sqlite_path,
     &work.index_path,
     &pbf_path,
-    &ls_endpoint,
+    Some(&ls_endpoint),
     false,
     &DEFAULT,
   );
@@ -256,7 +256,7 @@ fn _90_build_source_file_not_found() {
     &work.sqlite_path,
     &work.index_path,
     "./nope/missing.osm.pbf",
-    "http://127.0.0.1:1/index.json",
+    Some("http://127.0.0.1:1/index.json"),
     false,
     &DEFAULT,
   );
@@ -280,7 +280,7 @@ fn _90_build_unresolvable_source() {
     &work.sqlite_path,
     &work.index_path,
     "unknown-id",
-    &ls_endpoint,
+    Some(&ls_endpoint),
     false,
     &DEFAULT,
   );

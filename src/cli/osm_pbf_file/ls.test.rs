@@ -1,7 +1,7 @@
 use super::command_handler_osm_pbf_file_ls;
 use crate::cli::osm_pbf_file::osm_pbf_file_ls_source;
 use crate::extract::pbf_fixtures::tempdir_guard;
-use crate::osm_pbf_file::http_stubs::start_json_server;
+use crate::domain::osm_pbf_file::http_stubs::start_json_server;
 
 const TWO_FEATURES: &str = r#"{"features":[
   {"properties":{"id":"alpha","name":"Alpha","urls":{"pbf":"https://example.invalid/alpha.osm.pbf"}}},
@@ -17,7 +17,7 @@ fn _00_00_prints_the_geofabrik_table_from_the_stub_index() {
     &guard.path.to_string_lossy(),
     &db,
     &osm_pbf_file_ls_source::geofabrik,
-    &endpoint,
+    Some(&endpoint),
     &false,
   );
 }
@@ -31,7 +31,7 @@ fn _00_01_prints_the_header_only_for_an_empty_index() {
     &guard.path.to_string_lossy(),
     &db,
     &osm_pbf_file_ls_source::geofabrik,
-    &endpoint,
+    Some(&endpoint),
     &true,
   );
 }
@@ -46,9 +46,10 @@ fn _01_00_lists_local_pbf_files() {
     &guard.path.to_string_lossy(),
     &db,
     &osm_pbf_file_ls_source::local,
-    "http://127.0.0.1:1/unused.json",
+    Some("http://127.0.0.1:1/unused.json"),
     &false,
   );
+  assert!(!guard.path.join("db.sqlite3").exists());
 }
 
 #[test]
@@ -59,7 +60,8 @@ fn _01_01_prints_a_message_when_there_are_no_local_pbf_files() {
     &guard.path.to_string_lossy(),
     &db,
     &osm_pbf_file_ls_source::local,
-    "http://127.0.0.1:1/unused.json",
+    Some("http://127.0.0.1:1/unused.json"),
     &false,
   );
+  assert!(!guard.path.join("db.sqlite3").exists());
 }

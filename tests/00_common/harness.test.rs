@@ -218,9 +218,21 @@ pub struct output {
 
 impl world {
   pub fn geolite(&self, args: &[&str]) -> output {
+    self.geolite_in(&self.data_path, args)
+  }
+
+  pub fn scratch(&self, name: &str) -> PathBuf {
+    let dir = self.root.join("scratch").join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir)
+      .unwrap_or_else(|e| panic!("failed to create {}: {e}", dir.display()));
+    dir
+  }
+
+  pub fn geolite_in(&self, data_path: &Path, args: &[&str]) -> output {
     let out = Command::new(BIN)
       .arg("--data-path")
-      .arg(&self.data_path)
+      .arg(data_path)
       .args(args)
       .output()
       .unwrap_or_else(|e| panic!("failed to spawn {BIN}: {e}"));
@@ -251,12 +263,16 @@ impl world {
   }
 
   pub fn open_sqlite(&self) -> rusqlite::Connection {
-    rusqlite::Connection::open_with_flags(
-      &self.sqlite_path,
-      rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .unwrap_or_else(|e| panic!("failed to open {}: {e}", self.sqlite_path.display()))
+    open_sqlite_at(&self.sqlite_path)
   }
+}
+
+pub fn open_sqlite_at(path: &Path) -> rusqlite::Connection {
+  rusqlite::Connection::open_with_flags(
+    path,
+    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+  )
+  .unwrap_or_else(|e| panic!("failed to open {}: {e}", path.display()))
 }
 
 pub struct response {

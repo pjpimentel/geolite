@@ -6,152 +6,14 @@ use std::{
   sync::{Arc, Condvar, Mutex},
 };
 
+use crate::domain::osm_pbf_file::message::{
+  blob_msg, dense_nodes_msg, node_msg, primitive_block_msg, relation_msg, string_table_msg, way_msg,
+};
+
 pub mod jsonb_encode;
 pub mod osm_nodes;
 pub mod osm_relations;
 pub mod osm_ways;
-
-#[derive(prost::Message)]
-pub(super) struct blob_msg {
-  #[prost(bytes = "vec", optional, tag = "1")]
-  raw: Option<Vec<u8>>,
-  #[prost(int32, optional, tag = "2")]
-  raw_size: Option<i32>,
-  #[prost(bytes = "vec", optional, tag = "3")]
-  zlib_data: Option<Vec<u8>>,
-}
-
-#[derive(prost::Message)]
-struct string_table_msg {
-  #[prost(bytes = "vec", repeated, tag = "1")]
-  s: Vec<Vec<u8>>,
-}
-
-#[derive(prost::Message)]
-struct primitive_block_msg {
-  #[prost(message, optional, tag = "1")]
-  stringtable: Option<string_table_msg>,
-  #[prost(message, repeated, tag = "2")]
-  primitivegroup: Vec<primitive_group_msg>,
-  #[prost(int32, optional, tag = "17")]
-  granularity: Option<i32>,
-  #[prost(int64, optional, tag = "19")]
-  lat_offset: Option<i64>,
-  #[prost(int64, optional, tag = "20")]
-  lon_offset: Option<i64>,
-  #[prost(int32, optional, tag = "18")]
-  date_granularity: Option<i32>,
-}
-
-#[derive(prost::Message)]
-struct primitive_group_msg {
-  #[prost(message, repeated, tag = "1")]
-  nodes: Vec<node_msg>,
-  #[prost(message, optional, tag = "2")]
-  dense: Option<dense_nodes_msg>,
-  #[prost(message, repeated, tag = "3")]
-  ways: Vec<way_msg>,
-  #[prost(message, repeated, tag = "4")]
-  relations: Vec<relation_msg>,
-}
-
-#[derive(prost::Message)]
-struct info_msg {
-  #[prost(int32, optional, tag = "1", default = "-1")]
-  version: Option<i32>,
-  #[prost(int64, optional, tag = "2")]
-  timestamp: Option<i64>,
-  #[prost(int64, optional, tag = "3")]
-  changeset: Option<i64>,
-  #[prost(int32, optional, tag = "4")]
-  uid: Option<i32>,
-  #[prost(uint32, optional, tag = "5")]
-  user_sid: Option<u32>,
-  #[prost(bool, optional, tag = "6")]
-  visible: Option<bool>,
-}
-
-#[derive(prost::Message)]
-struct dense_info_msg {
-  #[prost(int32, repeated, tag = "1")]
-  version: Vec<i32>,
-  #[prost(sint64, repeated, tag = "2")]
-  timestamp: Vec<i64>,
-  #[prost(sint64, repeated, tag = "3")]
-  changeset: Vec<i64>,
-  #[prost(sint32, repeated, tag = "4")]
-  uid: Vec<i32>,
-  #[prost(sint32, repeated, tag = "5")]
-  user_sid: Vec<i32>,
-  #[prost(bool, repeated, tag = "6")]
-  visible: Vec<bool>,
-}
-
-#[derive(prost::Message)]
-pub(super) struct node_msg {
-  #[prost(sint64, tag = "1")]
-  id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  info: Option<info_msg>,
-  #[prost(sint64, tag = "8")]
-  lat: i64,
-  #[prost(sint64, tag = "9")]
-  lon: i64,
-}
-
-#[derive(prost::Message)]
-pub(super) struct dense_nodes_msg {
-  #[prost(sint64, repeated, tag = "1")]
-  id: Vec<i64>,
-  #[prost(message, optional, tag = "5")]
-  denseinfo: Option<dense_info_msg>,
-  #[prost(sint64, repeated, tag = "8")]
-  lat: Vec<i64>,
-  #[prost(sint64, repeated, tag = "9")]
-  lon: Vec<i64>,
-  #[prost(int32, repeated, tag = "10")]
-  keys_vals: Vec<i32>,
-}
-
-#[derive(prost::Message)]
-pub(super) struct way_msg {
-  #[prost(int64, tag = "1")]
-  id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  info: Option<info_msg>,
-  #[prost(sint64, repeated, tag = "8")]
-  refs: Vec<i64>,
-  #[prost(sint64, repeated, tag = "9")]
-  lat: Vec<i64>,
-  #[prost(sint64, repeated, tag = "10")]
-  lon: Vec<i64>,
-}
-
-#[derive(prost::Message)]
-pub(super) struct relation_msg {
-  #[prost(int64, tag = "1")]
-  id: i64,
-  #[prost(uint32, repeated, tag = "2")]
-  keys: Vec<u32>,
-  #[prost(uint32, repeated, tag = "3")]
-  vals: Vec<u32>,
-  #[prost(message, optional, tag = "4")]
-  info: Option<info_msg>,
-  #[prost(int32, repeated, tag = "8")]
-  roles_sid: Vec<i32>,
-  #[prost(sint64, repeated, tag = "9")]
-  memids: Vec<i64>,
-  #[prost(int32, repeated, tag = "10")]
-  types: Vec<i32>,
-}
 
 pub struct data_opts {
   pub include_nodes: bool,
@@ -190,7 +52,7 @@ impl buffer_data {
 }
 
 struct raw_blob {
-  chunk: crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk,
+  chunk: crate::domain::osm_pbf_file::osm_pbf_blob_chunk,
   data: Vec<u8>,
 }
 
@@ -264,7 +126,7 @@ pub struct progress {
 
 pub fn run(
   pbf: &str,
-  chunks: Vec<crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk>,
+  chunks: Vec<crate::domain::osm_pbf_file::osm_pbf_blob_chunk>,
   write_conn: rusqlite::Connection,
   opts: data_opts,
   threads: &u8,
@@ -406,7 +268,7 @@ pub fn run(
 /////////////////////////////////////////////////////////////////////////////////
 fn read_blob_bytes(
   file: &mut fs::File,
-  chunk: &crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk,
+  chunk: &crate::domain::osm_pbf_file::osm_pbf_blob_chunk,
 ) -> Vec<u8> {
   use io::Seek;
   file
@@ -429,7 +291,7 @@ fn decode_raw_blob(
   let mut relations = Vec::new();
 
   match raw.chunk.chunk_type {
-    crate::database::osm_pbf_blob_chunks::chunk_type::data => {
+    crate::domain::osm_pbf_file::chunk_type::data => {
       let output = decode_blob(&raw.data, opts);
       for n in output.nodes {
         let mut payload = Vec::with_capacity(128);
@@ -459,7 +321,7 @@ fn decode_raw_blob(
         });
       }
     }
-    crate::database::osm_pbf_blob_chunks::chunk_type::header => {}
+    crate::domain::osm_pbf_file::chunk_type::header => {}
   }
 
   decoded_blob {
@@ -477,7 +339,7 @@ fn decode_raw_blob(
 
 fn decode_blob(blob_data: &[u8], opts: &data_opts) -> decoded_blob_output {
   let blob = blob_msg::decode(blob_data).expect("failed to decode blob");
-  let raw = super::decompress_blob(&blob);
+  let raw = crate::domain::osm_pbf_file::compression::decompress(&blob);
   let block =
     primitive_block_msg::decode(raw.as_slice()).expect("failed to decode primitive block");
 
@@ -572,7 +434,7 @@ fn filter_tags<'a>(
 /////////////////////////////////////////////////////////////////////////////////
 fn reader_thread(
   pbf: String,
-  chunks: Vec<crate::database::osm_pbf_blob_chunks::osm_pbf_blob_chunk>,
+  chunks: Vec<crate::domain::osm_pbf_file::osm_pbf_blob_chunk>,
   queue: Arc<raw_queue>,
   queue_cap: usize,
 ) -> std::thread::JoinHandle<()> {

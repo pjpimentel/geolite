@@ -170,7 +170,7 @@ fn _02_02_osm_pbf_file_ls_parses_sources_endpoint_and_recreate_cache() {
   let args = parse(&["geolite", "osm-pbf-file", "ls"]);
   match args.command {
     commands::osm_pbf_file { command, ls_endpoint } => {
-      assert_eq!(ls_endpoint, DEFAULT_GEOFABRIK_ENDPOINT);
+      assert!(ls_endpoint.is_none());
       match command {
         osm_pbf_file_commands::ls { source, recreate_cache } => {
           assert!(source == osm_pbf_file_ls_source::geofabrik);
@@ -193,7 +193,7 @@ fn _02_02_osm_pbf_file_ls_parses_sources_endpoint_and_recreate_cache() {
   ]);
   match args.command {
     commands::osm_pbf_file { command, ls_endpoint } => {
-      assert_eq!(ls_endpoint, "http://127.0.0.1:1/index.json");
+      assert_eq!(ls_endpoint.as_deref(), Some("http://127.0.0.1:1/index.json"));
       match command {
         osm_pbf_file_commands::ls { source, recreate_cache } => {
           assert!(source == osm_pbf_file_ls_source::local);

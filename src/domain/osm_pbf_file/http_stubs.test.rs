@@ -1,6 +1,3 @@
-// http stubs shared by every test that talks to a local server: a json endpoint (with optional
-// request recording) and a range-aware file server mirroring geofabrik's download behavior.
-// single home for these helpers — duplicating them per test file trips sonar's duplication gate.
 use std::{
   io::{Read, Write},
   net::{TcpListener, TcpStream},
@@ -9,9 +6,7 @@ use std::{
 
 pub(crate) enum md5_reply {
   not_found,
-  // 200 with "{hash}  file.osm.pbf\n"
   hash(String),
-  // 200 with verbatim body bytes
   raw(Vec<u8>),
 }
 
@@ -19,8 +14,6 @@ pub(crate) fn start_json_server(body: String) -> String {
   start_recording_json_server(body).0
 }
 
-// serves the json index and records the raw text of every request received, so
-// scenarios can assert on request count and on request headers.
 pub(crate) fn start_recording_json_server(body: String) -> (String, Arc<Mutex<Vec<String>>>) {
   let listener = TcpListener::bind("127.0.0.1:0").unwrap();
   let port = listener.local_addr().unwrap().port();
@@ -41,7 +34,6 @@ pub(crate) fn start_recording_json_server(body: String) -> (String, Arc<Mutex<Ve
 fn serve_json(mut stream: TcpStream, body: &str, requests: &Mutex<Vec<String>>) {
   let mut buf = [0u8; 4096];
   let n = stream.read(&mut buf).unwrap_or(0);
-  // records before responding, so a returned call always sees its own request.
   requests
     .lock()
     .unwrap()
