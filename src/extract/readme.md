@@ -2,15 +2,9 @@
 
 parse a `.osm.pbf` file and populate the database layer by layer
 
-the two stages that come before these — scanning the file into byte ranges and reading its header —
-belong to the file itself and live in [`domain/osm_pbf_file`](../domain/readme.md#osm_pbf_file).
-
-## osm_data
-
-1. loads all data blob byte ranges from `osm_pbf_blob_chunks`
-2. decompresses each blob (raw or zlib) in parallel threads via a bounded queue
-3. decodes protobuf primitive blocks → nodes (dense), ways, relations
-4. bulk-inserts into `osm_nodes`, `osm_ways`, `osm_relations`
+the three stages that come before these — scanning the file into byte ranges, reading its header
+and decoding its nodes, ways and relations — belong to the file itself and live in
+[`domain/osm_pbf_file`](../domain/readme.md#osm_pbf_file).
 
 ## admin_levels
 

@@ -10,7 +10,7 @@ fn setup_db() -> Connection {
 }
 
 fn make_row(id: u64, admin_level: &str, name: Option<&str>) -> osm_relation_row {
-  use crate::extract::osm_data::osm_relations::osm_relation;
+  use crate::domain::osm_relation::osm_relation;
   let mut tags = std::collections::HashMap::new();
   tags.insert("admin_level".to_string(), admin_level.to_string());
   if let Some(n) = name {
@@ -22,7 +22,7 @@ fn make_row(id: u64, admin_level: &str, name: Option<&str>) -> osm_relation_row 
     members: vec![],
   };
   let mut payload = Vec::new();
-  crate::extract::osm_data::jsonb_encode::encoder::new()
+  crate::database::jsonb::encoder::new()
     .encode_osm_relation(&mut payload, &relation);
   osm_relation_row {
     id,

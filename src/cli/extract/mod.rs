@@ -28,13 +28,13 @@ pub enum extract_commands {
     #[arg(num_args(1..))]
     inputs: Vec<String>,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_relations: bool,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_ways: bool,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_nodes: bool,
 
     #[arg(long, default_value_t = true)]
@@ -78,9 +78,6 @@ pub enum extract_commands {
   },
 }
 
-// valid tag chars: ascii letters, digits, `:`, `-`, `_`. covers `name`,
-// `name:en`, `name:pt-BR`, `int_name`, etc. rejects whitespace and quotes
-// which would break the dynamic SQL JSON path.
 fn parse_name_priority(raw: &str) -> Result<Vec<&str>, String> {
   let tags: Vec<&str> = raw
     .split(',')
@@ -91,10 +88,7 @@ fn parse_name_priority(raw: &str) -> Result<Vec<&str>, String> {
     return Err("at least one tag required".to_string());
   }
   for tag in &tags {
-    if !tag
-      .chars()
-      .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '-' || c == '_')
-    {
+    if !crate::domain::osm_tag::key::is_valid_key(tag) {
       return Err(format!("invalid characters in tag '{tag}'"));
     }
   }

@@ -1,7 +1,7 @@
 use rusqlite::Connection;
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
-impl ToSql for crate::extract::osm_data::osm_nodes::osm_node {
+impl ToSql for crate::domain::osm_node::osm_node {
   fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
     let json = serde_json::to_string(self)
       .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
@@ -9,7 +9,7 @@ impl ToSql for crate::extract::osm_data::osm_nodes::osm_node {
   }
 }
 
-impl FromSql for crate::extract::osm_data::osm_nodes::osm_node {
+impl FromSql for crate::domain::osm_node::osm_node {
   fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
     let text = value.as_str()?;
     serde_json::from_str(text).map_err(|e| FromSqlError::Other(Box::new(e)))

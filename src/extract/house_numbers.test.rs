@@ -317,7 +317,7 @@ fn insert_street(conn: &rusqlite::Connection, id: u64, name: &str, points: &[(f6
 }
 
 fn insert_house_node(conn: &rusqlite::Connection, id: u64, lon: f64, lat: f64, tags: &[(&str, &str)]) {
-  let node = crate::extract::osm_data::osm_nodes::osm_node {
+  let node = crate::domain::osm_node::osm_node {
     id: id as i64,
     lat,
     lon,
@@ -327,7 +327,7 @@ fn insert_house_node(conn: &rusqlite::Connection, id: u64, lon: f64, lat: f64, t
       .collect(),
   };
   let mut payload = Vec::new();
-  crate::extract::osm_data::jsonb_encode::encoder::new().encode_osm_node(&mut payload, &node);
+  crate::database::jsonb::encoder::new().encode_osm_node(&mut payload, &node);
   crate::database::osm_nodes::insert_rows(
     conn,
     &[crate::database::osm_nodes::osm_node_row {

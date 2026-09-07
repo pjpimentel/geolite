@@ -177,8 +177,8 @@ pub fn load_all_candidates(
   drop_values: &[&str],
 ) -> Vec<candidate_row> {
   debug_assert!(!housenumber_tags.is_empty(), "housenumber_tags must not be empty");
-  let number_select = super::build_name_select("payload", housenumber_tags);
-  let street_select = super::build_name_select("payload", street_tags);
+  let number_select = crate::domain::osm_tag::select::coalesce_of("payload", housenumber_tags);
+  let street_select = crate::domain::osm_tag::select::coalesce_of("payload", street_tags);
   let drop_clause = if drop_values.is_empty() {
     String::new()
   } else {

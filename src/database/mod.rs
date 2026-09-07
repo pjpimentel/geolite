@@ -24,24 +24,34 @@ pub const SCHEMA_VERSION: u32 = 2;
 pub mod admin_levels;
 pub mod admin_levels_hierarchy;
 pub mod house_numbers;
+pub mod jsonb;
 pub mod merge;
 pub mod osm_nodes;
 pub mod osm_relations;
 pub mod osm_ways;
 
-// builds a COALESCE(JSON_EXTRACT(...), ...) over a list of osm name tags ordered by
-// priority. `payload_expr` is the qualified column expression, e.g.
-// `osm_data.osm_ways.payload`. tags must be pre-validated by the cli.
-pub fn build_name_select(payload_expr: &str, priority: &[&str]) -> String {
-  let parts: Vec<String> = priority
+pub(crate) fn placeholders_for(ids: &[u64]) -> String {
+  ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+}
+
+pub(crate) fn query_by_ids<T>(
+  conn: &Connection,
+  sql: &str,
+  ids: &[u64],
+  row_of: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+) -> Vec<T> {
+  let params: Vec<rusqlite::types::Value> = ids
     .iter()
-    .map(|tag| format!("JSON_EXTRACT({payload_expr}, '$.tags.\"{tag}\"')"))
+    .map(|&id| rusqlite::types::Value::Integer(id as i64))
     .collect();
-  match parts.len() {
-    0 => format!("JSON_EXTRACT({payload_expr}, '$.tags.name')"),
-    1 => parts.into_iter().next().unwrap(),
-    _ => format!("COALESCE({})", parts.join(", ")),
-  }
+  let mut stmt = conn
+    .prepare(sql)
+    .expect("failed to prepare query by ids");
+  stmt
+    .query_map(rusqlite::params_from_iter(params.iter()), row_of)
+    .expect("failed to query by ids")
+    .map(|r| r.expect("failed to read row"))
+    .collect()
 }
 
 pub fn osm_data_path(main_path: &str) -> String {
@@ -77,10 +87,18 @@ pub fn destroy_data(
   admin_levels: bool,
   house_numbers: bool,
 ) {
-  if osm_pbf_blob_chunks || osm_data {
+  if osm_pbf_blob_chunks {
     remove_osm_data_files(path);
   }
-  let conn = open_write_main(path);
+  let conn = if osm_data && !osm_pbf_blob_chunks {
+    let conn = open_write(path);
+    osm_nodes::drop_table(&conn);
+    osm_ways::drop_table(&conn);
+    osm_relations::drop_table(&conn);
+    conn
+  } else {
+    open_write_main(path)
+  };
   if house_numbers {
     house_numbers::drop_table(&conn);
   }
@@ -93,11 +111,30 @@ pub fn destroy_data(
   conn.execute_batch("VACUUM;").expect("failed to vacuum");
 }
 
+pub(crate) fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+  const SQL_HAS_COLUMN: &str = "
+    SELECT COUNT(*)
+    FROM PRAGMA_TABLE_INFO(?1)
+    WHERE name = ?2
+  ";
+
+  conn
+    .query_row(SQL_HAS_COLUMN, rusqlite::params![table, column], |row| {
+      row.get::<_, i64>(0)
+    })
+    .expect("failed to read table info")
+    > 0
+}
+
 pub fn open_write_main(path: &str) -> Connection {
+  // create_dir_all races between concurrent geolite processes sharing an ancestor directory:
+  // std can return AlreadyExists spuriously, so a parent that already exists is success.
   if let Some(parent) = std::path::Path::new(path).parent()
     && !parent.as_os_str().is_empty()
+    && let Err(error) = std::fs::create_dir_all(parent)
+    && !parent.is_dir()
   {
-    std::fs::create_dir_all(parent).expect("failed to create sqlite parent dir");
+    panic!("failed to create sqlite parent dir: {error}");
   }
   let conn = Connection::open(path).expect("failed to open sqlite");
   let stamped: u32 = conn
@@ -121,6 +158,7 @@ pub fn open_write_main(path: &str) -> Connection {
     .pragma_update(None, "user_version", SCHEMA_VERSION)
     .expect("failed to set user_version");
   crate::domain::osm_pbf_file::osm_pbf_files::create_table(&conn);
+  crate::domain::osm_pbf_file::repository::add_origin_wkt(&conn);
   admin_levels::create_table(&conn);
   admin_levels_hierarchy::create_table(&conn);
   admin_levels::create_rtree(&conn);

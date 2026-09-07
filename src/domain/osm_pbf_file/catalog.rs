@@ -1,5 +1,6 @@
 use std::{fs, path::PathBuf};
 
+use geozero::ToWkt;
 use rusqlite::Connection;
 use serde::Deserialize;
 
@@ -13,6 +14,8 @@ struct geofabrik_index {
 #[derive(Deserialize)]
 struct geofabrik_feature {
   properties: geofabrik_properties,
+  #[serde(default)]
+  geometry: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -61,6 +64,10 @@ pub enum listing {
   local(Vec<local_pbf>),
 }
 
+fn coverage_wkt(geometry: Option<&serde_json::Value>) -> Option<String> {
+  geometry.and_then(|shape| geozero::geojson::GeoJson(&shape.to_string()).to_wkt().ok())
+}
+
 pub(super) fn geofabrik(
   conn: &Connection,
   recreate_cache: bool,
@@ -94,11 +101,13 @@ pub(super) fn geofabrik(
       .as_ref()
       .and_then(|u| u.pbf.as_deref())
       .unwrap_or("-");
+    let coverage = coverage_wkt(f.geometry.as_ref());
     repository::upsert_geofabrik_index_item(
       &tx,
       &f.properties.id,
       &f.properties.name,
       url,
+      coverage.as_deref(),
     );
   }
   tx.commit().expect("failed to commit transaction");

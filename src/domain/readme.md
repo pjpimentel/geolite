@@ -17,13 +17,29 @@ osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   header            the file's first blob → the `osm_header_*` columns
   blob_index        the file's byte layout — the `osm_data.osm_pbf_blob_chunks` table
   blob_scanner      the pass that walks the file and fills it
+  osm_data          the pass that walks the data blobs and fills the three element tables
   http_client       the one ureq agent the slice uses
+osm_tag/        the openstreetmap tag vocabulary — shared, and not a table
+  key               the shape of a key: the json path that reads it, and what a valid key looks like
+  policy            which keys survive extraction: an include list, an ignore list, or neither
+  select            the sql that reads a tag out of a stored payload
+osm_node/       an openstreetmap node — the `osm_data.osm_nodes` table
+  entity            the node itself: id, coordinates, tags
+  decoder           the pbf wire form, plain and dense, into nodes
+osm_way/        an openstreetmap way — the `osm_data.osm_ways` table
+  entity            the way itself: id, node references, tags
+  decoder           the pbf wire form, with its delta-encoded node references
+osm_relation/   an openstreetmap relation — the `osm_data.osm_relations` table
+  entity            the relation, its members and their types
+  decoder           the pbf wire form, with its delta-encoded member ids
 ```
 
 every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
 objects and services sit alongside. everything a concept needs is in one place, and the only write
-path into a table is through its entity. `osm_pbf_file` is a folder without an `entity`, for the
-reason given below.
+path into a table is through its entity. `osm_pbf_file` is a folder without an `entity` and
+`osm_tag` the one that is not a table, both for reasons given below; `osm_node`, `osm_way` and
+`osm_relation` arrived with their entity and decoder only — their payload encoding and their
+persistence still sit in `src/database` and come with each one's own slice.
 
 ## the shape every folder holds to
 
@@ -38,14 +54,17 @@ reason given below.
   a query says who runs it.
 - **the ddl is the exception on purpose.** it is the schema rather than a query: it is what you open
   the file to find, and it is the anchor a release is compared against, byte for byte, with
-  `sed -n '/^const SQL_CREATE: /,/^";$/p'`: a difference there is a schema change, and a schema
-  change bumps `SCHEMA_VERSION`.
+  `sed -n '/^const SQL_CREATE: /,/^";$/p'`: a difference there is a schema change. one that only
+  adds a nullable column is applied to existing databases by the connection lifecycle — an
+  `ALTER TABLE` guarded by `database::has_column`, as `add_origin_wkt` does — and keeps
+  `SCHEMA_VERSION`; a change that makes builds incompatible bumps it.
 - `table` is `pub(crate)`: only the connection lifecycle creates tables, and only the stage that
   fills a table creates its indexes. everything else a repository exposes is `pub`.
 - an index is named `<table>_search_by_<purpose>`.
-- **a folder's use cases are methods on one type declared in `mod.rs`** — `osm_pbf_file::list` is
-  the first; `download`, `delete` and `extract` follow. the cli parses arguments, opens the
-  connection and prints, nothing else.
+- **a folder's use cases are methods on one type declared in `mod.rs`** — `osm_pbf_file::list`,
+  `extract_blob_chunks`, `extract_osm_header` and `extract_osm_data` are the first four; `download`
+  and `delete` follow. the cli parses arguments, resolves the input, opens the connection and
+  prints, nothing else.
 - `mod.rs` re-exports exactly what production code outside the folder names, and nothing else.
 - test scenarios are numbered contiguously from `_00` within their file, and the file names and
   scenario names are in english.
@@ -64,10 +83,10 @@ the row is a **ledger written in column groups**, each by a different moment of 
 
 | columns | written by |
 |---|---|
-| `origin`, `origin_id`, `origin_name`, `url` | `catalog`, or the first stage that meets the file |
+| `origin`, `origin_id`, `origin_name`, `url`, `origin_wkt` | `catalog`, or the first stage that meets the file |
 | `path`, `size_bytes`, `md5`, `downloaded_at` | `download` |
 | `osm_header_*` | `header` |
-| `node_count`, `way_count`, `relation_count`, `osm_data_extracted_at` | the osm-data stage |
+| `node_count`, `way_count`, `relation_count`, `osm_data_extracted_at` | `osm_data` |
 | `admin_levels_count`, `house_numbers_count` | the admin-level and house-number stages |
 
 and it is read back only by `path`, `url`, `origin_id` and `id`. **nothing ever reads the row
@@ -79,16 +98,16 @@ until this slice landed and deleted them. the ddl in `repository` is the shape.
 `origin` is an enum with data — `local_path(path)`, `geofabrik { id, url }`, `url(url)` — stored
 as a code in the `origin` column with its payload spread over generic columns:
 
-| `origin` | code | `origin_id` | `origin_name` | `url` | `path` |
-|---|---:|---|---|---|---|
-| `local_path` | 0 | none | the file name | none | the path as given |
-| `geofabrik` | 1 | the catalogue id | the catalogue name | the pbf url | where the download landed |
-| `url` | 2 | none | the file name in the url | the url | where the download landed |
+| `origin` | code | `origin_id` | `origin_name` | `url` | `origin_wkt` | `path` |
+|---|---:|---|---|---|---|---|
+| `local_path` | 0 | none | the file name | none | none | the path as given |
+| `geofabrik` | 1 | the catalogue id | the catalogue name | the pbf url | the region's coverage polygon, as wkt | where the download landed |
+| `url` | 2 | none | the file name in the url | the url | none | where the download landed |
 
 `path` is the identity of a file on disk (`UNIQUE`); `UNIQUE (origin, origin_id)` only binds the
 catalogue rows. an extract stage that meets a file first records it as `local_path`; a download of
 the same path later takes the download's origin over. a `url` row whose url the catalogue turns out
-to list is promoted to `geofabrik` on the next `ls`.
+to list is promoted to `geofabrik` on the next `ls`, and receives its coverage with it.
 
 ### the catalogue — `catalog`
 
@@ -101,13 +120,15 @@ to list is promoted to `geofabrik` on the next `ls`.
 | `local` | no | none | `local(Vec<local_pbf>)`: path, size in bytes |
 
 the facade holds an optional connection so that `ls local` never opens, and therefore never
-creates, the database; asking for the geofabrik catalogue without one is a programming error and
-panics.
+creates, the database; every other use case asks for one, and running it without one is a
+programming error that panics.
 
 for `geofabrik`:
 
 1. fetches the geofabrik GeoJSON index from the resolved endpoint
-1. caches all regions in `osm_pbf_files` (upsert by `origin_id`)
+1. caches all regions in `osm_pbf_files` (upsert by `origin_id`), each with its coverage polygon
+   converted from the index's GeoJSON to wkt in `origin_wkt` — the dialect of `osm_header_bbox_wkt`
+   and of the api; a region without a readable geometry keeps the column null
 1. subsequent calls read from sqlite — skips http unless `recreate_cache` is set
 
 ### download
@@ -136,16 +157,16 @@ blob → primitive block → primitive group → node | dense nodes | way | rela
 
 the thirteen protobuf structs stay in one file because they are **nested types of one another**:
 `primitive_group_msg` holds `node_msg`, `way_msg` and `relation_msg` as fields. splitting them
-across the per-element decoders in `src/extract/osm_data` would make the wire format depend on a
-stage, which is backwards — and it would break the one thing that makes a transcription
-reviewable, which is reading the field numbers side by side against the spec:
+across the element folders' decoders would make the wire format depend on what is decoded from it,
+which is backwards — and it would break the one thing that makes a transcription reviewable, which
+is reading the field numbers side by side against the spec:
 [PBF_Format](https://wiki.openstreetmap.org/wiki/PBF_Format).
 
 **why the format lives here and `jsonb` does not.** both are codecs, and the difference is
-ownership: the jsonb encoder in `src/extract/osm_data/jsonb_encode.rs` is sqlite's storage format,
-used by whoever writes a payload and owned by no concept; these messages are the format of **this
-file**, and the file is a concept with a folder. a format shared by nobody in particular stays
-outside; a format that belongs to someone lives with them.
+ownership: the jsonb encoder in `src/database/jsonb.rs` is sqlite's storage format, used by whoever
+writes a payload and owned by no concept; these messages are the format of **this file**, and the
+file is a concept with a folder. a format shared by nobody in particular stays outside; a format
+that belongs to someone lives with them.
 
 ### the byte layout — `blob_index`
 
@@ -153,6 +174,97 @@ outside; a format that belongs to someone lives with them.
 `admin_levels` has with `admin_levels_rtree` in `src/database/admin_levels.rs`: a chunk is a byte
 range **of a file** and means nothing without one. `blob_scanner` fills it by walking the file front
 to back, reading only the length-prefixed blob headers and skipping every body — the one pass that
-never decompresses anything. the extraction pipeline then reads it to know which ranges to hand each
-decoder thread.
+never decompresses anything. `osm_data` then reads it to know which ranges to hand each decoder
+thread.
 
+### the osm data — `osm_data`
+
+the stage behind `extract osm-pbf-data`, and the file's `extract_osm_data` use case:
+
+1. reads every data blob range recorded in `osm_pbf_blob_chunks`
+1. decompresses and decodes each blob into a primitive block, and each group into nodes (plain and
+   dense), ways and relations, through the decoder of each element folder
+1. encodes every element into its jsonb payload, still in the decoder threads
+1. bulk-inserts the rows into `osm_nodes`, `osm_ways` and `osm_relations`, and writes `node_count`,
+   `way_count`, `relation_count` and `osm_data_extracted_at` on the file's row
+
+**one pass, not one per element.** `data_opts` selects which of the three to keep, but every blob
+is inflated and decoded exactly once whatever the selection: a use case per element would read,
+inflate and decode the whole file three times, and where a single decoder thread is all there is
+the stage would take twice as long. that is why `extract_osm_data` takes a selection instead of
+being three methods.
+
+**the pipeline is three kinds of thread and two buffers**, and its numbers are where a performance
+mistake would hide:
+
+- one reader, `threads - 1` decoders and one writer. the reader is light — about 0.3s of work in
+  an 80s run — and shares a core with the decoders instead of taking one; the writer is sqlite's
+  single writer and gets a thread of its own. the reader's queue holds twice as many blobs as there
+  are decoders.
+- decoders push rows straight into a shared write buffer. the writer wakes at 80% of `buffer_bytes`
+  (or at 10 000 rows), swaps the full buffer for an empty one under the lock and flushes outside
+  it, so decoders keep pushing while the flush runs; at 100% they block until it drains. the size
+  is `--buffer-limit-in-mb`, 60% of the machine's ram by default.
+- a flush drains at most 100 000 rows from the front of each deque — nodes first, the table that
+  usually dominates the queue, then ways, then relations — so one transaction never grows with the
+  backlog. `VecDeque::drain` is O(drained): it advances the ring's head without shifting what
+  remains. the bytes accounted to a flush are proportional to the rows drained: an approximation,
+  good enough to throttle the decoders by.
+
+which tag keys survive extraction is `osm_tag::tag_policy`, filled by `--tags-include-list` and
+`--tags-ignore-list` and consulted by every decoder. `data_opts` carries it and never reads it: the
+format does not care which tags you keep.
+
+## osm_tag
+
+the only folder here that is **not a table**. it is shared vocabulary rather than a row, and it sits
+under `domain` rather than beside the file's format because a tag carries meaning:
+`osm_pbf_file::message` is the format, this is what the format is saying.
+
+### two boundaries, and they matter more than the contents
+
+**it owns the key and the shape of its value** — the json path that reads a key, what a valid key
+looks like, and the sql that coalesces one tag out of several. it does **not** own what a
+*combination* of tags means. "a way with a `highway` tag and no `building` tag is a street" belongs
+to the way; which tags carry a house number belongs to the house number. today those rules still
+sit in `src/database/osm_ways.rs` and in the presets, and they move into their own folders, not
+here.
+
+**it names the interpreted vocabulary, not the stored one.** `policy` is the filter the pipeline
+runs while decoding — an absent include list means "every tag" — and stays stringly-typed, because
+the pipeline stores keys nobody here has heard of. the closed, typed set of the keys the code
+reasons about (`name`, `admin_level`, `place`, `highway`, the postcode and country aliases) arrives
+with its first consumer, the way and relation repositories, so that a misspelled key becomes a
+compile error rather than a query that quietly returns nothing.
+
+`policy` sits beside `key` because a policy belongs with the vocabulary it filters. it is **not**
+the pbf file's — the format does not care which tags you keep, `osm_pbf_file` never reads it, and
+what fills it are the `--tags-include-list` and `--tags-ignore-list` flags at the edge.
+
+### why the path is always quoted
+
+sqlite is forgiving about a bare key in a json path — `:` and `-` both work unquoted, which is why
+the hand-written paths `select` replaced were correct. two characters are not forgiving:
+
+| key | bare path | quoted path |
+|---|---|---|
+| `addr:postcode` | works | works |
+| `ISO3166-1` | works | works |
+| `a.b` | **NULL, no error** — read as a nested path | works |
+| `c[1]` | **NULL, no error** — read as an array index | works |
+
+no key osm uses today contains either, and `is_valid_key` rejects both at the cli, so this is a
+latent hazard rather than a live bug. quoting always is simply the one form that cannot be silently
+wrong — and it is what the name select had been doing since before this folder existed.
+
+## osm_node, osm_way, osm_relation
+
+the three element tables of the `osm_data` database, one folder each, opened with what the
+`osm_data` pass needs from them: the entity and the decoder. the storage row, the jsonb payload
+and the repository — ddl, index, bulk insert and the candidate queries — still live in
+`src/database/osm_*.rs` and `src/database/jsonb.rs`, and move here with each folder's own slice.
+
+a decoder takes the wire form from `osm_pbf_file::message` — the block's string table and, for
+nodes, its `block_scale` (granularity and offsets) — and a `tag_policy`, and returns entities. the
+dependency runs one way: the file's `osm_data` pass calls the element decoders; no element folder
+knows the pass exists.

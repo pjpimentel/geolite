@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::common::harness::{open_sqlite_at, world};
+use crate::common::harness::{open_sqlite_at, output, world};
 use crate::common::stub;
 use crate::general::world;
 
@@ -13,6 +13,11 @@ const INDEX_WITH_GAMMA: &str = r#"{"features":[
   {"properties":{"id":"alpha","name":"Alpha","urls":{"pbf":"{base}/alpha.osm.pbf"}}},
   {"properties":{"id":"beta","name":"Beta"}},
   {"properties":{"id":"gamma","name":"Gamma","urls":{"pbf":"{base}/gamma.osm.pbf"}}}
+]}"#;
+
+const INDEX_WITH_COVERAGE: &str = r#"{"features":[
+  {"properties":{"id":"alpha","name":"Alpha","urls":{"pbf":"{base}/alpha.osm.pbf"}},"geometry":{"type":"MultiPolygon","coordinates":[[[[1,42],[2,42],[2,43],[1,43],[1,42]]]]}},
+  {"properties":{"id":"beta","name":"Beta"}}
 ]}"#;
 
 struct row {
@@ -66,6 +71,26 @@ fn database(dir: &Path) -> rusqlite::Connection {
 
 fn joined(dir: &Path, name: &str) -> String {
   dir.join(name).to_string_lossy().into_owned()
+}
+
+fn coverage(conn: &rusqlite::Connection, origin_id: &str) -> Option<String> {
+  conn
+    .query_row(
+      "SELECT origin_wkt FROM osm_pbf_files WHERE origin_id = ?1",
+      [origin_id],
+      |r| r.get::<_, Option<Vec<u8>>>(0),
+    )
+    .expect("failed to read the coverage")
+    .map(|bytes| String::from_utf8(bytes).expect("the coverage is utf-8"))
+}
+
+fn ls(w: &world, dir: &Path, endpoint: &str) -> output {
+  let out = w.geolite_in(
+    dir,
+    &["osm-pbf-file", "--ls-endpoint", endpoint, "ls", "geofabrik"],
+  );
+  assert_eq!(out.status, 0, "ls failed:\n{}", out.stderr);
+  out
 }
 
 fn download(w: &world, dir: &Path, endpoint: &str, input: &str) {
@@ -614,4 +639,137 @@ fn _12_osm_pbf_file_help_documents_the_endpoint_override_without_a_default() {
     "the default endpoint belongs to the domain, not to the cli:\n{}",
     out.stdout
   );
+}
+
+// 13. coverage
+#[test]
+#[ignore]
+fn _13_ls_caches_the_coverage_of_a_region_and_download_keeps_it() {
+  let w = world();
+  let dir = w.scratch("coverage_ls_download");
+  let s = stub::start(
+    INDEX_WITH_COVERAGE,
+    vec![("alpha.osm.pbf", fixture_bytes(w))],
+  );
+  ls(w, &dir, &s.url("/index.json"));
+  let alpha = coverage(&database(&dir), "alpha").expect("alpha has a geometry in the index");
+  assert!(alpha.starts_with("MULTIPOLYGON"), "got {alpha}");
+  assert!(
+    alpha.contains("1 42") && alpha.contains("2 43"),
+    "the polygon must keep its coordinates: {alpha}"
+  );
+  assert_eq!(
+    coverage(&database(&dir), "beta"),
+    None,
+    "beta has no geometry in the index"
+  );
+
+  download(w, &dir, &s.url("/index.json"), "alpha");
+  let conn = database(&dir);
+  assert_eq!(
+    coverage(&conn, "alpha").as_deref(),
+    Some(alpha.as_str()),
+    "the download must keep the coverage"
+  );
+  let downloaded = ledger(&conn)
+    .into_iter()
+    .find(|r| r.origin_id.as_deref() == Some("alpha"))
+    .expect("alpha row");
+  assert!(
+    downloaded.path.is_some(),
+    "the same row now carries the path"
+  );
+}
+
+// 14. coverage on promotion
+#[test]
+#[ignore]
+fn _14_a_url_download_receives_the_coverage_when_the_next_ls_promotes_it() {
+  let w = world();
+  let dir = w.scratch("coverage_promotion");
+  let s = stub::start(
+    INDEX_WITH_COVERAGE,
+    vec![("alpha.osm.pbf", fixture_bytes(w))],
+  );
+  download(w, &dir, &s.url("/index.json"), &s.url("/alpha.osm.pbf"));
+  {
+    let conn = database(&dir);
+    let rows = ledger(&conn);
+    assert_eq!((rows.len(), rows[0].origin), (1, 2));
+    assert_eq!(
+      count(
+        &conn,
+        "SELECT COUNT(*) FROM osm_pbf_files WHERE origin_wkt IS NOT NULL"
+      ),
+      0,
+      "a url download knows no coverage"
+    );
+  }
+  ls(w, &dir, &s.url("/index.json"));
+  let conn = database(&dir);
+  // ls also caches beta, so the promoted alpha row is not the only one; the download row is.
+  let rows = ledger(&conn);
+  let downloaded: Vec<&row> = rows.iter().filter(|r| r.path.is_some()).collect();
+  assert_eq!(downloaded.len(), 1, "only the downloaded file has a path");
+  assert_eq!(
+    downloaded[0].origin, 1,
+    "the url row was promoted to geofabrik"
+  );
+  assert_eq!(downloaded[0].origin_id.as_deref(), Some("alpha"));
+  assert!(
+    coverage(&conn, "alpha").is_some_and(|wkt| wkt.starts_with("MULTIPOLYGON")),
+    "the promotion must bring the coverage along"
+  );
+}
+
+// 15. additive migration
+#[test]
+#[ignore]
+fn _15_a_database_without_origin_wkt_gains_it_on_the_next_write_command() {
+  let w = world();
+  let dir = w.scratch("coverage_migration");
+  std::fs::copy(&w.sqlite_path, dir.join("database.sqlite3")).expect("failed to copy the database");
+  let has_column = |conn: &rusqlite::Connection| {
+    count(
+      conn,
+      "SELECT COUNT(*) FROM pragma_table_info('osm_pbf_files') WHERE name = 'origin_wkt'",
+    ) == 1
+  };
+  let nodes_before = {
+    let conn = rusqlite::Connection::open(dir.join("database.sqlite3")).expect("failed to open");
+    conn
+      .execute_batch("ALTER TABLE osm_pbf_files DROP COLUMN origin_wkt")
+      .expect("failed to drop the column");
+    assert!(
+      !has_column(&conn),
+      "the copy now looks like a 0.0.6 database"
+    );
+    count(&conn, "SELECT node_count FROM osm_pbf_files")
+  };
+  let s = stub::start(INDEX_WITH_COVERAGE, vec![]);
+  ls(w, &dir, &s.url("/index.json"));
+  let conn = database(&dir);
+  assert!(
+    has_column(&conn),
+    "the write command must add the column back"
+  );
+  assert_eq!(
+    count(&conn, "PRAGMA user_version"),
+    2,
+    "no version bump for an added column"
+  );
+  let santos = ledger(&conn)
+    .into_iter()
+    .find(|r| r.origin == 0)
+    .expect("the local build row survives");
+  assert_eq!(santos.origin_name.as_deref(), Some("santos.osm.pbf"));
+  assert_eq!(
+    count(
+      &conn,
+      "SELECT node_count FROM osm_pbf_files WHERE origin = 0"
+    ),
+    nodes_before,
+    "the migration keeps every value of the old rows"
+  );
+  assert!(coverage(&conn, "alpha").is_some());
 }

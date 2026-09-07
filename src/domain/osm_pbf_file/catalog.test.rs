@@ -214,7 +214,7 @@ fn _14_local_listing_needs_no_database() {
 }
 
 #[test]
-#[should_panic(expected = "the geofabrik catalogue needs a database")]
+#[should_panic(expected = "only `ls local` runs without a database")]
 fn _15_geofabrik_listing_without_a_database_panics() {
   let dir = tmp("ls_t15");
   osm_pbf_file::open(None, dir.to_str().unwrap()).list(
@@ -222,4 +222,73 @@ fn _15_geofabrik_listing_without_a_database_panics() {
     Some("http://127.0.0.1:1/unused.json"),
     false,
   );
+}
+
+const TINY_SQUARE: &str = r#"{"type":"MultiPolygon","coordinates":[[[[1.0,42.0],[2.0,42.0],[2.0,43.0],[1.0,43.0],[1.0,42.0]]]]}"#;
+
+fn feature(id: &str, geometry: Option<&str>) -> String {
+  let geometry = geometry
+    .map(|shape| format!(",\"geometry\":{shape}"))
+    .unwrap_or_default();
+  format!(
+    r#"{{"type":"Feature","properties":{{"id":"{id}","name":"{id}","urls":{{"pbf":"http://example.com/{id}.osm.pbf"}}}}{geometry}}}"#
+  )
+}
+
+fn index_of(features: &[String]) -> String {
+  format!(
+    r#"{{"type":"FeatureCollection","features":[{}]}}"#,
+    features.join(",")
+  )
+}
+
+fn coverage_of(db: &rusqlite::Connection, origin_id: &str) -> Option<String> {
+  db.query_row(
+      "SELECT origin_wkt FROM osm_pbf_files WHERE origin_id = ?1",
+      [origin_id],
+      |row| row.get::<_, Option<Vec<u8>>>(0),
+    )
+    .expect("failed to read the coverage")
+    .map(|bytes| String::from_utf8(bytes).expect("the coverage must be utf-8"))
+}
+
+#[test]
+fn _16_caches_the_coverage_of_each_region_as_wkt() {
+  let (_db_path, db) = sqlite("ls_t16");
+  let url = start_json_server(index_of(&[feature("europe/andorra", Some(TINY_SQUARE))]));
+  list_geofabrik(&db, &url, false);
+  let wkt = coverage_of(&db, "europe/andorra").expect("the region has a geometry");
+  assert!(wkt.starts_with("MULTIPOLYGON"), "got {wkt}");
+  assert!(wkt.contains("1 42") && wkt.contains("2 43"), "got {wkt}");
+}
+
+#[test]
+fn _17_a_region_without_geometry_keeps_a_null_coverage() {
+  let (_db_path, db) = sqlite("ls_t17");
+  let url = start_json_server(index_of(&[feature("europe/andorra", None)]));
+  list_geofabrik(&db, &url, false);
+  assert_eq!(coverage_of(&db, "europe/andorra"), None);
+}
+
+#[test]
+fn _18_an_unreadable_geometry_keeps_a_null_coverage() {
+  let (_db_path, db) = sqlite("ls_t18");
+  let url = start_json_server(index_of(&[feature(
+    "europe/andorra",
+    Some(r#"{"type":"Bogus"}"#),
+  )]));
+  let items = list_geofabrik(&db, &url, false);
+  assert_eq!(items.len(), 1, "the region is still listed");
+  assert_eq!(coverage_of(&db, "europe/andorra"), None);
+}
+
+#[test]
+fn _19_recreating_the_cache_refreshes_the_coverage() {
+  let (_db_path, db) = sqlite("ls_t19");
+  let first = start_json_server(index_of(&[feature("europe/andorra", None)]));
+  list_geofabrik(&db, &first, false);
+  assert_eq!(coverage_of(&db, "europe/andorra"), None);
+  let second = start_json_server(index_of(&[feature("europe/andorra", Some(TINY_SQUARE))]));
+  list_geofabrik(&db, &second, true);
+  assert!(coverage_of(&db, "europe/andorra").is_some());
 }

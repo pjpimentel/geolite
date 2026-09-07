@@ -14,12 +14,13 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
   }
 
   let conn = crate::database::open_write(sqlite_path);
+  let file = crate::domain::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved_input {
       path: osm_pbf_file_path,
       name: fname,
-      id: file_id,
+      id: _,
     }) = super::resolve_input(&conn, data_path, sqlite_path, i, input)
     else {
       continue;
@@ -39,7 +40,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
 
     let start = Instant::now();
 
-    let count = crate::domain::osm_pbf_file::blob_scanner::run(&osm_pbf_file_path, &conn, file_id, |p| {
+    let count = file.extract_blob_chunks(&osm_pbf_file_path, |p| {
       if bar.length().is_none() {
         bar.set_length(p.total_bytes);
       }

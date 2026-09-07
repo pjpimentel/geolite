@@ -1,10 +1,10 @@
-use super::*;
+use super::{TYPE_FLOAT, TYPE_INT, TYPE_TEXTRAW, encoder, write_float, write_header, write_int};
 
-use crate::extract::osm_data::osm_nodes::osm_node;
-use crate::extract::osm_data::osm_relations::{
+use crate::domain::osm_node::osm_node;
+use crate::domain::osm_relation::entity::{
   osm_member_type, osm_relation, osm_relation_member,
 };
-use crate::extract::osm_data::osm_ways::osm_way;
+use crate::domain::osm_way::osm_way;
 
 // o proprio sqlite e o oraculo do formato: se o jsonb estiver malformado,
 // JSON() falha ou devolve algo diferente do esperado
