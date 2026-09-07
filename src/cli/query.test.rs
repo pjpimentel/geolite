@@ -1,6 +1,6 @@
 use super::command_handler_query;
 use crate::cli::tests::street_row;
-use crate::database::admin_levels::batch_upsert;
+use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::open_write;
 use crate::extract::pbf_fixtures::tempdir_guard;
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
@@ -18,7 +18,7 @@ fn indexed_scene(tag: &str) -> (tempdir_guard, String, String) {
     &conn,
     &[street_row("Rua Alpha", 1, 0.0), street_row("Rua Beta", 2, 0.0005)],
   );
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
   crate::index::hierarchy::run(&conn, |_| {});
   tantivy::build(&conn, Path::new(&index), DEFAULT.index_user_friendly_name.boosts, &[]);
   (guard, db, index)

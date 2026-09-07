@@ -1,5 +1,6 @@
 use super::*;
-use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
+use crate::domain::admin_level::repository::batch_upsert;
+use crate::domain::admin_level::{admin_level as admin_levels_row, level};
 use geo::{Coord, Polygon};
 
 const SQL_UPDATE_WKB: &str = "
@@ -208,7 +209,7 @@ fn make_street_row(s: &street_data, way_id: u64) -> admin_levels_row {
   admin_levels_row {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(ls).into(),
     name: s.name.to_string(),
     country_iso_code: None,
@@ -225,7 +226,7 @@ fn _00_returns_the_10_closest_records() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -294,7 +295,7 @@ fn _01_results_are_ordered_by_distance_from_coordinates_to_street() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -333,7 +334,7 @@ fn _01_results_are_ordered_by_distance_from_coordinates_to_street() {
   assert!(d1 < d2, "expected d1={} < d2={}", d1, d2);
 }
 
-fn run_hierarchy_case(area_admin_level: u8, area_name: &str) {
+fn run_hierarchy_case(area_level: level, area_name: &str) {
   let conn = crate::database::open_write(":memory:");
 
   let street_ls = LineString(vec![
@@ -361,7 +362,7 @@ fn run_hierarchy_case(area_admin_level: u8, area_name: &str) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(1),
-      admin_level: 12,
+      level: level::street,
       wkb: Geometry::LineString(street_ls).into(),
       name: "test_street".to_string(),
       country_iso_code: None,
@@ -370,7 +371,7 @@ fn run_hierarchy_case(area_admin_level: u8, area_name: &str) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(2),
-      admin_level: area_admin_level,
+      level: area_level,
       wkb: Geometry::Polygon(area_polygon).into(),
       name: area_name.to_string(),
       country_iso_code: None,
@@ -378,7 +379,7 @@ fn run_hierarchy_case(area_admin_level: u8, area_name: &str) {
     },
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
   crate::index::hierarchy::run(&conn, |_| {});
 
   let output = crate::query::run(
@@ -393,7 +394,7 @@ fn run_hierarchy_case(area_admin_level: u8, area_name: &str) {
   );
   assert_eq!(output.matches.len(), 1);
   assert_eq!(output.matches[0].admin_levels.len(), 2);
-  assert_eq!(output.matches[0].admin_levels[0].level, area_admin_level);
+  assert_eq!(output.matches[0].admin_levels[0].level, area_level.value());
   assert_eq!(output.matches[0].admin_levels[0].name, area_name);
   assert_eq!(output.matches[0].admin_levels[0].osm_relation_id, None);
   assert_eq!(output.matches[0].admin_levels[0].osm_way_id, Some(2));
@@ -405,20 +406,19 @@ fn run_hierarchy_case(area_admin_level: u8, area_name: &str) {
 
 #[test]
 fn _02_admin_level_hierarchy_is_resolved_and_returned() {
-  run_hierarchy_case(1, "area_1");
-  run_hierarchy_case(2, "area_2");
-  run_hierarchy_case(3, "area_3");
-  run_hierarchy_case(4, "area_4");
-  run_hierarchy_case(5, "area_5");
-  run_hierarchy_case(6, "area_6");
-  run_hierarchy_case(7, "area_7");
-  run_hierarchy_case(8, "area_8");
-  run_hierarchy_case(9, "area_9");
-  run_hierarchy_case(10, "area_10");
-  run_hierarchy_case(11, "area_11");
+  run_hierarchy_case(level::continent, "area_1");
+  run_hierarchy_case(level::country, "area_2");
+  run_hierarchy_case(level::region, "area_3");
+  run_hierarchy_case(level::state, "area_4");
+  run_hierarchy_case(level::district, "area_5");
+  run_hierarchy_case(level::county, "area_6");
+  run_hierarchy_case(level::municipality, "area_7");
+  run_hierarchy_case(level::city, "area_8");
+  run_hierarchy_case(level::locality, "area_9");
+  run_hierarchy_case(level::neighborhood, "area_10");
 }
 
-fn run_split_hierarchy_case(area_admin_level: u8) {
+fn run_split_hierarchy_case(area_level: level) {
   let conn = crate::database::open_write(":memory:");
 
   let street_a_ls = LineString(vec![
@@ -487,7 +487,7 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(1),
-      admin_level: 12,
+      level: level::street,
       wkb: Geometry::LineString(street_a_ls).into(),
       name: "street_a".to_string(),
       country_iso_code: None,
@@ -496,7 +496,7 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(2),
-      admin_level: 12,
+      level: level::street,
       wkb: Geometry::LineString(street_b_ls).into(),
       name: "street_b".to_string(),
       country_iso_code: None,
@@ -505,7 +505,7 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(3),
-      admin_level: area_admin_level,
+      level: area_level,
       wkb: Geometry::Polygon(area_a_poly).into(),
       name: "area_a".to_string(),
       country_iso_code: None,
@@ -514,7 +514,7 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(4),
-      admin_level: area_admin_level,
+      level: area_level,
       wkb: Geometry::Polygon(area_b_poly).into(),
       name: "area_b".to_string(),
       country_iso_code: None,
@@ -522,7 +522,7 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
     },
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
   crate::index::hierarchy::run(&conn, |_| {});
 
   let output = crate::query::run(
@@ -538,7 +538,7 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
   assert_eq!(output.matches.len(), 2);
 
   assert_eq!(output.matches[0].admin_levels.len(), 2);
-  assert_eq!(output.matches[0].admin_levels[0].level, area_admin_level);
+  assert_eq!(output.matches[0].admin_levels[0].level, area_level.value());
   assert_eq!(output.matches[0].admin_levels[0].name, "area_a");
   assert_eq!(output.matches[0].admin_levels[0].osm_relation_id, None);
   assert_eq!(output.matches[0].admin_levels[0].osm_way_id, Some(3));
@@ -548,7 +548,7 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
   assert_eq!(output.matches[0].admin_levels[1].osm_way_id, Some(1));
 
   assert_eq!(output.matches[1].admin_levels.len(), 2);
-  assert_eq!(output.matches[1].admin_levels[0].level, area_admin_level);
+  assert_eq!(output.matches[1].admin_levels[0].level, area_level.value());
   assert_eq!(output.matches[1].admin_levels[0].name, "area_b");
   assert_eq!(output.matches[1].admin_levels[0].osm_relation_id, None);
   assert_eq!(output.matches[1].admin_levels[0].osm_way_id, Some(4));
@@ -560,20 +560,19 @@ fn run_split_hierarchy_case(area_admin_level: u8) {
 
 #[test]
 fn _03_each_street_keeps_its_own_hierarchy_when_multiple_streets_match() {
-  run_split_hierarchy_case(1);
-  run_split_hierarchy_case(2);
-  run_split_hierarchy_case(3);
-  run_split_hierarchy_case(4);
-  run_split_hierarchy_case(5);
-  run_split_hierarchy_case(6);
-  run_split_hierarchy_case(7);
-  run_split_hierarchy_case(8);
-  run_split_hierarchy_case(9);
-  run_split_hierarchy_case(10);
-  run_split_hierarchy_case(11);
+  run_split_hierarchy_case(level::continent);
+  run_split_hierarchy_case(level::country);
+  run_split_hierarchy_case(level::region);
+  run_split_hierarchy_case(level::state);
+  run_split_hierarchy_case(level::district);
+  run_split_hierarchy_case(level::county);
+  run_split_hierarchy_case(level::municipality);
+  run_split_hierarchy_case(level::city);
+  run_split_hierarchy_case(level::locality);
+  run_split_hierarchy_case(level::neighborhood);
 }
 
-fn run_nested_polygons_case(area_admin_level: u8) {
+fn run_nested_polygons_case(area_level: level) {
   let conn = crate::database::open_write(":memory:");
 
   let street_ls = LineString(vec![
@@ -651,7 +650,7 @@ fn run_nested_polygons_case(area_admin_level: u8) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(1),
-      admin_level: 12,
+      level: level::street,
       wkb: Geometry::LineString(street_ls).into(),
       name: "test_street".to_string(),
       country_iso_code: None,
@@ -660,7 +659,7 @@ fn run_nested_polygons_case(area_admin_level: u8) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(2),
-      admin_level: area_admin_level,
+      level: area_level,
       wkb: Geometry::Polygon(area_a_poly).into(),
       name: "area_a".to_string(),
       country_iso_code: None,
@@ -669,7 +668,7 @@ fn run_nested_polygons_case(area_admin_level: u8) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(3),
-      admin_level: area_admin_level,
+      level: area_level,
       wkb: Geometry::Polygon(area_b_poly).into(),
       name: "area_b".to_string(),
       country_iso_code: None,
@@ -678,7 +677,7 @@ fn run_nested_polygons_case(area_admin_level: u8) {
     admin_levels_row {
       relation_id: None,
       way_id: Some(4),
-      admin_level: area_admin_level,
+      level: area_level,
       wkb: Geometry::Polygon(area_c_poly).into(),
       name: "area_c".to_string(),
       country_iso_code: None,
@@ -686,7 +685,7 @@ fn run_nested_polygons_case(area_admin_level: u8) {
     },
   ];
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
   crate::index::hierarchy::run(&conn, |_| {});
 
   let output = crate::query::run(
@@ -705,15 +704,15 @@ fn run_nested_polygons_case(area_admin_level: u8) {
     "test_street, area_c, area_b, area_a"
   );
   assert_eq!(output.matches[0].admin_levels.len(), 4);
-  assert_eq!(output.matches[0].admin_levels[0].level, area_admin_level);
+  assert_eq!(output.matches[0].admin_levels[0].level, area_level.value());
   assert_eq!(output.matches[0].admin_levels[0].name, "area_a");
   assert_eq!(output.matches[0].admin_levels[0].osm_relation_id, None);
   assert_eq!(output.matches[0].admin_levels[0].osm_way_id, Some(2));
-  assert_eq!(output.matches[0].admin_levels[1].level, area_admin_level);
+  assert_eq!(output.matches[0].admin_levels[1].level, area_level.value());
   assert_eq!(output.matches[0].admin_levels[1].name, "area_b");
   assert_eq!(output.matches[0].admin_levels[1].osm_relation_id, None);
   assert_eq!(output.matches[0].admin_levels[1].osm_way_id, Some(3));
-  assert_eq!(output.matches[0].admin_levels[2].level, area_admin_level);
+  assert_eq!(output.matches[0].admin_levels[2].level, area_level.value());
   assert_eq!(output.matches[0].admin_levels[2].name, "area_c");
   assert_eq!(output.matches[0].admin_levels[2].osm_relation_id, None);
   assert_eq!(output.matches[0].admin_levels[2].osm_way_id, Some(4));
@@ -725,17 +724,16 @@ fn run_nested_polygons_case(area_admin_level: u8) {
 
 #[test]
 fn _04_when_street_is_inside_three_polygons_at_same_level_all_are_grouped_and_ordered() {
-  run_nested_polygons_case(1);
-  run_nested_polygons_case(2);
-  run_nested_polygons_case(3);
-  run_nested_polygons_case(4);
-  run_nested_polygons_case(5);
-  run_nested_polygons_case(6);
-  run_nested_polygons_case(7);
-  run_nested_polygons_case(8);
-  run_nested_polygons_case(9);
-  run_nested_polygons_case(10);
-  run_nested_polygons_case(11);
+  run_nested_polygons_case(level::continent);
+  run_nested_polygons_case(level::country);
+  run_nested_polygons_case(level::region);
+  run_nested_polygons_case(level::state);
+  run_nested_polygons_case(level::district);
+  run_nested_polygons_case(level::county);
+  run_nested_polygons_case(level::municipality);
+  run_nested_polygons_case(level::city);
+  run_nested_polygons_case(level::locality);
+  run_nested_polygons_case(level::neighborhood);
 }
 
 #[test]
@@ -747,7 +745,7 @@ fn _05_bounding_box_keeps_only_matches_inside_the_box() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let bbox = crate::query::bounding_box {
     min_lat: -23.97245,
@@ -779,7 +777,7 @@ fn _06_bounding_box_excluding_all_matches_returns_empty_matches() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let bbox = crate::query::bounding_box {
     min_lat: 10.0,
@@ -810,7 +808,7 @@ fn _07_degenerate_bounding_geometry_with_zero_area_does_not_panic() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let bbox = crate::query::bounding_box {
     min_lat: -23.97241,
@@ -842,7 +840,7 @@ fn _08_admin_level_filter_keeps_matches_with_requested_level() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -866,7 +864,7 @@ fn _09_admin_level_filter_with_no_matching_level_returns_empty_matches() {
     .map(|(i, s)| make_street_row(s, (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -907,7 +905,7 @@ fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
     rows.push(admin_levels_row {
       relation_id: None,
       way_id: Some(i as u64),
-      admin_level: 12,
+      level: level::street,
       wkb: Geometry::LineString(ls).into(),
       name: format!("near_{i:02}"),
       country_iso_code: None,
@@ -924,14 +922,14 @@ fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
   rows.push(admin_levels_row {
     relation_id: None,
     way_id: Some(11),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(far).into(),
     name: "far_street".to_string(),
     country_iso_code: None,
     post_code: None,
   });
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // interior do triangulo: x+y > 0.06 → contem far (0.10), exclui as 10 near (≤0.02). o envelope
   // [-0.02,0.08]² cobre todas, entao as near passam o rtree e (sem a correcao) truncariam a far fora
@@ -950,7 +948,7 @@ fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
 #[test]
 fn _13_no_candidates_returns_empty() {
   let conn = crate::database::open_write(":memory:");
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   let candidates = best_admin_levels(&conn, Point::new(STREETS[0].lon1, STREETS[0].lat1), None);
   assert!(candidates.is_empty());
@@ -960,7 +958,7 @@ fn _13_no_candidates_returns_empty() {
 fn _14_candidate_outside_rtree_delta_is_not_returned() {
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // street_00 sits near (-46.3, -23.97); a query at (0, 0) is far beyond the
   // RTREE_DELTA_DEG (0.1) box, so the rtree pre-filter never surfaces it.
@@ -972,7 +970,7 @@ fn _14_candidate_outside_rtree_delta_is_not_returned() {
 fn _15_candidate_within_delta_is_included_with_distance() {
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // querying exactly on the street's first endpoint → closest point is that
   // vertex → haversine distance is 0.
@@ -991,7 +989,7 @@ fn _16_multiple_candidates_ordered_by_distance_ascending() {
     .map(|i| make_street_row(&STREETS[i], (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // every candidate is admin_level 12 (streets_for_coordinates hardcodes
   // `admin_level = 12`), so the `admin_level DESC` tier of the sort is never
@@ -1011,7 +1009,7 @@ fn _17_empty_linestring_candidate_is_discarded() {
 
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
-  crate::index::coordinates::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // rewrite the indexed street to an empty linestring. the rtree row (built from
   // the original geometry's bbox) survives, so the candidate is still returned to
@@ -1055,14 +1053,14 @@ fn insert_horizontal_segment(conn: &Connection) {
   let row = admin_levels_row {
     relation_id: None,
     way_id: Some(1),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(ls).into(),
     name: "horizontal".to_string(),
     country_iso_code: None,
     post_code: None,
   };
   batch_upsert(conn, &[row]);
-  crate::index::coordinates::run(conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(conn, |_| {});
 }
 
 #[test]

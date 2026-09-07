@@ -5,44 +5,7 @@ use geo::{Coord, Geometry, LineString, MultiLineString, MultiPolygon, Polygon, W
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex, mpsc};
 
-#[derive(Clone, Copy)]
-pub enum osm_admin_level {
-  continent = 1,
-  country = 2,
-  region = 3,
-  state = 4,
-  district = 5,
-  county = 6,
-  municipality = 7,
-  city = 8,
-  locality = 9,
-  neighborhood = 10,
-  street = 12,
-  address = 14,
-  house_numbers = 30,
-}
-
-impl TryFrom<u8> for osm_admin_level {
-  type Error = u8;
-  fn try_from(v: u8) -> Result<Self, Self::Error> {
-    match v {
-      1 => Ok(osm_admin_level::continent),
-      2 => Ok(osm_admin_level::country),
-      3 => Ok(osm_admin_level::region),
-      4 => Ok(osm_admin_level::state),
-      5 => Ok(osm_admin_level::district),
-      6 => Ok(osm_admin_level::county),
-      7 => Ok(osm_admin_level::municipality),
-      8 => Ok(osm_admin_level::city),
-      9 => Ok(osm_admin_level::locality),
-      10 => Ok(osm_admin_level::neighborhood),
-      12 => Ok(osm_admin_level::street),
-      14 => Ok(osm_admin_level::address),
-      30 => Ok(osm_admin_level::house_numbers),
-      _ => Err(v),
-    }
-  }
-}
+use crate::domain::admin_level::{admin_level, level};
 
 pub struct progress_report {
   pub total: Option<u64>,
@@ -111,7 +74,7 @@ struct rel_work {
 pub fn run_with_ids(
   conn: &Connection,
   ids: Vec<u64>,
-  admin_level: osm_admin_level,
+  level: level,
   threads: usize,
   name_priority: &[&str],
   progress: impl Fn(progress_report),
@@ -128,7 +91,7 @@ pub fn run_with_ids(
   let (work_tx, work_rx) = mpsc::channel::<rel_work>();
   let work_rx = Arc::new(Mutex::new(work_rx));
   let (result_tx, result_rx) =
-    mpsc::channel::<Option<crate::database::admin_levels::admin_levels>>();
+    mpsc::channel::<Option<admin_level>>();
 
   std::thread::scope(|s| {
     for _ in 0..threads {
@@ -143,7 +106,7 @@ pub fn run_with_ids(
                 w.relation_id,
                 &w.meta,
                 &w.ways,
-                admin_level,
+                level,
               ))
               .ok();
             }
@@ -159,14 +122,14 @@ pub fn run_with_ids(
     for chunk in ids.chunks(CHUNK_SIZE) {
       let dispatched = load_and_send(conn, chunk, name_priority, &work_tx);
 
-      let mut batch: Vec<crate::database::admin_levels::admin_levels> = Vec::new();
+      let mut batch: Vec<admin_level> = Vec::new();
       for _ in 0..dispatched {
         if let Ok(Some(row)) = result_rx.recv() {
           batch.push(row);
         }
       }
 
-      processed += crate::database::admin_levels::batch_upsert(conn, &batch) as u64;
+      processed += crate::domain::admin_level::repository::batch_upsert(conn, &batch) as u64;
       progress(progress_report {
         total: Some(total),
         processed,
@@ -234,8 +197,8 @@ fn process_one_relation(
   relation_id: u64,
   meta: &rel_meta,
   ways: &[LineString<f64>],
-  admin_level: osm_admin_level,
-) -> Option<crate::database::admin_levels::admin_levels> {
+  level: level,
+) -> Option<admin_level> {
   if ways.iter().all(|ls| ls.0.is_empty()) {
     return None;
   }
@@ -260,10 +223,10 @@ fn process_one_relation(
     Geometry::MultiLineString(MultiLineString(ways.to_vec()))
   };
 
-  Some(crate::database::admin_levels::admin_levels {
+  Some(admin_level {
     relation_id: Some(relation_id),
     way_id: None,
-    admin_level: admin_level as u8,
+    level,
     name: meta.name.clone(),
     country_iso_code: meta.country_iso_code.clone(),
     post_code: meta.post_code.clone(),

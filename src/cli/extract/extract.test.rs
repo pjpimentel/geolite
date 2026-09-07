@@ -59,6 +59,32 @@ fn _00_04_parse_name_priority_rejects_quote_characters() {
 }
 
 #[test]
+fn _00_05_parse_admin_levels_accepts_a_list_with_spaces() {
+  assert_eq!(
+    parse_admin_levels(" 2, 4 ,8 "),
+    Ok(vec![level::country, level::state, level::city])
+  );
+}
+
+#[test]
+fn _00_06_parse_admin_levels_rejects_a_non_number() {
+  let err = parse_admin_levels("12,x").expect_err("a non-number must be rejected");
+  assert!(err.contains("'x' is not a level number"), "unexpected error: {err}");
+}
+
+#[test]
+fn _00_07_parse_admin_levels_rejects_a_level_outside_the_scale() {
+  let err = parse_admin_levels("2,11").expect_err("a level outside the scale must be rejected");
+  assert!(err.contains("level 11 is not supported"), "unexpected error: {err}");
+}
+
+#[test]
+fn _00_08_parse_admin_levels_rejects_empty_input() {
+  let err = parse_admin_levels(" , ").expect_err("an empty list must be rejected");
+  assert!(err.contains("at least one level required"), "unexpected error: {err}");
+}
+
+#[test]
 fn _01_00_dispatches_blob_chunks_and_header() {
   let scene = temp_scene("cli_dispatch_chunks_header");
   write_pbf(&scene.pbf_path, &street_chunks());
@@ -127,13 +153,13 @@ fn _01_01_dispatches_osm_pbf_data_and_admin_levels_with_explicit_options() {
     &false,
     &DEFAULT,
   );
-  // "x" is dropped by the level parser and the duplicated 12 keeps the level list explicit.
+  // a repeated level is harmless and keeps the level list explicit.
   command_handler_extract(
     &data_path,
     &1,
     &scene.db_path,
     extract_commands::osm_admin_levels {
-      admin_level: Some("12, x, 12".to_string()),
+      admin_level: Some("12, 12".to_string()),
       recreate: false,
       name_priority: Some(" name ".to_string()),
     },
@@ -187,22 +213,32 @@ fn _01_03_dispatches_house_numbers() {
   );
 }
 
-#[test]
-#[ignore] // executed only as a child of _02_00
-fn _90_admin_levels_invalid_name_priority() {
-  let scene = temp_scene("cli_bad_name_priority");
+fn dispatch_admin_levels(tag: &str, admin_level: &str, name_priority: Option<&str>) {
+  let scene = temp_scene(tag);
   command_handler_extract(
     &scene.guard.path.to_string_lossy(),
     &1,
     &scene.db_path,
     extract_commands::osm_admin_levels {
-      admin_level: Some("12".to_string()),
+      admin_level: Some(admin_level.to_string()),
       recreate: false,
-      name_priority: Some("bad tag!".to_string()),
+      name_priority: name_priority.map(str::to_string),
     },
     &false,
     &DEFAULT,
   );
+}
+
+#[test]
+#[ignore] // executed only as a child of _02_00
+fn _90_admin_levels_invalid_name_priority() {
+  dispatch_admin_levels("cli_bad_name_priority", "12", Some("bad tag!"));
+}
+
+#[test]
+#[ignore] // executed only as a child of _02_01
+fn _91_admin_levels_unsupported_level() {
+  dispatch_admin_levels("cli_bad_admin_level", "2,11", None);
 }
 
 #[test]
@@ -214,4 +250,17 @@ fn _02_00_invalid_name_priority_exits_one() {
   );
   assert_eq!(out.status.code(), Some(1), "stderr: {}", crate::cli::tests::stderr_of(&out));
   assert!(crate::cli::tests::stderr_of(&out).contains("invalid --name-priority"));
+}
+
+#[test]
+fn _02_01_unsupported_level_exits_one() {
+  let out = crate::cli::tests::respawn(
+    "cli::extract::tests::_91_admin_levels_unsupported_level",
+    &[],
+    &[],
+  );
+  assert_eq!(out.status.code(), Some(1), "stderr: {}", crate::cli::tests::stderr_of(&out));
+  assert!(
+    crate::cli::tests::stderr_of(&out).contains("invalid --admin-level: level 11 is not supported")
+  );
 }

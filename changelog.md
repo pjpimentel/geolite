@@ -1,8 +1,11 @@
 # changelog
 
-## **2026-xx-xx** - 0.0.8
+## **2026-XX-XX** - 0.0.8
 
-1. ADDED `admin_level` domain.
+1. REMOVED `database/admin_levels` mod.
+1. REMOVED `index/coordinates` mod.
+1. ADDED `admin_level` domain (`entity`, `scale`, `id`, `geometry`, `repository`, `spatial_index`).
+1. MODIFIED `extract osm-admin-levels`: `--admin-level` refuses a level outside the scale instead of dropping it.
 
 ## **2026-09-07** - 0.0.7
 

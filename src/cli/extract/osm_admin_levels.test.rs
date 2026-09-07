@@ -5,28 +5,7 @@ use crate::extract::pbf_fixtures::{
 };
 
 #[test]
-fn _00_00_level_name_maps_every_known_level_and_unknown() {
-  for (level, name) in [
-    (1u8, "continent"),
-    (2, "country"),
-    (3, "region"),
-    (4, "state"),
-    (5, "district"),
-    (6, "county"),
-    (7, "municipality"),
-    (8, "city"),
-    (9, "locality"),
-    (10, "neighborhood"),
-    (12, "street"),
-    (14, "address"),
-    (11, "unknown"),
-  ] {
-    assert_eq!(level_name(level), name, "level {level}");
-  }
-}
-
-#[test]
-fn _01_00_extract_stage_skips_when_there_is_nothing_to_extract() {
+fn _00_00_extract_stage_skips_when_there_is_nothing_to_extract() {
   let elapsed = extract_stage("nothing", |on_progress| {
     on_progress(progress_report { total: Some(0), processed: 0 });
   });
@@ -34,7 +13,7 @@ fn _01_00_extract_stage_skips_when_there_is_nothing_to_extract() {
 }
 
 #[test]
-fn _01_01_extract_stage_reports_the_extracted_total() {
+fn _00_01_extract_stage_reports_the_extracted_total() {
   let elapsed = extract_stage("things", |on_progress| {
     on_progress(progress_report { total: Some(3), processed: 1 });
     on_progress(progress_report { total: None, processed: 2 });
@@ -45,9 +24,9 @@ fn _01_01_extract_stage_reports_the_extracted_total() {
 
 // inserts a closed-way relation tagged at `level`, runs the handler for that level only and
 // returns the stored rows — the shared scene for the per-level scenarios below.
-fn extract_relation_at_level(tag: &str, level: u8, name: &str) -> Vec<(Option<u64>, u8, String)> {
+fn extract_relation_at_level(tag: &str, level: level, name: &str) -> Vec<(Option<u64>, u8, String)> {
   let scene = temp_scene(tag);
-  let level_value = level.to_string();
+  let level_value = level.value().to_string();
   {
     let conn = crate::database::open_write(&scene.db_path);
     insert_closed_way(&conn, 300, 1, (0.0, 0.0), 1.0, &[]);
@@ -65,8 +44,8 @@ fn extract_relation_at_level(tag: &str, level: u8, name: &str) -> Vec<(Option<u6
 }
 
 #[test]
-fn _02_00_generic_level_extracts_a_relation() {
-  let stored = extract_relation_at_level("cli_levels_generic", 8, "Cidade");
+fn _01_00_generic_level_extracts_a_relation() {
+  let stored = extract_relation_at_level("cli_levels_generic", level::city, "Cidade");
   assert!(
     stored.iter().any(|(_, level, name)| *level == 8 && name == "Cidade"),
     "the level-8 relation must be stored, got {stored:?}"
@@ -74,8 +53,8 @@ fn _02_00_generic_level_extracts_a_relation() {
 }
 
 #[test]
-fn _02_01_level_10_runs_both_relation_and_way_stages() {
-  let stored = extract_relation_at_level("cli_levels_ten", 10, "Bairro");
+fn _01_01_level_10_runs_both_relation_and_way_stages() {
+  let stored = extract_relation_at_level("cli_levels_ten", level::neighborhood, "Bairro");
   assert!(
     stored.iter().any(|(_, level, name)| *level == 10 && name == "Bairro"),
     "the level-10 relation must be stored, got {stored:?}"
@@ -83,33 +62,7 @@ fn _02_01_level_10_runs_both_relation_and_way_stages() {
 }
 
 #[test]
-fn _02_02_unsupported_level_is_skipped_and_the_next_level_runs() {
-  let scene = temp_scene("cli_levels_unsupported");
-  {
-    let conn = crate::database::open_write(&scene.db_path);
-    insert_way_at(
-      &conn,
-      100,
-      1,
-      &[(0.0, 0.0), (0.001, 0.0)],
-      &[("highway", "residential"), ("name", "Rua Alfa")],
-    );
-  }
-  // 11 has no osm_admin_level mapping and must not stop 12 from extracting.
-  command_handler_extract_osm_admin_levels(&scene.db_path, &[11, 12], &1, false, &["name"], &[]);
-
-  let conn = crate::database::open_write(&scene.db_path);
-  let stored = stored_admin_levels(&conn);
-  assert!(
-    stored.iter().any(|(way_id, level, name)| {
-      *way_id == Some(100) && *level == 12 && name == "Rua Alfa"
-    }),
-    "the street must be stored even after the unsupported level, got {stored:?}"
-  );
-}
-
-#[test]
-fn _02_03_recreate_destroys_previous_admin_levels() {
+fn _01_02_recreate_destroys_previous_admin_levels() {
   let scene = temp_scene("cli_levels_recreate");
   {
     let conn = crate::database::open_write(&scene.db_path);
@@ -121,8 +74,8 @@ fn _02_03_recreate_destroys_previous_admin_levels() {
       &[("highway", "residential"), ("name", "Rua Alfa")],
     );
   }
-  command_handler_extract_osm_admin_levels(&scene.db_path, &[12], &1, false, &["name"], &[]);
-  command_handler_extract_osm_admin_levels(&scene.db_path, &[12], &1, true, &["name"], &[]);
+  command_handler_extract_osm_admin_levels(&scene.db_path, &[level::street], &1, false, &["name"], &[]);
+  command_handler_extract_osm_admin_levels(&scene.db_path, &[level::street], &1, true, &["name"], &[]);
 
   let conn = crate::database::open_write(&scene.db_path);
   assert_eq!(

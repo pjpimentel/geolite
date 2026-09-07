@@ -170,7 +170,7 @@ pub fn way_coords_chunk(
   ids: &[u64],
   name_priority: &[&str],
 ) -> Vec<way_coord_row> {
-  let placeholders = super::placeholders_for(ids);
+  let placeholders = super::placeholders_for(ids.len());
   let name_select = crate::domain::osm_tag::select::coalesce_of("osm_data.osm_ways.payload", name_priority);
   let sql = format!(
     "SELECT
@@ -188,7 +188,7 @@ pub fn way_coords_chunk(
          WHERE osm_data.osm_ways.id IN ({placeholders})
          ORDER BY osm_data.osm_ways.id ASC, node_refs.key ASC",
   );
-  super::query_by_ids(conn, &sql, ids, |row| {
+  super::query_by_ids(conn, &sql, ids.iter().map(|&id| id as i64), |row| {
     Ok(way_coord_row {
       way_id: row.get(0)?,
       way_name: row.get(1)?,

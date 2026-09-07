@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use super::admin_levels::admin_geometry;
+use crate::domain::admin_level::geometry::{admin_geometry, mbr_center};
 
 const SQL_CREATE: &str = "
   CREATE TABLE IF NOT EXISTS house_numbers (
@@ -125,7 +125,7 @@ pub fn streets_with_centroid(conn: &Connection) -> Vec<street_meta_row> {
     .expect("failed to query streets")
     .filter_map(|r| {
       let (id, name, blob) = r.expect("failed to read street meta row");
-      let (cx, cy) = super::admin_levels::mbr_center(&blob)?;
+      let (cx, cy) = mbr_center(&blob)?;
       Some(street_meta_row { id, name, cx, cy })
     })
     .collect()

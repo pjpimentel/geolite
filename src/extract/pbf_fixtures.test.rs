@@ -696,15 +696,15 @@ pub(crate) fn progress_events(
 
 // os campos que os testes de nivel checam em uma linha recem-montada
 pub(crate) fn assert_admin_row(
-  row: &crate::database::admin_levels::admin_levels,
+  row: &crate::domain::admin_level::admin_level,
   way_id: u64,
-  admin_level: u8,
+  level: crate::domain::admin_level::level,
   name: &str,
   post_code: Option<&str>,
 ) {
   assert_eq!(row.way_id, Some(way_id));
   assert_eq!(row.relation_id, None);
-  assert_eq!(row.admin_level, admin_level);
+  assert_eq!(row.level, level);
   assert_eq!(row.name, name);
   assert_eq!(row.post_code.as_deref(), post_code);
   assert_eq!(
@@ -743,7 +743,7 @@ pub(crate) fn stored_admin_levels(conn: &rusqlite::Connection) -> Vec<(Option<u6
 pub(crate) fn stored_geometry(
   conn: &rusqlite::Connection,
   way_id: u64,
-) -> crate::database::admin_levels::admin_geometry {
+) -> crate::domain::admin_level::geometry::admin_geometry {
   conn
     .query_row(SQL_SELECT_ADMIN_LEVEL_GEOMETRY, [way_id], |r| r.get(0))
     .expect("failed to read geometry")

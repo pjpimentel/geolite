@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use utoipa::ToSchema;
 
-use crate::extract::admin_levels::osm_admin_level;
+use crate::domain::admin_level::level;
 
 pub mod address;
 pub mod coordinates;
@@ -68,14 +68,7 @@ pub(crate) struct query_output {
   pub(crate) matches: Vec<query_match>,
 }
 
-// axis-aligned box. tipo interno: envelope de um bounding_geometry e params do rtree.
-#[derive(Clone, Copy)]
-pub(crate) struct bounding_box {
-  pub(crate) min_lat: f64,
-  pub(crate) max_lat: f64,
-  pub(crate) min_lon: f64,
-  pub(crate) max_lon: f64,
-}
+pub(crate) use crate::domain::admin_level::geometry::bounding_box;
 
 // filtro espacial arbitrario: a geometria (poligono/multipoligono) faz a contencao exata
 // do ponto; o envelope (aabb) alimenta o pre-filtro grosso do rtree.
@@ -119,7 +112,7 @@ pub(crate) fn load_wkt_by_ids(
   if !include_wkt {
     return HashMap::new();
   }
-  crate::database::admin_levels::load_full_by_ids(conn, ids)
+  crate::domain::admin_level::repository::load_full_by_ids(conn, ids)
     .into_iter()
     .filter_map(|r| Some((r.id, r.wkb.as_ref()?.geometry().to_wkt().ok()?)))
     .collect()
@@ -224,8 +217,8 @@ pub(crate) fn try_parse_coordinates(s: &str) -> Option<(f64, f64)> {
 // remaining levels ordered from most specific to least (higher level = more specific).
 // used as fallback when no friendly_name_format template is provided
 fn default_friendly_name(admin_levels: &[admin_level]) -> String {
-  let street_level = osm_admin_level::street as u8;
-  let house_level = osm_admin_level::house_numbers as u8;
+  let street_level = level::street.value();
+  let house_level = level::house_number.value();
   let mut sorted: Vec<&admin_level> = admin_levels.iter().collect();
   sorted.sort_by_key(|a| {
     if a.level == street_level {
@@ -269,7 +262,7 @@ fn parse_template(format: &str) -> Result<Vec<template_segment>, String> {
       };
       let inner = &format[i + 1..i + rel_close];
       let level = if inner == "house_number" {
-        osm_admin_level::house_numbers as u8
+        level::house_number.value()
       } else {
         match inner
           .strip_prefix("admin_level_")

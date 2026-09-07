@@ -8,6 +8,13 @@ modules that came before (`extract`, `index`, `query`, `optimize`, `database`) a
 into these folders and disappear as the concepts arrive.
 
 ```
+admin_level/    a named administrative area — the `admin_levels` table
+  entity            the row as it is written: osm element, level, shape, name, codes
+  scale             the closed set of levels, their names and their order
+  id                stable identity, packed from the osm way or relation it came from
+  geometry          the wkb column codec, its mbr shortcut and the bounding box
+  repository        the ddl, the index, the nine queries and the upsert
+  spatial_index     the rtree of every level's bounding box, and the pass that fills it
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the ten writes and reads
   catalog           the `source` enum, the endpoint it resolves, and the listing of each source
@@ -36,7 +43,8 @@ osm_relation/   an openstreetmap relation — the `osm_data.osm_relations` table
 
 every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
 objects and services sit alongside. everything a concept needs is in one place, and the only write
-path into a table is through its entity. `osm_pbf_file` is a folder without an `entity` and
+path into a table is through its entity. `admin_level` is the first folder whose table the queries
+read, and the first to take its module out of `src/database` whole. `osm_pbf_file` is a folder without an `entity` and
 `osm_tag` the one that is not a table, both for reasons given below; `osm_node`, `osm_way` and
 `osm_relation` arrived with their entity and decoder only — their payload encoding and their
 persistence still sit in `src/database` and come with each one's own slice.
@@ -71,6 +79,72 @@ persistence still sit in `src/database` and come with each one's own slice.
 
 what stays outside the domain is what belongs to no concept in particular: the sqlite connection
 lifecycle, the cli and the http server.
+
+## admin_level
+
+the `admin_levels` table and everything around it: a country, a state, a city, a neighborhood, a
+street — each one a named area with a shape, sitting somewhere on a scale. the ddl, the queries and
+the upsert live in `repository`, the rtree in `spatial_index`, and the connection lifecycle in
+`src/database/mod.rs` calls into both; `src/database/admin_levels.rs` and `src/index/coordinates.rs`
+are gone.
+
+### the scale — `level`
+
+the scale every named area sits on. osm tags levels 1..11 on boundary relations; geolite extends it
+with 12 for streets, which are mapped as ways rather than boundaries, and 30 for house numbers,
+which are synthesized while answering a query and never stored as an area.
+
+| level | name | | level | name |
+|---:|---|---|---:|---|
+| 1 | continent | | 8 | city |
+| 2 | country | | 9 | locality |
+| 3 | region | | 10 | neighborhood |
+| 4 | state | | 12 | street |
+| 5 | district | | 14 | address |
+| 6 | county | | 30 | house_number |
+| 7 | municipality | | | |
+
+**the set is closed on the way in.** `new` accepts only the levels above, and everything that
+writes a level goes through it: the entity carries a `level`, the presets list `level`s, and
+`--admin-level 11` is refused where it is parsed instead of travelling downstream as a number that
+would quietly extract nothing. `name()` returns `&'static str`, not an `Option` — there is no
+"unknown" to return, because an unnamed level cannot be constructed.
+
+what comes back out is still a number: the rows the repository returns carry `admin_level: u8`,
+because the hierarchy resolver and the query layer compare and sort them as numbers today. typing
+those reads is the hierarchy slice's job, which rewrites their main consumer.
+
+ordering is by the level value — a higher level is more specific, so a street sorts after the city
+that contains it — and it is implemented explicitly rather than derived, so that moving a variant
+cannot silently change it.
+
+### the identity — `admin_level_id`
+
+an area's id is the osm id of the way or relation it came from, shifted left one bit, with the
+low bit set for relations: a way and a relation that share an osm id stay distinct, the id is a
+pure function of the source and never an insert-order rowid, and `osm_id()` and `kind()` read it
+back. `batch_upsert` derives it, and a row with neither a way nor a relation is a programming
+error that panics.
+
+### the shape — `geometry`
+
+`admin_geometry` is the `wkb` column: spatialite's blob layout on the way in, decoded with
+`SpatiaLiteWkb` on the way out, because geozero's writer omits the byte-order byte and uses its own
+sub-geometry separator, which the ISO WKB reader rejects. a blob that cannot be read degrades to an
+empty geometry with a warning instead of failing the query. `mbr_center` reads the centre of the
+blob's MBR header without decoding the geometry, the shortcut the house-number stage snaps with.
+`bounding_box` is the envelope the rtree indexes; it moved here from `query` because the
+persistence imported it, and a repository importing from the query layer is the wrong direction.
+
+### the rtree — `spatial_index`
+
+`admin_levels_rtree` is a second table subordinate to the first, the same arrangement
+`osm_pbf_blob_chunks` has with `osm_pbf_files`: a box means nothing without the row it bounds. it
+is a virtual table with no indexes of its own, dropped and recreated by every run, which is why it
+has functions rather than an `impl table`. `run` pages through every row with a geometry and
+inserts one box per row; on a file database up to eight readers scan disjoint id ranges in
+parallel while the connection that owns the table writes, and an in-memory database is scanned on
+the calling thread, because `conn.path()` is empty for it and a worker could not reopen it.
 
 ## osm_pbf_file
 
@@ -171,7 +245,7 @@ that belongs to someone lives with them.
 ### the byte layout — `blob_index`
 
 `osm_data.osm_pbf_blob_chunks` is a second table subordinate to the first, the same arrangement
-`admin_levels` has with `admin_levels_rtree` in `src/database/admin_levels.rs`: a chunk is a byte
+`admin_levels` has with `admin_levels_rtree` in `domain/admin_level/spatial_index.rs`: a chunk is a byte
 range **of a file** and means nothing without one. `blob_scanner` fills it by walking the file front
 to back, reading only the length-prefixed blob headers and skipping every body — the one pass that
 never decompresses anything. `osm_data` then reads it to know which ranges to hand each decoder

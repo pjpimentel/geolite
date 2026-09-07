@@ -915,7 +915,7 @@ fn _04_00_distant_coordinates_still_resolve_because_streets_have_no_distance_cap
   );
 }
 
-// 05.00. regression guard: id is pack_admin_id(osm_id), a pure function, never an insert-order rowid
+// 05.00. regression guard: id is admin_level_id::from_way(osm_id), a pure function, never an insert-order rowid
 #[test]
 #[ignore]
 fn _05_00_match_id_is_the_packed_osm_id() {

@@ -599,3 +599,39 @@ fn _12_recreate_rebuilds_the_element_tables_without_touching_the_chunk_index() {
   );
   assert_full_fixture(&s);
 }
+
+// 13. the scale is closed at the cli edge
+#[test]
+#[ignore]
+fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
+  let w = world();
+  let s = extracted(w, "extract_unknown_level", "2", &[]);
+  let out = w.geolite_in(
+    &s.dir,
+    &[
+      "--preset",
+      "brazil",
+      "extract",
+      "osm-admin-levels",
+      "--admin-level",
+      "2,11",
+    ],
+  );
+  assert_eq!(
+    out.status, 1,
+    "an unsupported level must exit with 1:\n{}",
+    out.stderr
+  );
+  assert!(
+    out
+      .stderr
+      .contains("invalid --admin-level: level 11 is not supported"),
+    "stderr: {}",
+    out.stderr
+  );
+  assert_eq!(
+    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels"),
+    0,
+    "nothing is extracted when the list is refused"
+  );
+}

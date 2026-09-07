@@ -3,9 +3,8 @@
 
 ## coordinates
 
-1. drops and recreates `admin_levels_rtree`
-2. loads all `admin_levels` rows that have geometry, in batches
-3. computes the bounding box of each geometry and inserts into the rtree
+the rtree pass belongs to the area it indexes and lives in
+[`domain/admin_level`](../domain/readme.md#admin_level), as `spatial_index`.
 
 ## hierarchy
 

@@ -1,5 +1,6 @@
 use super::enrich_house_numbers;
-use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
+use crate::domain::admin_level::repository::batch_upsert;
+use crate::domain::admin_level::{admin_level as admin_levels_row, level};
 use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
 use crate::query::{admin_level, query_match, query_match_attributes};
 use geo::{Coord, Geometry, LineString, Point};
@@ -14,7 +15,7 @@ fn setup() -> (Connection, i64) {
   let street = admin_levels_row {
     relation_id: None,
     way_id: Some(1),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(ls).into(),
     name: "rua x".to_string(),
     country_iso_code: None,

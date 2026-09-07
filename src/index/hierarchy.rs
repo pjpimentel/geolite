@@ -45,7 +45,7 @@ struct ancestor_entry {
 }
 
 pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
-  let total = crate::database::admin_levels::pending_total(conn) as u64;
+  let total = crate::database::admin_levels_hierarchy::pending_total(conn) as u64;
   progress(progress_report {
     total: Some(total),
     processed: 0,
@@ -55,7 +55,7 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
     return;
   }
 
-  let raw = crate::database::admin_levels::load_all_below_street(conn);
+  let raw = crate::domain::admin_level::repository::load_all_below_street(conn);
   let mut entries: Vec<ancestor_entry> = raw.iter().map(parse_entry).collect();
 
   let mut by_level: BTreeMap<u8, Vec<usize>> = BTreeMap::new();
@@ -172,7 +172,7 @@ pub fn run(conn: &rusqlite::Connection, progress: impl Fn(progress_report)) {
     });
   }
 
-  let street_ids = crate::database::admin_levels::pending_street_ids(conn);
+  let street_ids = crate::database::admin_levels_hierarchy::pending_street_ids(conn);
   // conn.path() retorna Some("") para `:memory:` — workers nao conseguem reabrir,
   // entao fallback para o caminho sequencial.
   match conn.path().filter(|p| !p.is_empty()) {
@@ -229,7 +229,7 @@ fn run_streets_parallel(
           return;
         };
         for sub_chunk in id_chunk.chunks(READ_SIZE) {
-          let rows = crate::database::admin_levels::load_by_ids(&reader, sub_chunk);
+          let rows = crate::domain::admin_level::repository::load_by_ids(&reader, sub_chunk);
           let out: Vec<row_t> = rows
             .iter()
             .map(|db_row| {
@@ -294,7 +294,7 @@ fn run_streets_sequential(
   let mut batch: Vec<row_t> = Vec::new();
 
   for chunk in street_ids.chunks(READ_SIZE) {
-    let rows = crate::database::admin_levels::load_by_ids(conn, chunk);
+    let rows = crate::domain::admin_level::repository::load_by_ids(conn, chunk);
     for db_row in &rows {
       let e = parse_entry(db_row);
       let (ancestor_ids, user_friendly_name) = resolve_hierarchy(
@@ -334,7 +334,7 @@ fn run_streets_sequential(
   }
 }
 
-fn parse_entry(row: &crate::database::admin_levels::admin_level_geom_row) -> ancestor_entry {
+fn parse_entry(row: &crate::domain::admin_level::repository::admin_level_geom_row) -> ancestor_entry {
   let geometry = row.wkb.as_ref().map(|g| g.geometry().clone());
   let (cx, cy) = geometry
     .as_ref()

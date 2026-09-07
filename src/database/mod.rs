@@ -21,7 +21,6 @@ macro_rules! impl_table_ops {
 // database stamped with another version, and `geolite merge` refuses to combine one.
 pub const SCHEMA_VERSION: u32 = 2;
 
-pub mod admin_levels;
 pub mod admin_levels_hierarchy;
 pub mod house_numbers;
 pub mod jsonb;
@@ -30,19 +29,19 @@ pub mod osm_nodes;
 pub mod osm_relations;
 pub mod osm_ways;
 
-pub(crate) fn placeholders_for(ids: &[u64]) -> String {
-  ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+pub(crate) fn placeholders_for(count: usize) -> String {
+  vec!["?"; count].join(",")
 }
 
 pub(crate) fn query_by_ids<T>(
   conn: &Connection,
   sql: &str,
-  ids: &[u64],
+  ids: impl IntoIterator<Item = i64>,
   row_of: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
 ) -> Vec<T> {
   let params: Vec<rusqlite::types::Value> = ids
-    .iter()
-    .map(|&id| rusqlite::types::Value::Integer(id as i64))
+    .into_iter()
+    .map(rusqlite::types::Value::Integer)
     .collect();
   let mut stmt = conn
     .prepare(sql)
@@ -104,8 +103,8 @@ pub fn destroy_data(
   }
   if admin_levels {
     admin_levels_hierarchy::drop_table(&conn);
-    admin_levels::drop_rtree(&conn);
-    admin_levels::drop_table(&conn);
+    crate::domain::admin_level::spatial_index::drop_table(&conn);
+    crate::domain::admin_level::repository::drop_table(&conn);
     house_numbers::drop_table(&conn);
   }
   conn.execute_batch("VACUUM;").expect("failed to vacuum");
@@ -159,9 +158,9 @@ pub fn open_write_main(path: &str) -> Connection {
     .expect("failed to set user_version");
   crate::domain::osm_pbf_file::osm_pbf_files::create_table(&conn);
   crate::domain::osm_pbf_file::repository::add_origin_wkt(&conn);
-  admin_levels::create_table(&conn);
+  crate::domain::admin_level::admin_levels::create_table(&conn);
   admin_levels_hierarchy::create_table(&conn);
-  admin_levels::create_rtree(&conn);
+  crate::domain::admin_level::spatial_index::create_table(&conn);
   house_numbers::create_table(&conn);
   conn
 }

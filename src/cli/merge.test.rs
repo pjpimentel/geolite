@@ -1,6 +1,7 @@
-use crate::database::admin_levels::{
-  admin_geometry, admin_id_kind, admin_levels as admin_levels_row, batch_upsert, pack_admin_id,
-};
+use crate::domain::admin_level::geometry::admin_geometry;
+use crate::domain::admin_level::id::admin_level_id;
+use crate::domain::admin_level::repository::batch_upsert;
+use crate::domain::admin_level::{admin_level as admin_levels_row, level};
 use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
 use crate::database::{open_write_main, read_user_version};
 use crate::index::admin_levels_hierarchy_tantivy as tantivy;
@@ -22,7 +23,7 @@ fn make_way(way_id: u64) -> admin_levels_row {
   admin_levels_row {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: make_geometry(),
     name: format!("way_{way_id}"),
     country_iso_code: None,
@@ -103,9 +104,9 @@ fn _01_end_to_end_merge_into_a_fresh_base_rebuilds_indexes() {
   let source_b = temp_path("e2e_source_b");
   let index_dir = format!("{}.tantivy", temp_path("e2e_index"));
 
-  let way1 = pack_admin_id(admin_id_kind::way, 1) as i64;
+  let way1 = admin_level_id::from_way(1).raw() as i64;
   build_source(&source_a, &[make_way(1)], &[make_house(100, way1, "10")]);
-  let way3 = pack_admin_id(admin_id_kind::way, 3) as i64;
+  let way3 = admin_level_id::from_way(3).raw() as i64;
   build_source(&source_b, &[make_way(3)], &[make_house(200, way3, "20")]);
 
   // base does not exist yet — merge must create it fresh and populate it from both sources.
@@ -140,7 +141,7 @@ fn make_street_at(name: &str, way_id: u64, lon: f64, lat: f64) -> admin_levels_r
   admin_levels_row {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(LineString(vec![
       Coord { x: lon, y: lat },
       Coord { x: lon + 0.0005, y: lat },
@@ -183,8 +184,8 @@ fn _02_merge_matches_single_combined_build_query_parity() {
   let merged_index = format!("{}.tantivy", temp_path("parity_merged_index"));
   let combined_index = format!("{}.tantivy", temp_path("parity_combined_index"));
 
-  let alpha = pack_admin_id(admin_id_kind::way, 1) as i64;
-  let gamma = pack_admin_id(admin_id_kind::way, 3) as i64;
+  let alpha = admin_level_id::from_way(1).raw() as i64;
+  let gamma = admin_level_id::from_way(3).raw() as i64;
 
   // two regions built separately, then merged into a fresh base (re-derives all indexes). the rows
   // are re-created per db because admin_levels is not Clone.

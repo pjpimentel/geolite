@@ -1,6 +1,7 @@
-use crate::database::admin_levels::{
-  admin_geometry, admin_id_kind, admin_levels as admin_levels_row, batch_upsert, pack_admin_id,
-};
+use crate::domain::admin_level::geometry::admin_geometry;
+use crate::domain::admin_level::id::admin_level_id;
+use crate::domain::admin_level::repository::batch_upsert;
+use crate::domain::admin_level::{admin_level as admin_levels_row, level};
 use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
 use crate::database::open_write_main;
 use geo::{Coord, Geometry, LineString};
@@ -18,7 +19,7 @@ fn make_way(way_id: u64) -> admin_levels_row {
   admin_levels_row {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: make_geometry(),
     name: format!("way_{way_id}"),
     country_iso_code: None,
@@ -84,7 +85,7 @@ fn _00_merge_combines_admin_levels_without_id_collision() {
   // ways {1, 2, 3} → exactly three rows; way 2 upserted, not duplicated.
   assert_eq!(count(&conn, "SELECT COUNT(*) FROM admin_levels"), 3);
 
-  let way3_id = pack_admin_id(admin_id_kind::way, 3) as i64;
+  let way3_id = admin_level_id::from_way(3).raw() as i64;
   assert_eq!(
     count(&conn, &format!("SELECT COUNT(*) FROM admin_levels WHERE id = {way3_id}")),
     1,
@@ -102,7 +103,7 @@ fn _01_merge_house_numbers_dedupes_by_node_id() {
   let source_path = temp_path("houses_source");
 
   // both databases reference admin_level way 1 (id = 2). node 100 overlaps; node 200 is new.
-  let way1_id = pack_admin_id(admin_id_kind::way, 1) as i64;
+  let way1_id = admin_level_id::from_way(1).raw() as i64;
   build_source(&base_path, &[make_way(1)], &[make_house(100, way1_id, "10")]);
   build_source(
     &source_path,
