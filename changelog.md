@@ -1,6 +1,10 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.7
+## **2026-xx-xx** - 0.0.8
+
+1. ADDED `admin_level` domain.
+
+## **2026-09-07** - 0.0.7
 
 1. REMOVED `extract/osm_data` mod.
 1. ADDED `osm_node`, `osm_way` and `osm_relation` domains with their decoders.
