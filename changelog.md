@@ -4,7 +4,9 @@
 
 1. REMOVED `database/admin_levels` mod.
 1. REMOVED `index/coordinates` mod.
-1. ADDED `admin_level` domain (`entity`, `scale`, `id`, `geometry`, `repository`, `spatial_index`).
+1. REMOVED `extract/admin_levels` mod.
+1. ADDED `admin_level` domain (`entity`, `scale`, `id`, `geometry`, `repository`, `spatial_index`, `rules`, `extract`).
+1. ADDED `admin_level::extract(level)`: the three extraction stages as one use case of the domain.
 1. MODIFIED `extract osm-admin-levels`: `--admin-level` refuses a level outside the scale instead of dropping it.
 
 ## **2026-09-07** - 0.0.7

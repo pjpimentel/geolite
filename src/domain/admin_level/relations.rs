@@ -1,63 +1,11 @@
-pub mod level_10;
-pub mod level_12;
-
 use geo::{Coord, Geometry, LineString, MultiLineString, MultiPolygon, Polygon, Winding};
 use rusqlite::Connection;
 use std::sync::{Arc, Mutex, mpsc};
 
-use crate::domain::admin_level::{admin_level, level};
-
-pub struct progress_report {
-  pub total: Option<u64>,
-  pub processed: u64,
-}
-
-#[derive(Clone, Copy)]
-pub struct extraction_rules {
-  pub level: u8,
-  pub include: &'static [crate::database::osm_ways::filters],
-  pub exclude: &'static [crate::database::osm_ways::filters],
-}
-
-fn default_include(level: u8) -> &'static [crate::database::osm_ways::filters] {
-  use crate::database::osm_ways::filters;
-  match level {
-    10 => &[
-      filters::include_place_neighbourhood,
-      filters::include_place_suburb,
-    ],
-    _ => &[],
-  }
-}
-
-fn default_exclude(level: u8) -> &'static [crate::database::osm_ways::filters] {
-  use crate::database::osm_ways::filters;
-  match level {
-    12 => &[
-      filters::exclude_place_neighbourhood,
-      filters::exclude_place_suburb,
-      filters::exclude_leisure_park,
-      filters::exclude_building,
-      filters::exclude_waterway,
-    ],
-    _ => &[],
-  }
-}
-
-pub fn resolve_rules(
-  level: u8,
-  overrides: &[extraction_rules],
-) -> (
-  &'static [crate::database::osm_ways::filters],
-  &'static [crate::database::osm_ways::filters],
-) {
-  if let Some(r) = overrides.iter().find(|r| r.level == level) {
-    return (r.include, r.exclude);
-  }
-  (default_include(level), default_exclude(level))
-}
-
-pub(super) const CHUNK_SIZE: usize = 500;
+use super::entity::admin_level;
+use super::extract::{CHUNK_SIZE, progress_report};
+use super::geometry::{approx_eq, assemble_rings};
+use super::scale::level;
 
 struct rel_meta {
   name: String,
@@ -71,13 +19,13 @@ struct rel_work {
   ways: Vec<LineString<f64>>,
 }
 
-pub fn run_with_ids(
+pub(super) fn run_with_ids(
   conn: &Connection,
   ids: Vec<u64>,
   level: level,
   threads: usize,
   name_priority: &[&str],
-  progress: impl Fn(progress_report),
+  mut progress: impl FnMut(progress_report),
 ) {
   let total = ids.len() as u64;
   progress(progress_report {
@@ -90,30 +38,13 @@ pub fn run_with_ids(
 
   let (work_tx, work_rx) = mpsc::channel::<rel_work>();
   let work_rx = Arc::new(Mutex::new(work_rx));
-  let (result_tx, result_rx) =
-    mpsc::channel::<Option<admin_level>>();
+  let (result_tx, result_rx) = mpsc::channel::<Option<admin_level>>();
 
   std::thread::scope(|s| {
     for _ in 0..threads {
       let rx = work_rx.clone();
       let tx = result_tx.clone();
-      s.spawn(move || {
-        loop {
-          let item = { rx.lock().unwrap().recv() };
-          match item {
-            Ok(w) => {
-              tx.send(process_one_relation(
-                w.relation_id,
-                &w.meta,
-                &w.ways,
-                level,
-              ))
-              .ok();
-            }
-            Err(_) => break,
-          }
-        }
-      });
+      s.spawn(move || worker(&rx, &tx, level));
     }
     drop(result_tx);
 
@@ -121,15 +52,9 @@ pub fn run_with_ids(
 
     for chunk in ids.chunks(CHUNK_SIZE) {
       let dispatched = load_and_send(conn, chunk, name_priority, &work_tx);
+      let batch = collect_batch(&result_rx, dispatched);
 
-      let mut batch: Vec<admin_level> = Vec::new();
-      for _ in 0..dispatched {
-        if let Ok(Some(row)) = result_rx.recv() {
-          batch.push(row);
-        }
-      }
-
-      processed += crate::domain::admin_level::repository::batch_upsert(conn, &batch) as u64;
+      processed += super::repository::batch_upsert(conn, &batch) as u64;
       progress(progress_report {
         total: Some(total),
         processed,
@@ -138,6 +63,34 @@ pub fn run_with_ids(
 
     drop(work_tx);
   });
+}
+
+fn worker(
+  rx: &Mutex<mpsc::Receiver<rel_work>>,
+  tx: &mpsc::Sender<Option<admin_level>>,
+  level: level,
+) {
+  loop {
+    // the lock must be released before the relation is processed, or the workers serialize
+    let item = { rx.lock().unwrap().recv() };
+    match item {
+      Ok(w) => {
+        tx.send(process_one_relation(w.relation_id, &w.meta, &w.ways, level))
+          .ok();
+      }
+      Err(_) => break,
+    }
+  }
+}
+
+fn collect_batch(rx: &mpsc::Receiver<Option<admin_level>>, dispatched: usize) -> Vec<admin_level> {
+  let mut batch: Vec<admin_level> = Vec::new();
+  for _ in 0..dispatched {
+    if let Ok(Some(row)) = rx.recv() {
+      batch.push(row);
+    }
+  }
+  batch
 }
 
 fn load_and_send(
@@ -234,47 +187,6 @@ fn process_one_relation(
   })
 }
 
-pub(super) fn approx_eq(a: Coord<f64>, b: Coord<f64>) -> bool {
-  (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9
-}
-
-fn assemble_rings(ways: &[LineString<f64>]) -> Vec<LineString<f64>> {
-  let mut remaining: Vec<(LineString<f64>, bool)> =
-    ways.iter().map(|w| (w.clone(), false)).collect();
-  let mut rings: Vec<LineString<f64>> = Vec::new();
-  while let Some(start_idx) = remaining.iter().position(|(_, used)| !used) {
-    let mut coords: Vec<Coord<f64>> = remaining[start_idx].0.0.clone();
-    remaining[start_idx].1 = true;
-    let mut extended = true;
-    while extended {
-      extended = false;
-      let tail = *coords.last().unwrap();
-      for (ls, used) in remaining.iter_mut() {
-        if *used {
-          continue;
-        }
-        let pts = &ls.0;
-        if approx_eq(pts[0], tail) {
-          coords.extend_from_slice(&pts[1..]);
-          *used = true;
-          extended = true;
-          break;
-        }
-        if approx_eq(pts[pts.len() - 1], tail) {
-          let mut rev = pts.clone();
-          rev.reverse();
-          coords.extend_from_slice(&rev[1..]);
-          *used = true;
-          extended = true;
-          break;
-        }
-      }
-    }
-    rings.push(LineString(coords));
-  }
-  rings
-}
-
 #[cfg(test)]
-#[path = "admin_levels.test.rs"]
+#[path = "relations.test.rs"]
 mod tests;

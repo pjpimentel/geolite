@@ -11,7 +11,7 @@ pub struct preset {
 #[derive(Clone, Copy)]
 pub struct extract_osm_admin_levels_preset {
   pub admin_levels: &'static [level],
-  pub admin_levels_rules: &'static [crate::extract::admin_levels::extraction_rules],
+  pub admin_levels_rules: &'static [crate::domain::admin_level::extraction_rules],
   pub name_priority: &'static [&'static str],
 }
 

@@ -1,7 +1,11 @@
 use geo::{Coord, Geometry, LineString, MultiPolygon, Polygon, Winding};
 use rusqlite::Connection;
 
-use crate::domain::admin_level::{admin_level, level};
+use super::entity::admin_level;
+use super::extract::{CHUNK_SIZE, progress_report};
+use super::geometry::approx_eq;
+use super::rules::{extraction_rules, resolve_rules};
+use super::scale::level;
 
 struct way_meta {
   name: String,
@@ -15,14 +19,14 @@ struct way_work {
   level: level,
 }
 
-pub fn run(
+pub(super) fn run(
   conn: &Connection,
-  rules: &[super::extraction_rules],
+  rules: &[extraction_rules],
   name_priority: &[&str],
-  progress: impl Fn(super::progress_report),
+  mut progress: impl FnMut(progress_report),
 ) {
   let neighborhood = level::neighborhood.value();
-  let (include, _) = super::resolve_rules(10, rules);
+  let (include, _) = resolve_rules(level::neighborhood, rules);
   let mut candidate_ids: Vec<u64> = Vec::new();
   for filter in include {
     let ids =
@@ -33,7 +37,7 @@ pub fn run(
   candidate_ids.dedup();
 
   let total = candidate_ids.len() as u64;
-  progress(super::progress_report {
+  progress(progress_report {
     total: Some(total),
     processed: 0,
   });
@@ -46,21 +50,16 @@ pub fn run(
   // so processing sequentially is as fast as a worker pool without the channel
   // overhead
   let mut processed: u64 = 0;
-  for chunk in candidate_ids.chunks(super::CHUNK_SIZE) {
-    let works = load_chunk(
-      conn,
-      chunk,
-      level::neighborhood,
-      name_priority,
-    );
+  for chunk in candidate_ids.chunks(CHUNK_SIZE) {
+    let works = load_chunk(conn, chunk, level::neighborhood, name_priority);
     let mut batch: Vec<admin_level> = Vec::new();
     for w in works {
       if let Some(row) = process_one_way(w) {
         batch.push(row);
       }
     }
-    processed += crate::domain::admin_level::repository::batch_upsert(conn, &batch) as u64;
-    progress(super::progress_report {
+    processed += super::repository::batch_upsert(conn, &batch) as u64;
+    progress(progress_report {
       total: Some(total),
       processed,
     });
@@ -116,7 +115,7 @@ fn process_one_way(w: way_work) -> Option<admin_level> {
 
   let ls = LineString(w.coords);
   let geom: Geometry<f64> =
-    if ls.0.len() >= 4 && super::approx_eq(ls.0[0], *ls.0.last().unwrap()) {
+    if ls.0.len() >= 4 && approx_eq(ls.0[0], *ls.0.last().unwrap()) {
       let mut ring = ls;
       // spatialite st_buildarea reverses ccw rings to cw — replicate that behavior
       ring.make_cw_winding();
@@ -136,7 +135,6 @@ fn process_one_way(w: way_work) -> Option<admin_level> {
   })
 }
 
-
 #[cfg(test)]
-#[path = "level_10.test.rs"]
+#[path = "place_ways.test.rs"]
 mod tests;

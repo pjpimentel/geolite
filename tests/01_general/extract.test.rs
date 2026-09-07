@@ -635,3 +635,56 @@ fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
     "nothing is extracted when the list is refused"
   );
 }
+
+// 14. one level, two stages, through the binary
+#[test]
+#[ignore]
+fn _14_level_10_runs_the_relation_and_the_way_stages() {
+  let w = world();
+  let s = extracted(w, "extract_level_ten", "2", &[]);
+  let out = stage(
+    w,
+    &s.dir,
+    &[
+      "--preset",
+      "brazil",
+      "extract",
+      "osm-admin-levels",
+      "--admin-level",
+      "10",
+    ],
+  );
+  for line in [
+    "stage 1/2: relations",
+    "41 neighborhood in",
+    "stage 2/2: ways (place=neighbourhood,suburb)",
+    "22 neighborhood ways in",
+  ] {
+    assert!(
+      out.stdout.contains(line),
+      "missing {line:?} in:\n{}",
+      out.stdout
+    );
+  }
+  assert!(
+    out.stdout.find("stage 1/2") < out.stdout.find("stage 2/2"),
+    "the relations stage runs before the ways stage:\n{}",
+    out.stdout
+  );
+  assert_eq!(
+    count(
+      &s.ledger(),
+      "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 10 AND relation_id IS NOT NULL"
+    ),
+    41,
+    "the neighbourhood boundaries of the fixture"
+  );
+  assert_eq!(
+    count(
+      &s.ledger(),
+      "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 10 AND way_id IS NOT NULL"
+    ),
+    22,
+    "the place ways of the fixture"
+  );
+}

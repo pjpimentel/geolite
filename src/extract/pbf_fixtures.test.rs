@@ -674,20 +674,24 @@ pub(crate) const NAME_PRIORITY: &[&str] = &["name"];
 
 // override de regras de um nivel so, no formato que o run dos estagios aceita
 pub(crate) fn level_rules(
-  level: u8,
+  level: crate::domain::admin_level::level,
   include: &'static [crate::database::osm_ways::filters],
   exclude: &'static [crate::database::osm_ways::filters],
-) -> [super::admin_levels::extraction_rules; 1] {
-  [super::admin_levels::extraction_rules {
+) -> [crate::domain::admin_level::extraction_rules; 1] {
+  [crate::domain::admin_level::extraction_rules {
     level,
     include,
     exclude,
   }]
 }
 
+pub(crate) fn coords(points: &[(f64, f64)]) -> Vec<geo::Coord<f64>> {
+  points.iter().map(|&(x, y)| geo::Coord { x, y }).collect()
+}
+
 // runs a level stage and returns the progress events it emitted
 pub(crate) fn progress_events(
-  stage: impl FnOnce(&dyn Fn(super::admin_levels::progress_report)),
+  stage: impl FnOnce(&dyn Fn(crate::domain::admin_level::extract::progress_report)),
 ) -> Vec<(Option<u64>, u64)> {
   let seen = std::cell::RefCell::new(Vec::new());
   stage(&|p| seen.borrow_mut().push((p.total, p.processed)));

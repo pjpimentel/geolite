@@ -12,9 +12,14 @@ admin_level/    a named administrative area — the `admin_levels` table
   entity            the row as it is written: osm element, level, shape, name, codes
   scale             the closed set of levels, their names and their order
   id                stable identity, packed from the osm way or relation it came from
-  geometry          the wkb column codec, its mbr shortcut and the bounding box
+  geometry          the wkb column codec, its mbr shortcut, the bounding box and the ring assembly
   repository        the ddl, the index, the nine queries and the upsert
   spatial_index     the rtree of every level's bounding box, and the pass that fills it
+  rules             which ways each level includes or excludes, and the preset override
+  extract           `admin_level::extract(level)`: the stages of a level and the events they emit
+  relations         the stage that assembles boundary relations into areas
+  place_ways        the stage that reads `place=neighbourhood|suburb` ways at level 10
+  streets           the stage that reads named ways at level 12
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the ten writes and reads
   catalog           the `source` enum, the endpoint it resolves, and the listing of each source
@@ -44,7 +49,8 @@ osm_relation/   an openstreetmap relation — the `osm_data.osm_relations` table
 every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
 objects and services sit alongside. everything a concept needs is in one place, and the only write
 path into a table is through its entity. `admin_level` is the first folder whose table the queries
-read, and the first to take its module out of `src/database` whole. `osm_pbf_file` is a folder without an `entity` and
+read, and the first to take its module out of `src/database` and its stage out of `src/extract`
+whole. `osm_pbf_file` is a folder without an `entity` and
 `osm_tag` the one that is not a table, both for reasons given below; `osm_node`, `osm_way` and
 `osm_relation` arrived with their entity and decoder only — their payload encoding and their
 persistence still sit in `src/database` and come with each one's own slice.
@@ -84,9 +90,10 @@ lifecycle, the cli and the http server.
 
 the `admin_levels` table and everything around it: a country, a state, a city, a neighborhood, a
 street — each one a named area with a shape, sitting somewhere on a scale. the ddl, the queries and
-the upsert live in `repository`, the rtree in `spatial_index`, and the connection lifecycle in
-`src/database/mod.rs` calls into both; `src/database/admin_levels.rs` and `src/index/coordinates.rs`
-are gone.
+the upsert live in `repository`, the rtree in `spatial_index`, the three stages that produce the
+rows behind `admin_level::extract(level)`, and the connection lifecycle in `src/database/mod.rs`
+calls into the first two; `src/database/admin_levels.rs`, `src/index/coordinates.rs` and
+`src/extract/admin_levels/` are gone.
 
 ### the scale — `level`
 
@@ -145,6 +152,57 @@ has functions rather than an `impl table`. `run` pages through every row with a 
 inserts one box per row; on a file database up to eight readers scan disjoint id ranges in
 parallel while the connection that owns the table writes, and an in-memory database is scanned on
 the calling thread, because `conn.path()` is empty for it and a worker could not reopen it.
+
+### the extraction — `extract`
+
+`admin_level::extract(conn, level, opts, on_event)` is the one way rows get into the table. the
+domain decides what a level is made of; the caller only watches:
+
+| level | stages | reads |
+|---|---|---|
+| any other | `relations` | boundary relations tagged `admin_level=N`, assembled into areas |
+| 10 | `relations`, then `place_ways` | the same, then ways tagged `place=neighbourhood` or `suburb` |
+| 12 | `streets` | every named way the exclude rules let through |
+
+`stages_of(level)` returns that list as `stage { level, source, ordinal, of }`, and `extract` runs
+it in order, emitting an `extract_event { stage, step }` at each step: `started`; `candidates`,
+from relations stages only, with how many relations the level has and how many are not extracted
+yet; `progress(progress_report)` after every batch; `finished`. an event carries its stage, so a
+consumer needs no state to know what it is looking at. the cli's renderer keeps one bar per stage
+and prints the lines it always printed. `extract_opts` carries the thread count of the relations
+stage, the name priority and the rule overrides.
+
+what the cli keeps is the run, not the level: the `--recreate` wipe before the loop, and after the
+last level the index and the count on the ledger — the index is created once at the end because
+maintaining it through the upserts is the expensive way round.
+
+each stage reads its candidates through the legacy repositories (`database::osm_relations`,
+`database::osm_ways`) and writes through `repository::batch_upsert`. the relations stage assembles
+the member ways of each relation into rings (`geometry::assemble_rings`), closes each ring that
+comes back to its start into a polygon wound clockwise, the way spatialite's `st_buildarea` does,
+and falls back to a multi-line when nothing closes; a place way closes into one polygon by the same
+rule; a street is always a line, even when the way is a ring.
+
+### the rules — `rules`
+
+`extraction_rules { level, include, exclude }` is what a preset can override per level
+(`admin_levels_rules`); `resolve_rules` answers with the override when there is one and with the
+defaults below otherwise. relations stages take no rules: they are selected by the `admin_level`
+tag alone. every source drops elements without a `name`, because a nameless area cannot produce
+useful data.
+
+| level | include | because | exclude | because |
+|---|---|---|---|---|
+| any other, and 10 | relations tagged `admin_level=N` | the simplest selection; neighbourhood boundaries are mapped as relations too | | |
+| 10 | ways tagged `place=neighbourhood` | the simplest selection | | |
+| 10 | ways tagged `place=suburb` | in some regions suburbs are the de-facto neighbourhood unit when `place=neighbourhood` is not mapped | | |
+| 12 | every way | the simplest selection | ways tagged `place=neighbourhood` or `place=suburb` | already captured at level 10 |
+| 12 | | | ways tagged `leisure=park`, `building` or `waterway` | noise in street-level data |
+
+the filter vocabulary (`filters`) still lives in `database::osm_ways`, where each variant is a
+sql clause; it moves to `osm_way::filter` with that slice, and `rules` is its last consumer
+outside `src/database`. this table is the reference for those defaults: a change to `rules.rs`
+changes it too (CLAUDE.md, rule 8).
 
 ## osm_pbf_file
 

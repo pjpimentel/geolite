@@ -1,4 +1,4 @@
-use geo::{BoundingRect, Geometry};
+use geo::{BoundingRect, Coord, Geometry, LineString};
 use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
@@ -91,6 +91,48 @@ pub fn mbr_center(blob: &[u8]) -> Option<(f64, f64)> {
   let max_x = read(22);
   let max_y = read(30);
   Some(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0))
+}
+
+pub fn approx_eq(a: Coord<f64>, b: Coord<f64>) -> bool {
+  (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9
+}
+
+pub fn assemble_rings(ways: &[LineString<f64>]) -> Vec<LineString<f64>> {
+  let mut remaining: Vec<(LineString<f64>, bool)> =
+    ways.iter().map(|w| (w.clone(), false)).collect();
+  let mut rings: Vec<LineString<f64>> = Vec::new();
+  while let Some(start_idx) = remaining.iter().position(|(_, used)| !used) {
+    let mut coords: Vec<Coord<f64>> = remaining[start_idx].0.0.clone();
+    remaining[start_idx].1 = true;
+    while let Some(next) = take_continuation(&mut remaining, *coords.last().unwrap()) {
+      coords.extend_from_slice(&next[1..]);
+    }
+    rings.push(LineString(coords));
+  }
+  rings
+}
+
+fn take_continuation(
+  remaining: &mut [(LineString<f64>, bool)],
+  tail: Coord<f64>,
+) -> Option<Vec<Coord<f64>>> {
+  for (ls, used) in remaining.iter_mut() {
+    if *used {
+      continue;
+    }
+    let pts = &ls.0;
+    if approx_eq(pts[0], tail) {
+      *used = true;
+      return Some(pts.clone());
+    }
+    if approx_eq(pts[pts.len() - 1], tail) {
+      *used = true;
+      let mut rev = pts.clone();
+      rev.reverse();
+      return Some(rev);
+    }
+  }
+  None
 }
 
 #[derive(Clone, Copy)]

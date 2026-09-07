@@ -1,7 +1,10 @@
 use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 
-use crate::domain::admin_level::{admin_level, level};
+use super::entity::admin_level;
+use super::extract::{CHUNK_SIZE, progress_report};
+use super::rules::{extraction_rules, resolve_rules};
+use super::scale::level;
 
 struct way_work {
   way_id: u64,
@@ -10,18 +13,18 @@ struct way_work {
   coords: Vec<Coord<f64>>,
 }
 
-pub fn run(
+pub(super) fn run(
   conn: &Connection,
-  rules: &[super::extraction_rules],
+  rules: &[extraction_rules],
   name_priority: &[&str],
-  progress: impl Fn(super::progress_report),
+  mut progress: impl FnMut(progress_report),
 ) {
   let street = level::street.value();
-  let (_, exclude) = super::resolve_rules(12, rules);
+  let (_, exclude) = resolve_rules(level::street, rules);
   let candidate_ids = crate::database::osm_ways::remaining_ids_by_tags(conn, street, exclude);
 
   let total = candidate_ids.len() as u64;
-  progress(super::progress_report {
+  progress(progress_report {
     total: Some(total),
     processed: 0,
   });
@@ -33,7 +36,7 @@ pub fn run(
   // single-connection db read/write that bounds this stage, so processing
   // sequentially is as fast as a worker pool without the channel overhead
   let mut processed: u64 = 0;
-  for chunk in candidate_ids.chunks(super::CHUNK_SIZE) {
+  for chunk in candidate_ids.chunks(CHUNK_SIZE) {
     let works = load_chunk(conn, chunk, name_priority);
     let mut batch: Vec<admin_level> = Vec::new();
     for w in works {
@@ -41,8 +44,8 @@ pub fn run(
         batch.push(row);
       }
     }
-    processed += crate::domain::admin_level::repository::batch_upsert(conn, &batch) as u64;
-    progress(super::progress_report {
+    processed += super::repository::batch_upsert(conn, &batch) as u64;
+    progress(progress_report {
       total: Some(total),
       processed,
     });
@@ -111,5 +114,5 @@ fn process_one_way(
 }
 
 #[cfg(test)]
-#[path = "level_12.test.rs"]
+#[path = "streets.test.rs"]
 mod tests;
