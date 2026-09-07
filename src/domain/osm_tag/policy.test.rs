@@ -1,11 +1,11 @@
-use super::*;
+use super::tag_policy;
 
 const STRINGS: &[&str] = &["", "highway", "residential", "name", "Rua Alfa", "building"];
 
 fn policy(include: Option<&[&str]>, ignore: Option<&[&str]>) -> tag_policy {
   tag_policy {
-    include: include.map(|l| l.iter().map(|s| s.to_string()).collect()),
-    ignore: ignore.map(|l| l.iter().map(|s| s.to_string()).collect()),
+    include: include.map(|l| l.iter().map(ToString::to_string).collect()),
+    ignore: ignore.map(|l| l.iter().map(ToString::to_string).collect()),
   }
 }
 

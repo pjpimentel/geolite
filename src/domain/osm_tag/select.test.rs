@@ -1,4 +1,4 @@
-use super::*;
+use super::coalesce_of;
 
 #[test]
 fn _00_skips_coalesce_for_a_single_key() {

@@ -30,6 +30,30 @@ pub mod osm_nodes;
 pub mod osm_relations;
 pub mod osm_ways;
 
+pub(crate) fn placeholders_for(ids: &[u64]) -> String {
+  ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+}
+
+pub(crate) fn query_by_ids<T>(
+  conn: &Connection,
+  sql: &str,
+  ids: &[u64],
+  row_of: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+) -> Vec<T> {
+  let params: Vec<rusqlite::types::Value> = ids
+    .iter()
+    .map(|&id| rusqlite::types::Value::Integer(id as i64))
+    .collect();
+  let mut stmt = conn
+    .prepare(sql)
+    .expect("failed to prepare query by ids");
+  stmt
+    .query_map(rusqlite::params_from_iter(params.iter()), row_of)
+    .expect("failed to query by ids")
+    .map(|r| r.expect("failed to read row"))
+    .collect()
+}
+
 pub fn osm_data_path(main_path: &str) -> String {
   if main_path == ":memory:" {
     return ":memory:".to_string();

@@ -1,4 +1,4 @@
-use super::*;
+use super::{TYPE_FLOAT, TYPE_INT, TYPE_TEXTRAW, encoder, write_float, write_header, write_int};
 
 use crate::domain::osm_node::osm_node;
 use crate::domain::osm_relation::entity::{

@@ -3,7 +3,7 @@ use std::{
   collections::VecDeque,
   fs,
   io::{self, Read},
-  sync::{Arc, Condvar, Mutex},
+  sync::{Arc, Condvar, Mutex, MutexGuard},
 };
 
 use crate::database::jsonb;
@@ -407,6 +407,37 @@ fn reader_thread(
   })
 }
 
+fn next_raw_blob(read_q: &raw_queue) -> Option<raw_blob> {
+  let mut state = read_q.inner.lock().unwrap();
+  loop {
+    if let Some(raw) = state.items.pop_front() {
+      read_q.not_full.notify_one();
+      return Some(raw);
+    }
+    if state.reader_done {
+      return None;
+    }
+    state = read_q.not_empty.wait(state).unwrap();
+  }
+}
+
+fn push_decoded(write_buf: &write_buffer, blob: decoded_blob, bytes: usize) {
+  let mut state = write_buf.inner.lock().unwrap();
+  while state.bytes_current >= write_buf.hard_limit {
+    state = write_buf.not_too_full.wait(state).unwrap();
+  }
+  state.current.nodes.extend(blob.nodes);
+  state.current.ways.extend(blob.ways);
+  state.current.relations.extend(blob.relations);
+  state.bytes_current += bytes;
+  let should_wake_writer = state.bytes_current >= write_buf.soft_threshold
+    || state.current.row_count() >= write_buf.row_threshold;
+  drop(state);
+  if should_wake_writer {
+    write_buf.has_work.notify_one();
+  }
+}
+
 fn decode_thread(
   read_q: Arc<raw_queue>,
   write_buf: Arc<write_buffer>,
@@ -416,25 +447,9 @@ fn decode_thread(
 ) -> std::thread::JoinHandle<()> {
   std::thread::spawn(move || {
     let mut encoder = jsonb::encoder::new();
-    loop {
-      let raw = {
-        let mut state = read_q.inner.lock().unwrap();
-        loop {
-          if let Some(r) = state.items.pop_front() {
-            read_q.not_full.notify_one();
-            break Some(r);
-          }
-          if state.reader_done {
-            break None;
-          }
-          state = read_q.not_empty.wait(state).unwrap();
-        }
-      };
-      let Some(raw) = raw else { break };
-
+    while let Some(raw) = next_raw_blob(&read_q) {
       let blob = decode_raw_blob(&raw, &opts, &mut encoder);
       let bytes = decoded_blob_bytes(&blob);
-
       let counts = blob_counts {
         thread_id,
         nodes: blob.nodes.len(),
@@ -442,21 +457,7 @@ fn decode_thread(
         relations: blob.relations.len(),
       };
       prog_tx.send(prog_event::decoded(counts)).ok();
-
-      let mut state = write_buf.inner.lock().unwrap();
-      while state.bytes_current >= write_buf.hard_limit {
-        state = write_buf.not_too_full.wait(state).unwrap();
-      }
-      state.current.nodes.extend(blob.nodes);
-      state.current.ways.extend(blob.ways);
-      state.current.relations.extend(blob.relations);
-      state.bytes_current += bytes;
-      let should_wake_writer = state.bytes_current >= write_buf.soft_threshold
-        || state.current.row_count() >= write_buf.row_threshold;
-      drop(state);
-      if should_wake_writer {
-        write_buf.has_work.notify_one();
-      }
+      push_decoded(&write_buf, blob, bytes);
     }
   })
 }
@@ -480,79 +481,94 @@ enum prog_event {
   flushed(flush_counts),
 }
 
+struct flush_batch {
+  nodes: Vec<osm_node_row>,
+  ways: Vec<osm_way_row>,
+  relations: Vec<osm_relation_row>,
+  bytes: usize,
+}
+
+fn wait_for_flush(write_buf: &write_buffer) -> Option<MutexGuard<'_, write_buffer_state>> {
+  let mut state = write_buf.inner.lock().unwrap();
+  loop {
+    if state.bytes_current >= write_buf.soft_threshold
+      || state.current.row_count() >= write_buf.row_threshold
+    {
+      return Some(state);
+    }
+    if state.decoders_done {
+      if state.bytes_current == 0 {
+        return None;
+      }
+      return Some(state);
+    }
+    state = write_buf.has_work.wait(state).unwrap();
+  }
+}
+
+fn take_flush_batch(write_buf: &write_buffer, state: &mut write_buffer_state) -> flush_batch {
+  let rows_before = state.current.row_count();
+  let bytes_before = state.bytes_current;
+
+  // drains up to flush_cap_rows from the front of each deque, in insertion order: nodes
+  // first, the table that usually dominates the queue, then ways, then relations.
+  // VecDeque::drain is O(drained) — it advances the ring's head without shifting what
+  // remains, which a Vec would do in O(len)
+  let cap = write_buf.flush_cap_rows;
+  let take_nodes = cap.min(state.current.nodes.len());
+  let mut nodes: Vec<_> = Vec::with_capacity(take_nodes);
+  nodes.extend(state.current.nodes.drain(..take_nodes));
+  let remaining = cap - take_nodes;
+  let take_ways = remaining.min(state.current.ways.len());
+  let mut ways: Vec<_> = Vec::with_capacity(take_ways);
+  ways.extend(state.current.ways.drain(..take_ways));
+  let remaining = remaining - take_ways;
+  let take_relations = remaining.min(state.current.relations.len());
+  let mut relations: Vec<_> = Vec::with_capacity(take_relations);
+  relations.extend(state.current.relations.drain(..take_relations));
+
+  // bytes is proportional to the rows drained: an approximation, good enough to throttle the
+  // decoders by
+  let drained = take_nodes + take_ways + take_relations;
+  let bytes = (bytes_before * drained).checked_div(rows_before).unwrap_or(0);
+  state.bytes_current = state.bytes_current.saturating_sub(bytes);
+
+  flush_batch {
+    nodes,
+    ways,
+    relations,
+    bytes,
+  }
+}
+
 fn writer_thread(
   conn: rusqlite::Connection,
   write_buf: Arc<write_buffer>,
   prog_tx: std::sync::mpsc::Sender<prog_event>,
 ) -> std::thread::JoinHandle<()> {
   std::thread::spawn(move || {
-    loop {
-      let (nodes_taken, ways_taken, relations_taken, bytes_taken) = {
-        let mut state = write_buf.inner.lock().unwrap();
-        loop {
-          if state.bytes_current >= write_buf.soft_threshold
-            || state.current.row_count() >= write_buf.row_threshold
-          {
-            break;
-          }
-          if state.decoders_done {
-            if state.bytes_current == 0 {
-              return;
-            }
-            break;
-          }
-          state = write_buf.has_work.wait(state).unwrap();
-        }
-        let was_full = state.bytes_current >= write_buf.hard_limit;
-        let rows_before = state.current.row_count();
-        let bytes_before = state.bytes_current;
+    while let Some(mut state) = wait_for_flush(&write_buf) {
+      let was_full = state.bytes_current >= write_buf.hard_limit;
+      let batch = take_flush_batch(&write_buf, &mut state);
+      if was_full && state.bytes_current < write_buf.hard_limit {
+        write_buf.not_too_full.notify_all();
+      }
+      drop(state);
 
-        // drains up to flush_cap_rows from the front of each deque, in insertion order: nodes
-        // first, the table that usually dominates the queue, then ways, then relations.
-        // VecDeque::drain is O(drained) — it advances the ring's head without shifting what
-        // remains, which a Vec would do in O(len)
-        let cap = write_buf.flush_cap_rows;
-        let take_nodes = cap.min(state.current.nodes.len());
-        let mut nodes_taken: Vec<_> = Vec::with_capacity(take_nodes);
-        nodes_taken.extend(state.current.nodes.drain(..take_nodes));
-        let remaining = cap - take_nodes;
-        let take_ways = remaining.min(state.current.ways.len());
-        let mut ways_taken: Vec<_> = Vec::with_capacity(take_ways);
-        ways_taken.extend(state.current.ways.drain(..take_ways));
-        let remaining = remaining - take_ways;
-        let take_relations = remaining.min(state.current.relations.len());
-        let mut relations_taken: Vec<_> = Vec::with_capacity(take_relations);
-        relations_taken.extend(state.current.relations.drain(..take_relations));
-
-        // bytes_taken is proportional to the rows drained: an approximation, good enough to
-        // throttle the decoders by
-        let drained = take_nodes + take_ways + take_relations;
-        let bytes_taken = (bytes_before * drained).checked_div(rows_before).unwrap_or(0);
-        state.bytes_current = state.bytes_current.saturating_sub(bytes_taken);
-
-        if was_full && state.bytes_current < write_buf.hard_limit {
-          write_buf.not_too_full.notify_all();
-        }
-        (nodes_taken, ways_taken, relations_taken, bytes_taken)
-      };
-
-      let nodes_n = nodes_taken.len();
-      let ways_n = ways_taken.len();
-      let relations_n = relations_taken.len();
       let tx = conn
         .unchecked_transaction()
         .expect("failed to begin transaction");
-      crate::database::osm_nodes::insert_rows(&tx, &nodes_taken);
-      crate::database::osm_ways::insert_rows(&tx, &ways_taken);
-      crate::database::osm_relations::insert_rows(&tx, &relations_taken);
+      crate::database::osm_nodes::insert_rows(&tx, &batch.nodes);
+      crate::database::osm_ways::insert_rows(&tx, &batch.ways);
+      crate::database::osm_relations::insert_rows(&tx, &batch.relations);
       tx.commit().expect("failed to commit");
 
       prog_tx
         .send(prog_event::flushed(flush_counts {
-          nodes: nodes_n,
-          ways: ways_n,
-          relations: relations_n,
-          bytes: bytes_taken,
+          nodes: batch.nodes.len(),
+          ways: batch.ways.len(),
+          relations: batch.relations.len(),
+          bytes: batch.bytes,
         }))
         .ok();
     }

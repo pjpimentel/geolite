@@ -1,4 +1,4 @@
-use super::*;
+use super::{blob_index, data_opts, osm_pbf_file, repository};
 
 use crate::domain::osm_tag::tag_policy;
 use crate::extract::pbf_fixtures::{header_chunk, indexed_scene, temp_scene, tiny_pbf, write_pbf};

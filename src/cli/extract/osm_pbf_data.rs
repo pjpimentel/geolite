@@ -134,53 +134,53 @@ pub fn command_handler_extract_osm_pbf_data(
     let decoder_bar_cb = decoder_bar.clone();
     let writer_bar_cb = writer_bar.clone();
     let write_conn = crate::database::open_write(sqlite_path);
-    let Some(counts) = file.extract_osm_data(
-      &osm_pbf_file_path,
-      write_conn,
-      data_opts {
-        include_nodes,
-        include_ways,
-        include_relations,
-        ignore_info,
-        tags: tag_policy {
-          include: tags_include,
-          ignore: tags_ignore,
+    let counts = file
+      .extract_osm_data(
+        &osm_pbf_file_path,
+        write_conn,
+        data_opts {
+          include_nodes,
+          include_ways,
+          include_relations,
+          ignore_info,
+          tags: tag_policy {
+            include: tags_include,
+            ignore: tags_ignore,
+          },
+          buffer_bytes,
         },
-        buffer_bytes,
-      },
-      *threads,
-      move |p| {
-        if decoder_bar_cb.length().is_none() {
-          decoder_bar_cb.set_length(p.total_chunks as u64);
-        }
-        if !decoder_bar_cb.is_finished() {
-          decoder_bar_cb.set_position(p.chunks_done as u64);
-          decoder_bar_cb.set_message(format!(
-            "nodes: {:>8}  ways: {:>7}  rel: {:>6}",
-            fmt_count(p.node_count),
-            fmt_count(p.way_count),
-            fmt_count(p.relation_count),
-          ));
-          if p.chunks_done >= p.total_chunks {
-            decoder_bar_cb.finish();
+        *threads,
+        move |p| {
+          if decoder_bar_cb.length().is_none() {
+            decoder_bar_cb.set_length(p.total_chunks as u64);
           }
-        }
-        let rows_decoded = p.node_count + p.way_count + p.relation_count;
-        let rows_written = p.nodes_written + p.ways_written + p.relations_written;
-        writer_bar_cb.set_length(rows_decoded as u64);
-        writer_bar_cb.set_position(rows_written as u64);
-        writer_bar_cb.set_message(format!(
-          "nodes: {:>8}  ways: {:>7}  rel: {:>6}  flushes: {:>4}  bytes: {:>9}",
-          fmt_count(p.nodes_written),
-          fmt_count(p.ways_written),
-          fmt_count(p.relations_written),
-          p.flushes_done,
-          fmt_bytes(p.bytes_flushed),
-        ));
-      },
-    ) else {
-      continue;
-    };
+          if !decoder_bar_cb.is_finished() {
+            decoder_bar_cb.set_position(p.chunks_done as u64);
+            decoder_bar_cb.set_message(format!(
+              "nodes: {:>8}  ways: {:>7}  rel: {:>6}",
+              fmt_count(p.node_count),
+              fmt_count(p.way_count),
+              fmt_count(p.relation_count),
+            ));
+            if p.chunks_done >= p.total_chunks {
+              decoder_bar_cb.finish();
+            }
+          }
+          let rows_decoded = p.node_count + p.way_count + p.relation_count;
+          let rows_written = p.nodes_written + p.ways_written + p.relations_written;
+          writer_bar_cb.set_length(rows_decoded as u64);
+          writer_bar_cb.set_position(rows_written as u64);
+          writer_bar_cb.set_message(format!(
+            "nodes: {:>8}  ways: {:>7}  rel: {:>6}  flushes: {:>4}  bytes: {:>9}",
+            fmt_count(p.nodes_written),
+            fmt_count(p.ways_written),
+            fmt_count(p.relations_written),
+            p.flushes_done,
+            fmt_bytes(p.bytes_flushed),
+          ));
+        },
+      )
+      .expect("the blob chunk index was checked before decoding");
 
     decoder_bar.finish();
     writer_bar.finish();

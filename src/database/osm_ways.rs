@@ -170,7 +170,7 @@ pub fn way_coords_chunk(
   ids: &[u64],
   name_priority: &[&str],
 ) -> Vec<way_coord_row> {
-  let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+  let placeholders = super::placeholders_for(ids);
   let name_select = crate::domain::osm_tag::select::coalesce_of("osm_data.osm_ways.payload", name_priority);
   let sql = format!(
     "SELECT
@@ -188,26 +188,15 @@ pub fn way_coords_chunk(
          WHERE osm_data.osm_ways.id IN ({placeholders})
          ORDER BY osm_data.osm_ways.id ASC, node_refs.key ASC",
   );
-  let params: Vec<rusqlite::types::Value> = ids
-    .iter()
-    .map(|&id| rusqlite::types::Value::Integer(id as i64))
-    .collect();
-  let mut stmt = conn
-    .prepare(&sql)
-    .expect("failed to prepare way coords query");
-  stmt
-    .query_map(rusqlite::params_from_iter(params.iter()), |row| {
-      Ok(way_coord_row {
-        way_id: row.get(0)?,
-        way_name: row.get(1)?,
-        post_code: row.get(2)?,
-        lon: row.get(3)?,
-        lat: row.get(4)?,
-      })
+  super::query_by_ids(conn, &sql, ids, |row| {
+    Ok(way_coord_row {
+      way_id: row.get(0)?,
+      way_name: row.get(1)?,
+      post_code: row.get(2)?,
+      lon: row.get(3)?,
+      lat: row.get(4)?,
     })
-    .expect("failed to query way coords")
-    .map(|r| r.expect("failed to read way coord row"))
-    .collect()
+  })
 }
 
 pub(crate) fn insert_rows(conn: &Connection, rows: &[osm_way_row]) {

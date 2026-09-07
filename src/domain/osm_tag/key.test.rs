@@ -1,4 +1,4 @@
-use super::*;
+use super::{is_valid_key, json_path_of};
 
 #[test]
 fn _00_always_quotes_the_key_in_the_json_path() {

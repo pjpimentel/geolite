@@ -1,4 +1,4 @@
-use super::*;
+use super::{block_scale, decode_dense, osm_node};
 use crate::domain::osm_pbf_file::message::dense_nodes_msg;
 use crate::domain::osm_tag::tag_policy;
 

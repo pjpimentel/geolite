@@ -1,4 +1,4 @@
-use super::*;
+use super::{decode, osm_member_type};
 use crate::domain::osm_pbf_file::message::relation_msg;
 use crate::domain::osm_tag::tag_policy;
 
