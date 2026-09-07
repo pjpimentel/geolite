@@ -54,8 +54,10 @@ persistence still sit in `src/database` and come with each one's own slice.
   a query says who runs it.
 - **the ddl is the exception on purpose.** it is the schema rather than a query: it is what you open
   the file to find, and it is the anchor a release is compared against, byte for byte, with
-  `sed -n '/^const SQL_CREATE: /,/^";$/p'`: a difference there is a schema change, and a schema
-  change bumps `SCHEMA_VERSION`.
+  `sed -n '/^const SQL_CREATE: /,/^";$/p'`: a difference there is a schema change. one that only
+  adds a nullable column is applied to existing databases by the connection lifecycle — an
+  `ALTER TABLE` guarded by `database::has_column`, as `add_origin_wkt` does — and keeps
+  `SCHEMA_VERSION`; a change that makes builds incompatible bumps it.
 - `table` is `pub(crate)`: only the connection lifecycle creates tables, and only the stage that
   fills a table creates its indexes. everything else a repository exposes is `pub`.
 - an index is named `<table>_search_by_<purpose>`.
@@ -81,7 +83,7 @@ the row is a **ledger written in column groups**, each by a different moment of 
 
 | columns | written by |
 |---|---|
-| `origin`, `origin_id`, `origin_name`, `url` | `catalog`, or the first stage that meets the file |
+| `origin`, `origin_id`, `origin_name`, `url`, `origin_wkt` | `catalog`, or the first stage that meets the file |
 | `path`, `size_bytes`, `md5`, `downloaded_at` | `download` |
 | `osm_header_*` | `header` |
 | `node_count`, `way_count`, `relation_count`, `osm_data_extracted_at` | `osm_data` |
@@ -96,16 +98,16 @@ until this slice landed and deleted them. the ddl in `repository` is the shape.
 `origin` is an enum with data — `local_path(path)`, `geofabrik { id, url }`, `url(url)` — stored
 as a code in the `origin` column with its payload spread over generic columns:
 
-| `origin` | code | `origin_id` | `origin_name` | `url` | `path` |
-|---|---:|---|---|---|---|
-| `local_path` | 0 | none | the file name | none | the path as given |
-| `geofabrik` | 1 | the catalogue id | the catalogue name | the pbf url | where the download landed |
-| `url` | 2 | none | the file name in the url | the url | where the download landed |
+| `origin` | code | `origin_id` | `origin_name` | `url` | `origin_wkt` | `path` |
+|---|---:|---|---|---|---|---|
+| `local_path` | 0 | none | the file name | none | none | the path as given |
+| `geofabrik` | 1 | the catalogue id | the catalogue name | the pbf url | the region's coverage polygon, as wkt | where the download landed |
+| `url` | 2 | none | the file name in the url | the url | none | where the download landed |
 
 `path` is the identity of a file on disk (`UNIQUE`); `UNIQUE (origin, origin_id)` only binds the
 catalogue rows. an extract stage that meets a file first records it as `local_path`; a download of
 the same path later takes the download's origin over. a `url` row whose url the catalogue turns out
-to list is promoted to `geofabrik` on the next `ls`.
+to list is promoted to `geofabrik` on the next `ls`, and receives its coverage with it.
 
 ### the catalogue — `catalog`
 
@@ -124,7 +126,9 @@ programming error that panics.
 for `geofabrik`:
 
 1. fetches the geofabrik GeoJSON index from the resolved endpoint
-1. caches all regions in `osm_pbf_files` (upsert by `origin_id`)
+1. caches all regions in `osm_pbf_files` (upsert by `origin_id`), each with its coverage polygon
+   converted from the index's GeoJSON to wkt in `origin_wkt` — the dialect of `osm_header_bbox_wkt`
+   and of the api; a region without a readable geometry keeps the column null
 1. subsequent calls read from sqlite — skips http unless `recreate_cache` is set
 
 ### download

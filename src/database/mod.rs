@@ -103,6 +103,21 @@ pub fn destroy_data(
   conn.execute_batch("VACUUM;").expect("failed to vacuum");
 }
 
+pub(crate) fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+  const SQL_HAS_COLUMN: &str = "
+    SELECT COUNT(*)
+    FROM PRAGMA_TABLE_INFO(?1)
+    WHERE name = ?2
+  ";
+
+  conn
+    .query_row(SQL_HAS_COLUMN, rusqlite::params![table, column], |row| {
+      row.get::<_, i64>(0)
+    })
+    .expect("failed to read table info")
+    > 0
+}
+
 pub fn open_write_main(path: &str) -> Connection {
   if let Some(parent) = std::path::Path::new(path).parent()
     && !parent.as_os_str().is_empty()
@@ -131,6 +146,7 @@ pub fn open_write_main(path: &str) -> Connection {
     .pragma_update(None, "user_version", SCHEMA_VERSION)
     .expect("failed to set user_version");
   crate::domain::osm_pbf_file::osm_pbf_files::create_table(&conn);
+  crate::domain::osm_pbf_file::repository::add_origin_wkt(&conn);
   admin_levels::create_table(&conn);
   admin_levels_hierarchy::create_table(&conn);
   admin_levels::create_rtree(&conn);

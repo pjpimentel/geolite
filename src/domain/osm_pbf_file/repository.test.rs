@@ -5,11 +5,25 @@ use super::{
   upsert_geofabrik_index_item,
 };
 
-fn database(name: &str) -> Connection {
+fn temp_db_path(name: &str) -> String {
   let dir = std::env::temp_dir().join(format!("osm_pbf_files_{name}"));
   let _ = std::fs::remove_dir_all(&dir);
   std::fs::create_dir_all(&dir).unwrap();
-  crate::database::open_write(dir.join("db.sqlite3").to_str().unwrap())
+  dir.join("db.sqlite3").to_str().unwrap().to_string()
+}
+
+fn database(name: &str) -> Connection {
+  crate::database::open_write(&temp_db_path(name))
+}
+
+fn coverage_by_origin_id(conn: &Connection, origin_id: &str) -> Option<Vec<u8>> {
+  conn
+    .query_row(
+      "SELECT origin_wkt FROM osm_pbf_files WHERE origin_id = ?1",
+      [origin_id],
+      |r| r.get(0),
+    )
+    .expect("coverage by origin id")
 }
 
 type row = (u8, Option<String>, Option<String>, Option<String>, Option<String>);
@@ -85,7 +99,7 @@ fn _03_a_url_download_is_promoted_when_the_catalogue_lists_its_url() {
   let url = "https://download.geofabrik.de/europe/andorra-latest.osm.pbf";
   let path = "/data/andorra-latest.osm.pbf";
   update_downloaded(&conn, &origin::url(url.into()), path, 10, "md5");
-  upsert_geofabrik_index_item(&conn, "europe/andorra", "Andorra", url);
+  upsert_geofabrik_index_item(&conn, "europe/andorra", "Andorra", url, None);
   assert_eq!(row_count(&conn), 1);
   let (code, id, name, stored_url, stored) = row_by_path(&conn, path);
   assert_eq!(code, 1);
@@ -103,7 +117,7 @@ fn _03_a_url_download_is_promoted_when_the_catalogue_lists_its_url() {
 fn _04_a_geofabrik_download_fills_the_catalogue_row() {
   let conn = database("t04");
   let url = "https://download.geofabrik.de/europe/andorra-latest.osm.pbf";
-  upsert_geofabrik_index_item(&conn, "europe/andorra", "Andorra", url);
+  upsert_geofabrik_index_item(&conn, "europe/andorra", "Andorra", url, None);
   let from = origin::geofabrik {
     id: "europe/andorra".into(),
     url: url.into(),
@@ -130,7 +144,7 @@ fn _05_a_geofabrik_download_without_a_catalogue_row_inserts_one() {
   assert_eq!(code, 1);
   assert_eq!(id.as_deref(), Some("europe/andorra"));
   assert_eq!(name.as_deref(), Some("andorra-latest.osm.pbf"));
-  upsert_geofabrik_index_item(&conn, "europe/andorra", "Andorra", url);
+  upsert_geofabrik_index_item(&conn, "europe/andorra", "Andorra", url, None);
   assert_eq!(row_count(&conn), 1);
   let (_, _, name, _, _) = row_by_path(&conn, "/data/andorra-latest.osm.pbf");
   assert_eq!(name.as_deref(), Some("Andorra"));
@@ -168,7 +182,13 @@ fn _07_list_geofabrik_index_ignores_local_and_url_rows() {
     10,
     "md5",
   );
-  upsert_geofabrik_index_item(&conn, "europe/andorra", "Andorra", "https://example.com/andorra.osm.pbf");
+  upsert_geofabrik_index_item(
+    &conn,
+    "europe/andorra",
+    "Andorra",
+    "https://example.com/andorra.osm.pbf",
+    None,
+  );
   assert_eq!(row_count(&conn), 3);
   assert_eq!(list_geofabrik_index(&conn).len(), 1);
 }
@@ -212,4 +232,46 @@ fn _10_get_file_path_resolves_a_downloaded_url() {
   update_downloaded(&conn, &origin::url(url.into()), "/data/alpha.osm.pbf", 10, "md5");
   assert_eq!(get_file_path(&conn, url).as_deref(), Some("/data/alpha.osm.pbf"));
   assert_eq!(get_file_path(&conn, "http://mirror.invalid/other.osm.pbf"), None);
+}
+
+#[test]
+fn _11_a_promoted_url_row_receives_the_coverage_of_its_region() {
+  let conn = database("t11");
+  let url = "https://download.geofabrik.de/europe/andorra-latest.osm.pbf";
+  let square = "MULTIPOLYGON(((1 42,2 42,2 43,1 43,1 42)))";
+  update_downloaded(&conn, &origin::url(url.into()), "/data/andorra-latest.osm.pbf", 10, "md5");
+  upsert_geofabrik_index_item(&conn, "europe/andorra", "Andorra", url, Some(square));
+  assert_eq!(row_count(&conn), 1);
+  let (code, _, _, _, _) = row_by_path(&conn, "/data/andorra-latest.osm.pbf");
+  assert_eq!(code, 1);
+  assert_eq!(
+    coverage_by_origin_id(&conn, "europe/andorra").as_deref(),
+    Some(square.as_bytes())
+  );
+}
+
+#[test]
+fn _12_a_database_built_without_origin_wkt_gains_the_column_on_open() {
+  let path = temp_db_path("t12");
+  let before_the_column = super::SQL_CREATE.replace("    origin_wkt BLOB,\n", "");
+  assert_ne!(before_the_column, super::SQL_CREATE);
+  {
+    let old = Connection::open(&path).expect("failed to create the old database");
+    old
+      .execute_batch(&format!("PRAGMA user_version = 2;{before_the_column}"))
+      .expect("failed to shape the old database");
+    assert!(!crate::database::has_column(&old, "osm_pbf_files", "origin_wkt"));
+  }
+  let conn = crate::database::open_write(&path);
+  assert!(crate::database::has_column(&conn, "osm_pbf_files", "origin_wkt"));
+  drop(conn);
+  let conn = crate::database::open_write(&path);
+  upsert_geofabrik_index_item(
+    &conn,
+    "europe/andorra",
+    "Andorra",
+    "https://example.com/andorra.osm.pbf",
+    Some("MULTIPOLYGON(((1 42,2 42,2 43,1 43,1 42)))"),
+  );
+  assert!(coverage_by_origin_id(&conn, "europe/andorra").is_some());
 }

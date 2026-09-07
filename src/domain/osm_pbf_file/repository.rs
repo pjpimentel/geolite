@@ -9,6 +9,7 @@ const SQL_CREATE: &str = "
     origin_id VARCHAR(128),
     origin_name VARCHAR(128),
     url VARCHAR(512),
+    origin_wkt BLOB,
     path VARCHAR(1024) UNIQUE,
     size_bytes INTEGER,
     md5 VARCHAR(32),
@@ -51,6 +52,17 @@ impl table for osm_pbf_files {
   const INDEXES: &'static str = SQL_CREATE_INDEXES;
 }
 
+pub(crate) fn add_origin_wkt(conn: &Connection) {
+  const SQL_ADD_ORIGIN_WKT: &str = "ALTER TABLE osm_pbf_files ADD COLUMN origin_wkt BLOB";
+
+  if crate::database::has_column(conn, "osm_pbf_files", "origin_wkt") {
+    return;
+  }
+  conn
+    .execute_batch(SQL_ADD_ORIGIN_WKT)
+    .expect("failed to add origin_wkt to osm_pbf_files");
+}
+
 pub enum origin {
   local_path(String),
   geofabrik { id: String, url: String },
@@ -82,12 +94,19 @@ fn file_name_of(path_or_url: &str) -> &str {
     .unwrap_or(path_or_url)
 }
 
-pub fn upsert_geofabrik_index_item(conn: &Connection, geofabrik_id: &str, name: &str, url: &str) {
+pub fn upsert_geofabrik_index_item(
+  conn: &Connection,
+  geofabrik_id: &str,
+  name: &str,
+  url: &str,
+  wkt: Option<&str>,
+) {
   const SQL_PROMOTE_URL_TO_GEOFABRIK: &str = "
     UPDATE OR IGNORE osm_pbf_files SET
       origin = 1,
       origin_id = ?1,
-      origin_name = ?2
+      origin_name = ?2,
+      origin_wkt = ?4
     WHERE url = ?3
       AND origin = 2
   ";
@@ -97,27 +116,34 @@ pub fn upsert_geofabrik_index_item(conn: &Connection, geofabrik_id: &str, name: 
       origin,
       origin_id,
       origin_name,
-      url
+      url,
+      origin_wkt
     ) VALUES (
       1,
       ?1,
       ?2,
-      ?3
+      ?3,
+      ?4
     )
     ON CONFLICT(origin, origin_id) DO UPDATE SET
       origin_name = excluded.origin_name,
-      url = excluded.url
+      url = excluded.url,
+      origin_wkt = excluded.origin_wkt
   ";
 
+  let coverage = wkt.map(str::as_bytes);
   let promoted = conn
     .execute(
       SQL_PROMOTE_URL_TO_GEOFABRIK,
-      rusqlite::params![geofabrik_id, name, url],
+      rusqlite::params![geofabrik_id, name, url, coverage],
     )
     .expect("failed to promote url row to geofabrik");
   if promoted == 0 {
     conn
-      .execute(SQL_UPSERT_GEOFABRIK, rusqlite::params![geofabrik_id, name, url])
+      .execute(
+        SQL_UPSERT_GEOFABRIK,
+        rusqlite::params![geofabrik_id, name, url, coverage],
+      )
       .expect("failed to upsert geofabrik index item");
   }
 }
