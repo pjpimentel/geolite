@@ -21,7 +21,6 @@ macro_rules! impl_table_ops {
 // database stamped with another version, and `geolite merge` refuses to combine one.
 pub const SCHEMA_VERSION: u32 = 2;
 
-pub mod admin_levels_hierarchy;
 pub mod house_numbers;
 pub mod jsonb;
 pub mod merge;
@@ -102,7 +101,7 @@ pub fn destroy_data(
     house_numbers::drop_table(&conn);
   }
   if admin_levels {
-    admin_levels_hierarchy::drop_table(&conn);
+    crate::domain::admin_level_hierarchy::repository::drop_table(&conn);
     crate::domain::admin_level::spatial_index::drop_table(&conn);
     crate::domain::admin_level::repository::drop_table(&conn);
     house_numbers::drop_table(&conn);
@@ -159,7 +158,7 @@ pub fn open_write_main(path: &str) -> Connection {
   crate::domain::osm_pbf_file::osm_pbf_files::create_table(&conn);
   crate::domain::osm_pbf_file::repository::add_origin_wkt(&conn);
   crate::domain::admin_level::admin_levels::create_table(&conn);
-  admin_levels_hierarchy::create_table(&conn);
+  crate::domain::admin_level_hierarchy::admin_levels_hierarchy::create_table(&conn);
   crate::domain::admin_level::spatial_index::create_table(&conn);
   house_numbers::create_table(&conn);
   conn

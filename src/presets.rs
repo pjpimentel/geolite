@@ -25,7 +25,7 @@ pub struct extract_house_numbers_preset {
 #[derive(Clone, Copy)]
 pub struct index_user_friendly_name_preset {
   pub abbreviations: &'static [(&'static str, &'static str)],
-  pub boosts: crate::index::admin_levels_hierarchy_tantivy::tantivy_boosts,
+  pub boosts: crate::domain::admin_level_hierarchy::tantivy_boosts,
 }
 
 pub const DEFAULT: preset = preset {
@@ -42,7 +42,7 @@ pub const DEFAULT: preset = preset {
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[],
-    boosts: crate::index::admin_levels_hierarchy_tantivy::tantivy_boosts {
+    boosts: crate::domain::admin_level_hierarchy::tantivy_boosts {
       name_exact: 5.0,
       name_fuzzy: 1.5,
       name_phrase: 10.0,

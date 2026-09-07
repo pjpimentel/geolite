@@ -182,7 +182,12 @@ fn _21_bounding_box_and_last_admin_levels_apply_as_and() {
     match_at(4, 5.0, 5.0, vec![al(8, "d")]),
   ];
 
-  apply_filters_and_truncate(&mut matches, None, Some(&bounds), Some(&[12]));
+  apply_filters_and_truncate(
+    &mut matches,
+    None,
+    Some(&bounds),
+    Some(&[crate::domain::admin_level::level::street]),
+  );
 
   let surviving: Vec<u64> = matches.iter().map(|m| m.id).collect();
   assert_eq!(surviving, vec![1]);

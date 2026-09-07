@@ -38,6 +38,14 @@ impl table for admin_levels {
   const INDEXES: &'static str = SQL_CREATE_INDEXES;
 }
 
+fn level_of(id: i64, raw: u8) -> Option<level> {
+  let level = level::new(raw);
+  if level.is_none() {
+    eprintln!("warn: admin_levels row {id} carries level {raw}, outside the scale; skipped");
+  }
+  level
+}
+
 pub(crate) fn drop_table(conn: &Connection) {
   conn
     .execute_batch(SQL_DROP)
@@ -52,20 +60,24 @@ pub fn drop_indexes(conn: &Connection) {
 
 pub struct admin_level_geom_row {
   pub id: i64,
-  pub admin_level: u8,
+  pub admin_level: level,
   pub name: String,
   pub wkb: Option<admin_geometry>,
   pub post_code: Option<String>,
 }
 
-fn map_geom_row(row: &rusqlite::Row) -> rusqlite::Result<admin_level_geom_row> {
-  Ok(admin_level_geom_row {
-    id: row.get(0)?,
-    admin_level: row.get(1)?,
+fn map_geom_row(row: &rusqlite::Row) -> rusqlite::Result<Option<admin_level_geom_row>> {
+  let id: i64 = row.get(0)?;
+  let Some(admin_level) = level_of(id, row.get(1)?) else {
+    return Ok(None);
+  };
+  Ok(Some(admin_level_geom_row {
+    id,
+    admin_level,
     name: row.get(2)?,
     wkb: row.get(3)?,
     post_code: row.get(4)?,
-  })
+  }))
 }
 
 fn by_ids<T>(
@@ -104,13 +116,13 @@ pub fn load_all_below_street(conn: &Connection) -> Vec<admin_level_geom_row> {
   stmt
     .query_map([level::street.value()], map_geom_row)
     .expect("failed to query ancestors")
-    .map(|r| r.expect("failed to read ancestor row"))
+    .filter_map(|r| r.expect("failed to read ancestor row"))
     .collect()
 }
 
 pub struct street_query_row {
   pub id: i64,
-  pub admin_level: u8,
+  pub admin_level: level,
   pub wkb: Option<admin_geometry>,
 }
 
@@ -152,15 +164,16 @@ pub fn streets_for_coordinates(
         level::street.value()
       ],
       |row| {
-        Ok(street_query_row {
-          id: row.get(0)?,
-          admin_level: row.get(1)?,
-          wkb: row.get(2)?,
-        })
+        let id: i64 = row.get(0)?;
+        Ok(level_of(id, row.get(1)?).map(|admin_level| street_query_row {
+          id,
+          admin_level,
+          wkb: row.get(2).ok().flatten(),
+        }))
       },
     )
     .expect("failed to query streets for coordinates")
-    .map(|r| r.expect("failed to read street row"))
+    .filter_map(|r| r.expect("failed to read street row"))
     .collect()
 }
 
@@ -198,12 +211,15 @@ pub fn load_by_ids(conn: &Connection, ids: &[i64]) -> Vec<admin_level_geom_row> 
   ";
 
   by_ids(conn, SQL_LOAD_BY_IDS, ids, map_geom_row)
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 pub struct admin_area_row {
   pub id: i64,
   pub name: String,
-  pub admin_level: u8,
+  pub admin_level: level,
   pub relation_id: Option<u64>,
   pub way_id: Option<u64>,
   pub wkb: Option<admin_geometry>,
@@ -217,21 +233,25 @@ pub fn load_full_by_ids(conn: &Connection, ids: &[i64]) -> Vec<admin_area_row> {
   ";
 
   by_ids(conn, SQL_LOAD_FULL_BY_IDS, ids, |row| {
-    Ok(admin_area_row {
-      id: row.get(0)?,
-      name: row.get(1)?,
-      admin_level: row.get(2)?,
-      relation_id: row.get(3)?,
-      way_id: row.get(4)?,
-      wkb: row.get(5)?,
-    })
+    let id: i64 = row.get(0)?;
+    Ok(level_of(id, row.get(2)?).map(|admin_level| admin_area_row {
+      id,
+      name: row.get(1).unwrap_or_default(),
+      admin_level,
+      relation_id: row.get(3).ok().flatten(),
+      way_id: row.get(4).ok().flatten(),
+      wkb: row.get(5).ok().flatten(),
+    }))
   })
+  .into_iter()
+  .flatten()
+  .collect()
 }
 
 pub struct admin_meta_row {
   pub id: i64,
   pub name: String,
-  pub admin_level: u8,
+  pub admin_level: level,
   pub relation_id: Option<u64>,
   pub way_id: Option<u64>,
   pub country_iso_code: Option<String>,
@@ -249,17 +269,22 @@ pub fn load_metadata_by_ids(
   ";
 
   by_ids(conn, SQL_LOAD_METADATA_BY_IDS, ids, |row| {
-    Ok(admin_meta_row {
-      id: row.get(0)?,
+    let id: i64 = row.get(0)?;
+    let Some(admin_level) = level_of(id, row.get(2)?) else {
+      return Ok(None);
+    };
+    Ok(Some(admin_meta_row {
+      id,
       name: row.get(1)?,
-      admin_level: row.get(2)?,
+      admin_level,
       relation_id: row.get(3)?,
       way_id: row.get(4)?,
       country_iso_code: row.get(5)?,
       post_code: row.get(6)?,
-    })
+    }))
   })
   .into_iter()
+  .flatten()
   .map(|r| (r.id, r))
   .collect()
 }

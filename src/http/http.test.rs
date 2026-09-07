@@ -1,4 +1,5 @@
 use super::{parse_bounding_wkt, parse_last_admin_levels, query_param, url_decode};
+use crate::domain::admin_level::level;
 
 #[test]
 fn _01_00_pure_ascii_string_returns_unchanged() {
@@ -101,12 +102,15 @@ fn _03_04_contains_inner_point_and_excludes_outer_point() {
 
 #[test]
 fn _04_00_single_level_parses() {
-  assert_eq!(parse_last_admin_levels("10").unwrap(), vec![10]);
+  assert_eq!(parse_last_admin_levels("10").unwrap(), vec![level::neighborhood]);
 }
 
 #[test]
 fn _04_01_multiple_levels_parse() {
-  assert_eq!(parse_last_admin_levels("8,10,12").unwrap(), vec![8, 10, 12]);
+  assert_eq!(
+    parse_last_admin_levels("8,10,12").unwrap(),
+    vec![level::city, level::neighborhood, level::street]
+  );
 }
 
 #[test]
@@ -128,5 +132,20 @@ fn _04_04_level_above_u8_range_errors() {
 
 #[test]
 fn _04_05_whitespace_around_values_is_tolerated() {
-  assert_eq!(parse_last_admin_levels(" 8 , 10 ").unwrap(), vec![8, 10]);
+  assert_eq!(
+    parse_last_admin_levels(" 8 , 10 ").unwrap(),
+    vec![level::city, level::neighborhood]
+  );
+}
+
+#[test]
+fn _04_06_a_level_outside_the_scale_errors_with_its_value() {
+  assert_eq!(
+    parse_last_admin_levels("8,11").unwrap_err(),
+    "last_admin_levels: level 11 is not supported"
+  );
+  assert_eq!(
+    parse_last_admin_levels("abc").unwrap_err(),
+    "last_admin_levels: invalid level 'abc'"
+  );
 }

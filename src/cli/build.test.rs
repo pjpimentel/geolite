@@ -4,7 +4,7 @@ use crate::cli::tests::street_row;
 use crate::domain::admin_level::admin_level as admin_levels_row;
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::{open_write, osm_data_path};
-use crate::index::admin_levels_hierarchy_tantivy as tantivy;
+use crate::domain::admin_level_hierarchy::search_index as tantivy;
 use crate::domain::osm_pbf_file::http_stubs::start_json_server;
 use crate::presets::{BRAZIL, DEFAULT};
 use crate::query;
@@ -62,7 +62,7 @@ fn synthetic_index(
     .collect();
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let index = tantivy::build(
     &conn,
     Path::new(&work.index_path),

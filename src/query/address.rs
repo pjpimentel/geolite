@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
 
 use crate::domain::admin_level::level;
-use crate::index::admin_levels_hierarchy_tantivy::{
+use crate::domain::admin_level_hierarchy::search_index::{
   build_entity_text, tantivy_index, tokenize,
 };
 
@@ -13,7 +13,7 @@ use crate::index::admin_levels_hierarchy_tantivy::{
 fn search_hits(
   tantivy_index: &tantivy_index,
   query: &str,
-  last_admin_levels: Option<&[u8]>,
+  last_admin_levels: Option<&[level]>,
   allowed_ids: Option<&[i64]>,
 ) -> Vec<(i64, f32)> {
   tantivy_index.search(query, super::MAX_FTS_HITS as usize, last_admin_levels, allowed_ids)
@@ -53,7 +53,7 @@ fn token_coverage(query_tokens: &[String], doc_text: &str) -> f32 {
 
 fn build_match(
   record: &crate::domain::admin_level::repository::admin_area_row,
-  hierarchy: Option<&crate::database::admin_levels_hierarchy::hierarchy_lookup_row>,
+  hierarchy: Option<&crate::domain::admin_level_hierarchy::hierarchy_lookup_row>,
   meta_map: &HashMap<i64, crate::domain::admin_level::repository::admin_meta_row>,
   query_tokens: &[String],
   raw_score: f32,
@@ -74,7 +74,7 @@ fn build_match(
   let mut admin_levels: Vec<super::admin_level> = ancestors
     .iter()
     .map(|a| super::admin_level {
-      level: a.admin_level,
+      level: a.admin_level.value(),
       name: a.name.clone(),
       osm_relation_id: a.relation_id,
       osm_way_id: a.way_id,
@@ -82,7 +82,7 @@ fn build_match(
     })
     .collect();
   admin_levels.push(super::admin_level {
-    level: record.admin_level,
+    level: record.admin_level.value(),
     name: record.name.clone(),
     osm_relation_id: record.relation_id,
     osm_way_id: record.way_id,
@@ -100,7 +100,7 @@ fn build_match(
     .iter()
     .copied()
     .chain(meta_map.get(&record.id))
-    .find(|a| a.admin_level == level::country.value())
+    .find(|a| a.admin_level == level::country)
     .and_then(|a| a.country_iso_code.clone());
   let post_code = ancestors
     .iter()
@@ -108,7 +108,7 @@ fn build_match(
     .max_by_key(|a| a.admin_level)
     .and_then(|a| a.post_code.clone());
 
-  let is_street = record.admin_level == level::street.value();
+  let is_street = record.admin_level == level::street;
   let admin_level_id = if is_street { Some(record.id) } else { None };
 
   let record_post_code = meta_map
@@ -141,7 +141,7 @@ pub(crate) fn run(
   tantivy_index: &tantivy_index,
   query: &str,
   friendly_name_format: Option<&str>,
-  last_admin_levels: Option<&[u8]>,
+  last_admin_levels: Option<&[level]>,
   bounding_wkt: Option<&super::bounding_geometry>,
   min_quality: Option<f64>,
   include_wkt: bool,
@@ -173,7 +173,7 @@ pub(crate) fn run(
   let ids: Vec<i64> = hits.iter().map(|(id, _)| *id).collect();
   let scores: HashMap<i64, f32> = hits.into_iter().collect();
 
-  let hierarchies = crate::database::admin_levels_hierarchy::load_by_ids(conn, &ids);
+  let hierarchies = crate::domain::admin_level_hierarchy::repository::load_by_ids(conn, &ids);
   let mut all_ancestor_ids: Vec<i64> = hierarchies
     .values()
     .flat_map(|h| h.ancestor_ids.iter().copied())

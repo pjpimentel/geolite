@@ -4,7 +4,7 @@ use crate::domain::admin_level::repository::batch_upsert;
 use crate::domain::admin_level::{admin_level as admin_levels_row, level};
 use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
 use crate::database::{open_write_main, read_user_version};
-use crate::index::admin_levels_hierarchy_tantivy as tantivy;
+use crate::domain::admin_level_hierarchy::search_index as tantivy;
 use crate::presets::DEFAULT;
 use crate::query;
 use geo::{Coord, Geometry, LineString};

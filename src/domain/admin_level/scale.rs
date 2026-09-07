@@ -35,6 +35,14 @@ impl level {
     }
   }
 
+  pub fn parse(text: &str) -> Result<Self, level_error> {
+    let text = text.trim();
+    let value: u8 = text
+      .parse()
+      .map_err(|_| level_error::not_a_level_number(text.to_string()))?;
+    level::new(value).ok_or(level_error::outside_the_scale(value))
+  }
+
   pub fn value(self) -> u8 {
     self as u8
   }
@@ -57,6 +65,23 @@ impl level {
     }
   }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum level_error {
+  not_a_level_number(String),
+  outside_the_scale(u8),
+}
+
+impl std::fmt::Display for level_error {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      level_error::not_a_level_number(text) => write!(f, "'{text}' is not a level number"),
+      level_error::outside_the_scale(value) => write!(f, "level {value} is not supported"),
+    }
+  }
+}
+
+impl std::error::Error for level_error {}
 
 impl Ord for level {
   fn cmp(&self, other: &Self) -> std::cmp::Ordering {

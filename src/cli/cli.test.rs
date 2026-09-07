@@ -379,7 +379,13 @@ fn _02_07_query_parses_every_option() {
       );
       assert_eq!(min_quality, Some(0.5));
       assert!(bounding_wkt.is_some());
-      assert_eq!(last_admin_levels, Some(vec![8, 12]));
+      assert_eq!(
+        last_admin_levels,
+        Some(vec![
+          crate::domain::admin_level::level::city,
+          crate::domain::admin_level::level::street
+        ])
+      );
       assert!(!include_wkt);
     }
     _ => panic!("expected query command"),

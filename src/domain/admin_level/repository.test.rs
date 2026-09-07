@@ -4,7 +4,8 @@ use rusqlite::Connection;
 use super::super::entity::admin_level;
 use super::super::geometry::admin_geometry;
 use super::super::scale::level;
-use super::batch_upsert;
+use super::super::id::admin_level_id;
+use super::{batch_upsert, load_all_below_street, load_by_ids, load_full_by_ids, load_metadata_by_ids};
 
 const SQL_SELECT_WAY_PAIRS: &str = "
   SELECT way_id, id
@@ -109,4 +110,19 @@ fn _01_relation_ids_0_to_10_produce_bit_packed_ids() {
       (10, 21),
     ],
   );
+}
+
+#[test]
+fn _02_a_row_with_a_level_outside_the_scale_is_skipped_on_read() {
+  let conn = crate::database::open_write(":memory:");
+  batch_upsert(&conn, &[make_way_row(1)]);
+  conn
+    .execute("UPDATE admin_levels SET admin_level = 11", [])
+    .expect("failed to write the level outside the scale");
+  let id = admin_level_id::from_way(1).raw() as i64;
+
+  assert!(load_by_ids(&conn, &[id]).is_empty());
+  assert!(load_all_below_street(&conn).is_empty());
+  assert!(load_full_by_ids(&conn, &[id]).is_empty());
+  assert!(load_metadata_by_ids(&conn, &[id]).is_empty());
 }

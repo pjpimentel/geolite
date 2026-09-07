@@ -1,3 +1,4 @@
+use crate::domain::admin_level::level;
 use super::house_number::enrich_house_numbers;
 use geo::{Closest, ClosestPoint, Geometry, HaversineDistance, LineString, Point};
 use rusqlite::Connection;
@@ -15,7 +16,7 @@ const WORLD_BOUNDING_BOX: super::bounding_box = super::bounding_box {
 
 struct admin_candidate {
   id: i64,
-  admin_level: u8,
+  admin_level: level,
   closest_point: Point<f64>,
   distance_in_meters: Option<u32>,
 }
@@ -137,7 +138,7 @@ pub(crate) fn run(
   friendly_name_format: Option<&str>,
   bounding_wkt: Option<&super::bounding_geometry>,
   min_quality: Option<f64>,
-  last_admin_levels: Option<&[u8]>,
+  last_admin_levels: Option<&[level]>,
   include_wkt: bool,
 ) -> super::query_output {
   let input_pt = Point::new(lon, lat);
@@ -163,7 +164,7 @@ pub(crate) fn run(
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
 
   // 1 find the pre-computed hierarchy for each possible solution
-  let hierarchies = crate::database::admin_levels_hierarchy::load_by_ids(conn, &candidate_ids);
+  let hierarchies = crate::domain::admin_level_hierarchy::repository::load_by_ids(conn, &candidate_ids);
   let mut all_ancestor_ids: Vec<i64> = hierarchies
     .values()
     .flat_map(|h| h.ancestor_ids.iter().copied())
@@ -205,7 +206,7 @@ pub(crate) fn run(
     let mut admin_levels: Vec<super::admin_level> = ancestors_sorted
       .iter()
       .map(|a| super::admin_level {
-        level: a.admin_level,
+        level: a.admin_level.value(),
         name: a.name.clone(),
         osm_relation_id: a.relation_id,
         osm_way_id: a.way_id,
@@ -213,7 +214,7 @@ pub(crate) fn run(
       })
       .collect();
     admin_levels.push(super::admin_level {
-      level: c.admin_level,
+      level: c.admin_level.value(),
       name: candidate_name.clone(),
       osm_relation_id: candidate_meta.and_then(|m| m.relation_id),
       osm_way_id: candidate_meta.and_then(|m| m.way_id),
@@ -229,7 +230,7 @@ pub(crate) fn run(
       .iter()
       .copied()
       .chain(candidate_meta)
-      .find(|a| a.admin_level == crate::domain::admin_level::level::country.value())
+      .find(|a| a.admin_level == level::country)
       .and_then(|a| a.country_iso_code.clone());
 
     let post_code = ancestors_sorted

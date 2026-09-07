@@ -1,4 +1,4 @@
-use super::level;
+use super::{level, level_error};
 
 const ON_THE_SCALE: [u8; 13] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 30];
 
@@ -53,4 +53,30 @@ fn _03_levels_order_by_value() {
     unsorted,
     vec![level::country, level::city, level::neighborhood, level::street]
   );
+}
+
+#[test]
+fn _04_parse_accepts_a_level_on_the_scale() {
+  assert_eq!(level::parse("12"), Ok(level::street));
+  assert_eq!(level::parse(" 8 "), Ok(level::city));
+}
+
+#[test]
+fn _05_parse_rejects_a_non_number() {
+  let error = level::parse("x").unwrap_err();
+  assert_eq!(error, level_error::not_a_level_number("x".to_string()));
+  assert_eq!(error.to_string(), "'x' is not a level number");
+}
+
+#[test]
+fn _06_parse_rejects_a_level_outside_the_scale() {
+  let error = level::parse("11").unwrap_err();
+  assert_eq!(error, level_error::outside_the_scale(11));
+  assert_eq!(error.to_string(), "level 11 is not supported");
+}
+
+#[test]
+fn _07_parse_rejects_an_empty_text() {
+  assert!(matches!(level::parse(""), Err(level_error::not_a_level_number(_))));
+  assert!(matches!(level::parse("  "), Err(level_error::not_a_level_number(_))));
 }

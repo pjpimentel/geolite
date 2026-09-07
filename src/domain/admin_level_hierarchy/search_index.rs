@@ -2,7 +2,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tantivy::{
-  Index, IndexReader, TantivyDocument,
+  Index, IndexReader, Searcher, TantivyDocument, Term,
   collector::TopDocs,
   query::{
     BooleanQuery, BoostQuery, FuzzyTermQuery, Occur, PhraseQuery, Query, TermQuery, TermSetQuery,
@@ -13,30 +13,22 @@ use tantivy::{
   tokenizer::{AsciiFoldingFilter, LowerCaser, SimpleTokenizer, TextAnalyzer},
 };
 
-const SQL_LOAD_NAMES: &str = "
-  SELECT id, name, post_code, admin_level
-  FROM admin_levels
-";
-
-const SQL_LOAD_HIERARCHY: &str = "
-  SELECT admin_level_id, json(ancestor_ids)
-  FROM admin_levels_hierarchy
-";
+use super::entity::decode_chain;
+use super::repository;
+use crate::domain::admin_level::level;
 
 const TOKENIZER_NAME: &str = "geolite_ascii";
 const TOKENIZER_STRICT_NAME: &str = "geolite_strict";
 const TOKENIZER_LOWER_NAME: &str = "geolite_lower";
 
-// boosts separados pra match exato vs fuzzy, em cada campo.
-// motivacao: tantivy/lucene `FuzzyTermQuery` pontua usando o IDF do termo do
-// INDICE que casou (nao o da query). entao query "praca" (comum) que fuzzy-casa
-// "branca" (rara) ganharia score inflado pelo IDF de "branca" mesmo sendo
-// match ruim. solução: adicionar TermQuery exato em paralelo ao fuzzy com boost
-// maior — matches exatos dominam, fuzzy só compete quando nada exato casa.
-// PhraseQuery dispara só quando os tokens da query aparecem contíguos e na
-// mesma ordem no campo. boost grande pra dominar BM25 base.
-// strict fields preservam case e diacrítico; lower fields preservam diacrítico
-// mas não case. boosts discriminam quando o doc tem forma idêntica indexada.
+// exact and fuzzy matches carry separate boosts per field because tantivy scores a fuzzy match
+// with the idf of the indexed term it landed on, not the query's: a common query token that
+// fuzzy-matches a rare indexed term would inherit the rare term's idf and outrank real matches.
+// an exact TermQuery in parallel with the larger boost keeps exact matches on top and lets the
+// fuzzy ones compete only when nothing exact matched. the phrase boost fires only when the query
+// tokens appear contiguous and in order, and is large enough to dominate the base bm25. strict
+// fields keep case and diacritics, lower fields keep only diacritics; their boosts break ties
+// when the document was indexed in the identical form.
 #[derive(Clone, Copy)]
 pub struct tantivy_boosts {
   pub name_exact: f32,
@@ -51,9 +43,8 @@ pub struct tantivy_boosts {
   pub hier_lower: f32,
 }
 
-// edit distance adaptativo por tamanho do token: tokens curtos (CEPs, abrev)
-// exigem precisao (d=1) porque colidem facil (ex.: "100" vs "001" é d=2 mas
-// CEPs diferentes); tokens longos toleram typos (d=2) sem perder precisão.
+// short tokens (post codes, abbreviations) collide easily, so they get one edit of tolerance;
+// longer ones tolerate two without losing precision
 fn fuzzy_distance_for(token: &str) -> u8 {
   if token.chars().count() < 4 { 1 } else { 2 }
 }
@@ -63,7 +54,7 @@ const WRITER_MEMORY_BUDGET: usize = 50_000_000;
 #[allow(clippy::type_complexity)]
 fn schema() -> (Schema, Field, Field, Field, Field, Field, Field, Field, Field) {
   let mut builder = Schema::builder();
-  // STORED para retornar o id; INDEXED para restringir a busca a um conjunto de ids (filtro espacial)
+  // STORED to hand the id back, INDEXED to restrict a search to a set of ids (the region filter)
   let admin_level_id = builder.add_u64_field("admin_level_id", STORED | INDEXED);
   let admin_level = builder.add_u64_field("admin_level", INDEXED);
   let folded_indexing = TextFieldIndexing::default()
@@ -172,12 +163,46 @@ fn expand_abbreviations(text: &str, abbreviations: &[(&str, &str)]) -> String {
   variants.join(" ")
 }
 
+pub struct progress_report {
+  pub total: Option<u64>,
+  pub processed: u64,
+}
+
+pub fn run(
+  conn: &Connection,
+  index_path: &Path,
+  preset: &crate::presets::index_user_friendly_name_preset,
+  progress: impl Fn(progress_report),
+) -> tantivy_index {
+  let total = repository::count(conn) as u64;
+  progress(progress_report {
+    total: Some(total),
+    processed: 0,
+  });
+  let index = build(conn, index_path, preset.boosts, preset.abbreviations);
+  progress(progress_report {
+    total: Some(total),
+    processed: total,
+  });
+  index
+}
+
 pub fn build(
   conn: &Connection,
   index_path: &Path,
   boosts: tantivy_boosts,
   abbreviations: &[(&str, &str)],
 ) -> tantivy_index {
+  const SQL_LOAD_NAMES: &str = "
+    SELECT id, name, post_code, admin_level
+    FROM admin_levels
+  ";
+
+  const SQL_LOAD_HIERARCHY: &str = "
+    SELECT admin_level_id, json(ancestor_ids)
+    FROM admin_levels_hierarchy
+  ";
+
   let _ = std::fs::remove_dir_all(index_path);
   std::fs::create_dir_all(index_path).expect("failed to create tantivy index dir");
 
@@ -196,10 +221,9 @@ pub fn build(
     .expect("failed to create tantivy index");
   register_tokenizers(&index);
 
-  // entity_text inclui name + postcode (formato original + digits-only) pra que
-  // queries como "01310-100" E "01310100" casem o mesmo doc. com asciifolding +
-  // simple tokenizer, o hifen vira separador entao "01310-100" tokeniza em
-  // ["01310","100"] e a versao digits-only "01310100" entra como token unico.
+  // the entity text carries the post code in its original form and digits-only, so that
+  // "01310-100" and "01310100" both find the document: the simple tokenizer splits on the hyphen,
+  // giving ["01310", "100"], while the digits-only form stays one token
   let mut names_map: HashMap<i64, String> = HashMap::new();
   let mut levels_map: HashMap<i64, u64> = HashMap::new();
   {
@@ -237,7 +261,7 @@ pub fn build(
 
   for row in rows {
     let (id, ancestors_json) = row.expect("failed to read hierarchy row");
-    let ancestors: Vec<i64> = serde_json::from_str(&ancestors_json).unwrap_or_default();
+    let ancestors = decode_chain(&ancestors_json);
     let own_name = names_map.get(&id).cloned().unwrap_or_default();
     let hier_text: String = ancestors
       .iter()
@@ -309,9 +333,8 @@ pub fn load(index_path: &Path, boosts: tantivy_boosts) -> Option<tantivy_index> 
   })
 }
 
-// passa pelo mesmo pipeline de tokens que o build pra garantir consistencia
-// (asciifolding, lowercase). usa um analyzer one-shot — reaproveitar do index
-// exigiria carregar do registry, complica e o custo de criar e marginal.
+// the same pipeline the build runs (lower case, ascii folding), so query and document tokens
+// agree; a one-shot analyzer, because reusing the index's would mean loading it from the registry
 pub(crate) fn tokenize(text: &str) -> Vec<String> {
   let mut analyzer = TextAnalyzer::builder(SimpleTokenizer::default())
     .filter(LowerCaser)
@@ -325,8 +348,7 @@ pub(crate) fn tokenize(text: &str) -> Vec<String> {
   tokens
 }
 
-// tokenize sem nenhum filtro — usado pra gerar tokens da query que vão bater
-// contra os campos strict (que preservam case e diacrítico).
+// no filter at all: the query tokens for the strict fields, which keep case and diacritics
 fn tokenize_strict(text: &str) -> Vec<String> {
   let mut analyzer = TextAnalyzer::builder(SimpleTokenizer::default()).build();
   let mut tokens = Vec::new();
@@ -337,8 +359,7 @@ fn tokenize_strict(text: &str) -> Vec<String> {
   tokens
 }
 
-// tokenize só com LowerCaser — usado pra gerar tokens da query que vão bater
-// contra os campos lower (preservam diacrítico, case-insensitive).
+// lower case only: the query tokens for the lower fields, which keep diacritics but not case
 fn tokenize_lower(text: &str) -> Vec<String> {
   let mut analyzer = TextAnalyzer::builder(SimpleTokenizer::default())
     .filter(LowerCaser)
@@ -351,197 +372,176 @@ fn tokenize_lower(text: &str) -> Vec<String> {
   tokens
 }
 
+type clause = (Occur, Box<dyn Query>);
+
+fn boosted(query: impl Query + 'static, boost: f32) -> Box<dyn Query> {
+  Box::new(BoostQuery::new(Box::new(query), boost))
+}
+
+// a Should clause per token against each field: it fires only when the document was indexed in
+// the identical form, which breaks ties between "AAA" and "aaa", or "Praça" and "Praca"
+fn bonus_clauses(tokens: &[String], fields: [(Field, f32); 2]) -> Vec<clause> {
+  let mut clauses: Vec<clause> = Vec::with_capacity(tokens.len() * 2);
+  for token in tokens {
+    for (field, boost) in fields {
+      let term = TermQuery::new(Term::from_field_text(field, token), IndexRecordOption::WithFreqs);
+      clauses.push((Occur::Should, boosted(term, boost)));
+    }
+  }
+  clauses
+}
+
+fn run_query(
+  searcher: &Searcher,
+  query: BooleanQuery,
+  id_field: Field,
+  limit: usize,
+) -> Vec<(i64, f32)> {
+  searcher
+    .search(&query, &TopDocs::with_limit(limit).order_by_score())
+    .unwrap_or_default()
+    .into_iter()
+    .filter_map(|(score, addr)| {
+      let doc: TantivyDocument = searcher.doc(addr).ok()?;
+      let id = doc.get_first(id_field).and_then(|v| v.as_u64())? as i64;
+      Some((id, score))
+    })
+    .collect()
+}
+
 impl tantivy_index {
-  // estratégia em duas queries com fallback:
-  //   Q1 strict — "input completo": todo token tem que casar EXATO em
-  //     name OU hier (Occur::Must por token, com sub-Should entre os dois
-  //     campos). garante precisão: só docs que cobrem 100% da intenção
-  //     exata retornam. se Q1 retorna algo, usa esse resultado e PÁRA.
-  //   Q2 loose — só roda se Q1 vier vazia. termos splitados em Should com
-  //     exact + fuzzy nos dois campos (comportamento legado). cobre
-  //     queries com typo, palavra extra, ou cobertura parcial.
-  // score retornado é o BM25 cru da query que efetivamente achou o doc;
-  // ordem é a que tantivy entregou (sem reordenação aqui no client).
+  // two queries with a fallback. the strict one demands every token exactly, in the name or in
+  // the ancestry, and wins when it finds anything: only documents covering the whole query come
+  // back. the loose one runs only when the strict one is empty: exact and fuzzy terms as Should
+  // clauses, which covers a typo, an extra word or partial coverage. the score is the raw bm25
+  // of whichever query found the document, in the order tantivy delivered.
   pub fn search(
     &self,
     query: &str,
     limit: usize,
-    last_admin_levels: Option<&[u8]>,
+    last_admin_levels: Option<&[level]>,
     allowed_ids: Option<&[i64]>,
   ) -> Vec<(i64, f32)> {
     let tokens = tokenize(query);
     if tokens.is_empty() {
       return vec![];
     }
-    let strict_tokens = tokenize_strict(query);
-    let lower_tokens = tokenize_lower(query);
     let searcher = self.reader.searcher();
 
-    // filtro por nivel como Must com boost 0.0: restringe o conjunto de docs sem
-    // contribuir pro score, entao o ranking BM25 continua puramente textual
-    let level_filter_clause = || -> Option<(Occur, Box<dyn Query>)> {
-      last_admin_levels.map(|levels| {
-        let shoulds: Vec<(Occur, Box<dyn Query>)> = levels
-          .iter()
-          .map(|level| {
-            let term = tantivy::Term::from_field_u64(self.admin_level_field, *level as u64);
-            (
-              Occur::Should,
-              Box::new(TermQuery::new(term, IndexRecordOption::Basic)) as Box<dyn Query>,
-            )
-          })
-          .collect();
-        (
-          Occur::Must,
-          Box::new(BoostQuery::new(Box::new(BooleanQuery::new(shoulds)), 0.0)) as Box<dyn Query>,
-        )
-      })
-    };
+    let mut strict = self.strict_clauses(query, &tokens);
+    strict.extend(self.filter_clauses(last_admin_levels, allowed_ids));
+    let strict_hits = run_query(&searcher, BooleanQuery::new(strict), self.id_field, limit);
+    if !strict_hits.is_empty() {
+      return strict_hits;
+    }
 
-    // filtro espacial: restringe o ranking a um conjunto de ids (regiao do envelope), via
-    // TermSetQuery sobre admin_level_id (Must, boost 0.0 — filtra sem contribuir pro score)
-    let id_filter_clause = || -> Option<(Occur, Box<dyn Query>)> {
-      allowed_ids.map(|ids| {
-        let terms = ids
-          .iter()
-          .map(|&id| tantivy::Term::from_field_u64(self.id_field, id as u64));
-        (
-          Occur::Must,
-          Box::new(BoostQuery::new(Box::new(TermSetQuery::new(terms)), 0.0)) as Box<dyn Query>,
-        )
-      })
-    };
+    let mut loose = self.loose_clauses(&tokens);
+    loose.extend(self.filter_clauses(last_admin_levels, allowed_ids));
+    run_query(&searcher, BooleanQuery::new(loose), self.id_field, limit)
+  }
 
-    let run = |query: BooleanQuery| -> Vec<(i64, f32)> {
-      searcher
-        .search(&query, &TopDocs::with_limit(limit).order_by_score())
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|(score, addr)| {
-          let doc: TantivyDocument = searcher.doc(addr).ok()?;
-          let id = doc
-            .get_first(self.id_field)
-            .and_then(|v| v.as_u64())? as i64;
-          Some((id, score))
-        })
-        .collect()
-    };
-
-    let mut strict_clauses: Vec<(Occur, Box<dyn Query>)> = tokens
+  fn strict_clauses(&self, query: &str, tokens: &[String]) -> Vec<clause> {
+    let mut clauses: Vec<clause> = tokens
       .iter()
       .map(|token| {
-        let term_name = tantivy::Term::from_field_text(self.name_field, token);
-        let term_hier = tantivy::Term::from_field_text(self.hier_field, token);
-        let exact_name = BoostQuery::new(
-          Box::new(TermQuery::new(term_name, IndexRecordOption::WithFreqs)),
+        let exact_name = boosted(
+          TermQuery::new(Term::from_field_text(self.name_field, token), IndexRecordOption::WithFreqs),
           self.boosts.name_exact,
         );
-        let exact_hier = BoostQuery::new(
-          Box::new(TermQuery::new(term_hier, IndexRecordOption::WithFreqs)),
+        let exact_hier = boosted(
+          TermQuery::new(Term::from_field_text(self.hier_field, token), IndexRecordOption::WithFreqs),
           self.boosts.hier_exact,
         );
         let token_query = BooleanQuery::new(vec![
-          (Occur::Should, Box::new(exact_name) as Box<dyn Query>),
-          (Occur::Should, Box::new(exact_hier) as Box<dyn Query>),
+          (Occur::Should, exact_name),
+          (Occur::Should, exact_hier),
         ]);
         (Occur::Must, Box::new(token_query) as Box<dyn Query>)
       })
       .collect();
 
-    // bônus por frase: quando os tokens da query aparecem na mesma ordem em
-    // name (ou hier), o doc ganha boost. discrimina entre docs que têm os
-    // mesmos termos mas em ordens diferentes. só faz sentido com 2+ tokens.
+    // a phrase bonus when the tokens appear contiguous and in order, which tells apart documents
+    // sharing the same terms in a different order; meaningless for a single token
     if tokens.len() >= 2 {
       for (field, boost) in [
         (self.name_field, self.boosts.name_phrase),
         (self.hier_field, self.boosts.hier_phrase),
       ] {
-        let terms: Vec<tantivy::Term> = tokens
+        let terms: Vec<Term> = tokens
           .iter()
-          .map(|t| tantivy::Term::from_field_text(field, t))
+          .map(|t| Term::from_field_text(field, t))
           .collect();
-        let phrase = PhraseQuery::new(terms);
-        strict_clauses.push((
-          Occur::Should,
-          Box::new(BoostQuery::new(Box::new(phrase), boost)),
-        ));
+        clauses.push((Occur::Should, boosted(PhraseQuery::new(terms), boost)));
       }
     }
 
-    // bônus strict: para cada token da query na forma original (sem lower nem
-    // fold), Should clause contra os campos *_strict. dispara só quando o doc
-    // tem a forma idêntica indexada, discriminando p.ex. "AAA" vs "aaa".
-    for token in &strict_tokens {
-      for (field, boost) in [
+    clauses.extend(bonus_clauses(
+      &tokenize_strict(query),
+      [
         (self.name_strict_field, self.boosts.name_strict),
         (self.hier_strict_field, self.boosts.hier_strict),
-      ] {
-        let term = tantivy::Term::from_field_text(field, token);
-        let strict = TermQuery::new(term, IndexRecordOption::WithFreqs);
-        strict_clauses.push((
-          Occur::Should,
-          Box::new(BoostQuery::new(Box::new(strict), boost)),
-        ));
-      }
-    }
-
-    // bônus lower: tokens da query em lowercase mas com diacrítico preservado,
-    // Should clause contra os campos *_lower. discrimina "Praça"/"Praca"
-    // independente de case da query. resolve o desempate entre docs que
-    // colidem no campo folded mas têm acentos diferentes.
-    for token in &lower_tokens {
-      for (field, boost) in [
+      ],
+    ));
+    clauses.extend(bonus_clauses(
+      &tokenize_lower(query),
+      [
         (self.name_lower_field, self.boosts.name_lower),
         (self.hier_lower_field, self.boosts.hier_lower),
-      ] {
-        let term = tantivy::Term::from_field_text(field, token);
-        let lower = TermQuery::new(term, IndexRecordOption::WithFreqs);
-        strict_clauses.push((
-          Occur::Should,
-          Box::new(BoostQuery::new(Box::new(lower), boost)),
-        ));
-      }
-    }
+      ],
+    ));
+    clauses
+  }
 
-    if let Some(clause) = level_filter_clause() {
-      strict_clauses.push(clause);
-    }
-    if let Some(clause) = id_filter_clause() {
-      strict_clauses.push(clause);
-    }
-
-    let strict_hits = run(BooleanQuery::new(strict_clauses));
-    if !strict_hits.is_empty() {
-      return strict_hits;
-    }
-
-    let mut loose_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::with_capacity(tokens.len() * 4);
-    for token in &tokens {
+  fn loose_clauses(&self, tokens: &[String]) -> Vec<clause> {
+    let mut clauses: Vec<clause> = Vec::with_capacity(tokens.len() * 4);
+    for token in tokens {
       let distance = fuzzy_distance_for(token);
       for (field, exact_boost, fuzzy_boost) in [
         (self.name_field, self.boosts.name_exact, self.boosts.name_fuzzy),
         (self.hier_field, self.boosts.hier_exact, self.boosts.hier_fuzzy),
       ] {
-        let term = tantivy::Term::from_field_text(field, token);
-        let exact = TermQuery::new(term.clone(), IndexRecordOption::WithFreqs);
-        loose_clauses.push((
+        let term = Term::from_field_text(field, token);
+        clauses.push((
           Occur::Should,
-          Box::new(BoostQuery::new(Box::new(exact), exact_boost)),
+          boosted(TermQuery::new(term.clone(), IndexRecordOption::WithFreqs), exact_boost),
         ));
-        let fuzzy = FuzzyTermQuery::new(term, distance, true);
-        loose_clauses.push((
+        clauses.push((
           Occur::Should,
-          Box::new(BoostQuery::new(Box::new(fuzzy), fuzzy_boost)),
+          boosted(FuzzyTermQuery::new(term, distance, true), fuzzy_boost),
         ));
       }
     }
-    if let Some(clause) = level_filter_clause() {
-      loose_clauses.push(clause);
+    clauses
+  }
+
+  // both filters are Must clauses with boost 0.0: they restrict the document set without touching
+  // the score, so the bm25 ranking stays purely textual
+  fn filter_clauses(
+    &self,
+    last_admin_levels: Option<&[level]>,
+    allowed_ids: Option<&[i64]>,
+  ) -> Vec<clause> {
+    let mut clauses: Vec<clause> = Vec::new();
+    if let Some(levels) = last_admin_levels {
+      let shoulds: Vec<clause> = levels
+        .iter()
+        .map(|level| {
+          let term = Term::from_field_u64(self.admin_level_field, level.value() as u64);
+          (
+            Occur::Should,
+            Box::new(TermQuery::new(term, IndexRecordOption::Basic)) as Box<dyn Query>,
+          )
+        })
+        .collect();
+      clauses.push((Occur::Must, boosted(BooleanQuery::new(shoulds), 0.0)));
     }
-    if let Some(clause) = id_filter_clause() {
-      loose_clauses.push(clause);
+    if let Some(ids) = allowed_ids {
+      let terms = ids
+        .iter()
+        .map(|&id| Term::from_field_u64(self.id_field, id as u64));
+      clauses.push((Occur::Must, boosted(TermSetQuery::new(terms), 0.0)));
     }
-    run(BooleanQuery::new(loose_clauses))
+    clauses
   }
 }
 
@@ -588,3 +588,7 @@ pub(crate) mod testing {
     (guard, index)
   }
 }
+
+#[cfg(test)]
+#[path = "search_index.test.rs"]
+mod tests;

@@ -125,7 +125,7 @@ fn stored_levels(conn: &Connection) -> Vec<(Option<u64>, u8, String)> {
     .map(|row| {
       (
         Some(admin_level_id::from_raw(row.id as u64).osm_id()),
-        row.admin_level,
+        row.admin_level.value(),
         row.name,
       )
     })

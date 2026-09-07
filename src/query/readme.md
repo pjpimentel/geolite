@@ -16,7 +16,7 @@
    `123a`), a single trailing comma tolerated (`35,`), no hyphen — so postcodes (`01310-100`,
    `01310100`) are never treated as house numbers. resolution happens per candidate in step 5.
 1. tokenises the input (lowercase + ascii-fold)
-2. searches the tantivy index `admin_levels_hierarchy_tantivy` with a two-stage strategy:
+2. searches the tantivy index (`domain/admin_level_hierarchy/search_index`) with a two-stage strategy:
    - **Q1 strict**: every query token must match exactly in `name` or `hier` (`Must` per token). returns only docs that cover 100% of the query exactly. if non-empty, this is the result. on top of that backbone, Q1 adds `Should` boosts — a phrase-order bonus and case/diacritic-sensitive matches against the `*_strict` / `*_lower` field variants — that only re-rank the matching set, never widen it.
    - **Q2 loose** (only if Q1 is empty): per-token `Should` clauses with exact + fuzzy on both fields. handles typos, extra words, or partial coverage.
 3. loads geometry, hierarchy and metadata for each hit

@@ -127,12 +127,12 @@ const COORDINATE_QUALITY_REFERENCE_M: f64 = 100.0;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
   conn: &rusqlite::Connection,
-  tantivy_index: Option<&crate::index::admin_levels_hierarchy_tantivy::tantivy_index>,
+  tantivy_index: Option<&crate::domain::admin_level_hierarchy::tantivy_index>,
   query: &str,
   friendly_name_format: Option<&str>,
   min_quality: Option<f64>,
   bounding_wkt: Option<bounding_geometry>,
-  last_admin_levels: Option<Vec<u8>>,
+  last_admin_levels: Option<Vec<level>>,
   include_wkt: bool,
 ) -> query_output {
   if let Some((lat, lon)) = try_parse_coordinates(query) {
@@ -167,7 +167,7 @@ pub(crate) fn apply_filters_and_truncate(
   matches: &mut Vec<query_match>,
   min_quality: Option<f64>,
   bounding_wkt: Option<&bounding_geometry>,
-  last_admin_levels: Option<&[u8]>,
+  last_admin_levels: Option<&[level]>,
 ) {
   if let Some(threshold) = min_quality {
     matches.retain(|m| match_quality(m) >= threshold);
@@ -178,7 +178,11 @@ pub(crate) fn apply_filters_and_truncate(
     matches.retain(|m| b.contains(m.latitude, m.longitude));
   }
   if let Some(levels) = last_admin_levels {
-    matches.retain(|m| m.admin_levels.last().is_some_and(|a| levels.contains(&a.level)));
+    matches.retain(|m| {
+      m.admin_levels
+        .last()
+        .is_some_and(|a| levels.iter().any(|l| l.value() == a.level))
+    });
   }
   matches.truncate(MAX_RESULTS as usize);
 }

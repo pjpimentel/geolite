@@ -828,6 +828,35 @@ fn _02_11_an_out_of_range_quality_is_ignored_rather_than_rejected() {
   assert!(!r.json()["matches"].as_array().expect("matches").is_empty());
 }
 
+// 02.12. dead case
+#[test]
+#[ignore]
+fn _02_12_a_level_outside_the_scale_in_last_admin_levels_returns_bad_request() {
+  let w = world();
+  let s = w.start_server();
+  let path = format!("/geocode?query={}&last_admin_levels=8,11", encode(ANY_TEXT));
+  let r = get(s.port, &path);
+  assert_eq!(r.status, 400, "body: {}", r.text());
+  assert_eq!(
+    r.json()["error"],
+    "last_admin_levels: level 11 is not supported"
+  );
+}
+
+// 02.13. dead case
+#[test]
+#[ignore]
+fn _02_13_a_level_outside_the_scale_in_last_admin_levels_is_rejected_by_clap() {
+  let w = world();
+  let out = w.geolite(&["query", ANY_TEXT, "--last-admin-levels", "8,11"]);
+  assert_eq!(out.status, 2);
+  assert!(
+    out.stderr.contains("level 11 is not supported"),
+    "stderr: {}",
+    out.stderr
+  );
+}
+
 // 03.00. degraded mode
 #[test]
 #[ignore]

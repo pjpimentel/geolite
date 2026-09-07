@@ -98,16 +98,12 @@ fn parse_name_priority(raw: &str) -> Result<Vec<&str>, String> {
 }
 
 fn parse_admin_levels(raw: &str) -> Result<Vec<level>, String> {
-  let mut levels: Vec<level> = Vec::new();
-  for part in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-    let value: u8 = part
-      .parse()
-      .map_err(|_| format!("'{part}' is not a level number"))?;
-    match level::new(value) {
-      Some(level) => levels.push(level),
-      None => return Err(format!("level {value} is not supported")),
-    }
-  }
+  let levels = raw
+    .split(',')
+    .map(str::trim)
+    .filter(|s| !s.is_empty())
+    .map(|part| level::parse(part).map_err(|e| e.to_string()))
+    .collect::<Result<Vec<level>, String>>()?;
   if levels.is_empty() {
     return Err("at least one level required".to_string());
   }

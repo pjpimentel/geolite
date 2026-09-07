@@ -122,8 +122,8 @@ enum commands {
     min_quality: Option<f64>,
     #[arg(long, allow_hyphen_values = true, value_parser = crate::http::parse_bounding_wkt)]
     bounding_wkt: Option<crate::query::bounding_geometry>,
-    #[arg(long, value_delimiter = ',')]
-    last_admin_levels: Option<Vec<u8>>,
+    #[arg(long, value_delimiter = ',', value_parser = crate::domain::admin_level::level::parse)]
+    last_admin_levels: Option<Vec<crate::domain::admin_level::level>>,
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_wkt: bool,
   },
@@ -201,7 +201,7 @@ pub fn run() {
   let index_path: String = args
     .index_path
     .or_else(|| {
-      crate::index::admin_levels_hierarchy_tantivy::default_path_for(&sqlite_path)
+      crate::domain::admin_level_hierarchy::search_index::default_path_for(&sqlite_path)
         .map(|p| p.to_string_lossy().into_owned())
     })
     .unwrap_or_else(|| format!("{}/database.tantivy", args.data_path));
@@ -296,7 +296,7 @@ pub fn run() {
       // the tantivy index belongs to the base (positional), not the global --sqlite-path default.
       let merge_index_path = explicit_index_path
         .or_else(|| {
-          crate::index::admin_levels_hierarchy_tantivy::default_path_for(&base)
+          crate::domain::admin_level_hierarchy::search_index::default_path_for(&base)
             .map(|p| p.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| format!("{}/database.tantivy", args.data_path));

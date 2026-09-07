@@ -380,7 +380,7 @@ fn run_hierarchy_case(area_level: level, area_name: &str) {
   ];
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -523,7 +523,7 @@ fn run_split_hierarchy_case(area_level: level) {
   ];
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -686,7 +686,7 @@ fn run_nested_polygons_case(area_level: level) {
   ];
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
 
   let output = crate::query::run(
     &conn,
@@ -849,7 +849,7 @@ fn _08_admin_level_filter_keeps_matches_with_requested_level() {
     None,
     None,
     None,
-    Some(vec![12]),
+    Some(vec![level::street]),
     true,
   );
   assert_eq!(output.matches.len(), 10);
@@ -873,7 +873,7 @@ fn _09_admin_level_filter_with_no_matching_level_returns_empty_matches() {
     None,
     None,
     None,
-    Some(vec![8]),
+    Some(vec![level::city]),
     true,
   );
   assert!(output.matches.is_empty());
@@ -978,7 +978,7 @@ fn _15_candidate_within_delta_is_included_with_distance() {
   assert_eq!(candidates.len(), 1);
   let c = &candidates[0];
   assert_eq!(c.id, 2);
-  assert_eq!(c.admin_level, 12);
+  assert_eq!(c.admin_level, level::street);
   assert_eq!(c.distance_in_meters, Some(0));
 }
 
