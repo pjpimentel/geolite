@@ -87,10 +87,18 @@ pub fn destroy_data(
   admin_levels: bool,
   house_numbers: bool,
 ) {
-  if osm_pbf_blob_chunks || osm_data {
+  if osm_pbf_blob_chunks {
     remove_osm_data_files(path);
   }
-  let conn = open_write_main(path);
+  let conn = if osm_data && !osm_pbf_blob_chunks {
+    let conn = open_write(path);
+    osm_nodes::drop_table(&conn);
+    osm_ways::drop_table(&conn);
+    osm_relations::drop_table(&conn);
+    conn
+  } else {
+    open_write_main(path)
+  };
   if house_numbers {
     house_numbers::drop_table(&conn);
   }
@@ -119,10 +127,14 @@ pub(crate) fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
 }
 
 pub fn open_write_main(path: &str) -> Connection {
+  // create_dir_all races between concurrent geolite processes sharing an ancestor directory:
+  // std can return AlreadyExists spuriously, so a parent that already exists is success.
   if let Some(parent) = std::path::Path::new(path).parent()
     && !parent.as_os_str().is_empty()
+    && let Err(error) = std::fs::create_dir_all(parent)
+    && !parent.is_dir()
   {
-    std::fs::create_dir_all(parent).expect("failed to create sqlite parent dir");
+    panic!("failed to create sqlite parent dir: {error}");
   }
   let conn = Connection::open(path).expect("failed to open sqlite");
   let stamped: u32 = conn

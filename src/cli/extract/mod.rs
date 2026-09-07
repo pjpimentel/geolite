@@ -28,13 +28,13 @@ pub enum extract_commands {
     #[arg(num_args(1..))]
     inputs: Vec<String>,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_relations: bool,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_ways: bool,
 
-    #[arg(long, default_value_t = true)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_nodes: bool,
 
     #[arg(long, default_value_t = true)]

@@ -122,3 +122,34 @@ fn _01_03_resolves_input_from_database_id() {
   );
   assert!(osm_way_count(&scene.db_path) > 0);
 }
+
+#[test]
+fn _01_04_recreate_keeps_the_blob_chunk_index_and_extracts_again() {
+  let (scene, file_id) = indexed_scene("cli_data_recreate", &tiny_pbf());
+  let data_path = scene.guard.path.to_string_lossy().into_owned();
+  for recreate in [false, true] {
+    command_handler_extract_osm_pbf_data(
+      &data_path,
+      &scene.db_path,
+      &1,
+      std::slice::from_ref(&scene.pbf_path),
+      true,
+      true,
+      true,
+      true,
+      None,
+      None,
+      recreate,
+      Some(4),
+    );
+    assert!(
+      osm_way_count(&scene.db_path) > 0,
+      "recreate={recreate}: the fixture way must be decoded and written"
+    );
+  }
+  let conn = crate::database::open_write(&scene.db_path);
+  assert!(
+    crate::domain::osm_pbf_file::blob_index::count_by_file_id(&conn, file_id) > 0,
+    "recreate must keep the blob chunk index"
+  );
+}

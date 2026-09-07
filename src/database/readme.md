@@ -18,7 +18,7 @@ layer 2  ·  osm_pbf_blob_chunks        byte ranges of each blob (header=0 / dat
 layer 1  ·  osm_pbf_files              one row per .osm.pbf — origin (local_path, geofabrik, url) and its coverage, download state, header and counts
 ```
 
-layers are built roughly bottom-up (back-references: `house_numbers → admin_levels`, and the `*_count` columns on `osm_pbf_files`). `destroy_data` selectively drops upper layers — deleting the `osm_data` sibling file for layers 2–3 — then vacuums; `osm_pbf_files` is kept.
+layers are built roughly bottom-up (back-references: `house_numbers → admin_levels`, and the `*_count` columns on `osm_pbf_files`). `destroy_data` selectively drops upper layers — deleting the `osm_data` sibling file when layer 2 goes, and dropping only the three element tables when layer 3 goes alone, so the chunk index survives a `--recreate` of the osm-data stage — then vacuums; `osm_pbf_files` is kept.
 
 every writable connection runs in WAL mode; the schema is stamped via `PRAGMA user_version` (`SCHEMA_VERSION`): a writable open refuses a database stamped with another version, and `geolite merge` refuses to combine builds with an incompatible one. a column that only extends the schema is added to an older database on open (`ALTER TABLE`), without a new version.
 
