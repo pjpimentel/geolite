@@ -11,3 +11,6 @@ mod osm_pbf_file;
 
 #[path = "extract.test.rs"]
 mod extract;
+
+#[path = "admin_level.test.rs"]
+mod admin_level;

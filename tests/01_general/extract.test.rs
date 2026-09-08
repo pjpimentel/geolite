@@ -17,15 +17,16 @@ const MUNICIPALITY: u64 = 298_442;
 const STREET_WAY: u64 = 169_924_327;
 const STREET_NODE: u64 = 1_785_552_339;
 
-const REGENERATE: &str = "the fixture changed; regenerate deliberately and update the constants";
+pub(crate) const REGENERATE: &str =
+  "the fixture changed; regenerate deliberately and update the constants";
 
-struct scratch {
-  dir: PathBuf,
+pub(crate) struct scratch {
+  pub(crate) dir: PathBuf,
   stdout: String,
 }
 
 impl scratch {
-  fn ledger(&self) -> rusqlite::Connection {
+  pub(crate) fn ledger(&self) -> rusqlite::Connection {
     open_sqlite_at(&self.dir.join("database.sqlite3"))
   }
 
@@ -57,7 +58,7 @@ impl ledger_row {
   }
 }
 
-fn stage(w: &world, dir: &Path, args: &[&str]) -> output {
+pub(crate) fn stage(w: &world, dir: &Path, args: &[&str]) -> output {
   let out = w.geolite_in(dir, args);
   assert_eq!(
     out.status, 0,
@@ -81,7 +82,7 @@ fn osm_data(w: &world, dir: &Path, threads: &str, data_args: &[&str], inputs: &[
 }
 
 // the three stages of the file in a scratch of its own, keeping the osm-data stdout
-fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]) -> scratch {
+pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]) -> scratch {
   let dir = w.scratch(name);
   let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
   stage(w, &dir, &["extract", "osm-pbf-blob-chunks", &pbf]);
@@ -103,7 +104,7 @@ fn admin_levels(w: &world, dir: &Path, extra: &[&str]) {
   stage(w, dir, &args);
 }
 
-fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
+pub(crate) fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
   conn
     .query_row(sql, [], |r| r.get(0))
     .unwrap_or_else(|e| panic!("{sql} failed: {e}"))
