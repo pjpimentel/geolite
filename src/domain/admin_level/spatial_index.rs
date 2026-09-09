@@ -1,5 +1,6 @@
 use geo::BoundingRect;
 use rusqlite::Connection;
+use std::num::NonZeroUsize;
 use std::sync::mpsc;
 use std::thread;
 
@@ -157,7 +158,7 @@ fn run_parallel(
   progress: impl Fn(progress_report),
 ) {
   let n_workers = thread::available_parallelism()
-    .map(|n| n.get())
+    .map(NonZeroUsize::get)
     .unwrap_or(4)
     .min(MAX_WORKERS);
   let range_size = (max_id - min_id) / n_workers as i64 + 1;

@@ -34,8 +34,8 @@ const SQL_DROP_INDEXES: &str = "
 pub struct admin_levels;
 
 impl table for admin_levels {
-  const CREATE: &'static str = SQL_CREATE;
-  const INDEXES: &'static str = SQL_CREATE_INDEXES;
+  const CREATE: &str = SQL_CREATE;
+  const INDEXES: &str = SQL_CREATE_INDEXES;
 }
 
 fn level_of(id: i64, raw: u8) -> Option<level> {

@@ -54,8 +54,8 @@ const SQL_CREATE_INDEXES: &str = "
 pub struct osm_pbf_blob_chunks;
 
 impl table for osm_pbf_blob_chunks {
-  const CREATE: &'static str = SQL_CREATE;
-  const INDEXES: &'static str = SQL_CREATE_INDEXES;
+  const CREATE: &str = SQL_CREATE;
+  const INDEXES: &str = SQL_CREATE_INDEXES;
 }
 
 pub fn count_by_file_id(conn: &Connection, file_id: u32) -> i64 {

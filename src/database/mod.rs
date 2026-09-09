@@ -24,6 +24,10 @@ pub const SCHEMA_VERSION: u32 = 2;
 pub mod house_numbers;
 pub mod jsonb;
 pub mod merge;
+
+#[cfg(test)]
+#[path = "merge_fixtures.test.rs"]
+pub(crate) mod merge_fixtures;
 pub mod osm_nodes;
 pub mod osm_relations;
 pub mod osm_ways;

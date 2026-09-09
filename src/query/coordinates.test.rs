@@ -195,6 +195,42 @@ const STREETS: &[street_data] = &[
   },
 ];
 
+fn way_row(way_id: u64, level: level, name: &str, geometry: Geometry<f64>) -> admin_levels_row {
+  admin_levels_row {
+    relation_id: None,
+    way_id: Some(way_id),
+    level,
+    wkb: geometry.into(),
+    name: name.to_string(),
+    country_iso_code: None,
+    post_code: None,
+  }
+}
+
+// the hierarchy cases share the tail: store the areas, box them in the rtree, resolve the chains
+// and ask for the documented point
+fn resolve_and_query(conn: &Connection, rows: &[admin_levels_row]) -> crate::query::query_output {
+  batch_upsert(conn, rows);
+  crate::domain::admin_level::spatial_index::run(conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(conn, |_| {});
+  crate::query::run(conn, None, "-23.97241,-46.31980", None, None, None, None, true)
+}
+
+// the four fields every hierarchy case checks on one resolved level of a match
+fn assert_level(
+  m: &crate::query::query_match,
+  index: usize,
+  level: level,
+  name: &str,
+  way_id: u64,
+) {
+  let resolved = &m.admin_levels[index];
+  assert_eq!(resolved.level, level.value());
+  assert_eq!(resolved.name, name);
+  assert_eq!(resolved.osm_relation_id, None);
+  assert_eq!(resolved.osm_way_id, Some(way_id));
+}
+
 fn make_street_row(s: &street_data, way_id: u64) -> admin_levels_row {
   let ls = LineString(vec![
     Coord {
@@ -206,15 +242,7 @@ fn make_street_row(s: &street_data, way_id: u64) -> admin_levels_row {
       y: s.lat2,
     },
   ]);
-  admin_levels_row {
-    relation_id: None,
-    way_id: Some(way_id),
-    level: level::street,
-    wkb: Geometry::LineString(ls).into(),
-    name: s.name.to_string(),
-    country_iso_code: None,
-    post_code: None,
-  }
+  way_row(way_id, level::street, s.name, Geometry::LineString(ls))
 }
 
 #[test]
@@ -358,50 +386,17 @@ fn run_hierarchy_case(area_level: level, area_name: &str) {
     vec![],
   );
 
-  let rows = vec![
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(1),
-      level: level::street,
-      wkb: Geometry::LineString(street_ls).into(),
-      name: "test_street".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(2),
-      level: area_level,
-      wkb: Geometry::Polygon(area_polygon).into(),
-      name: area_name.to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-  ];
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
-  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
-
-  let output = crate::query::run(
+  let output = resolve_and_query(
     &conn,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    None,
-    None,
-    true,
+    &[
+      way_row(1, level::street, "test_street", Geometry::LineString(street_ls)),
+      way_row(2, area_level, area_name, Geometry::Polygon(area_polygon)),
+    ],
   );
   assert_eq!(output.matches.len(), 1);
   assert_eq!(output.matches[0].admin_levels.len(), 2);
-  assert_eq!(output.matches[0].admin_levels[0].level, area_level.value());
-  assert_eq!(output.matches[0].admin_levels[0].name, area_name);
-  assert_eq!(output.matches[0].admin_levels[0].osm_relation_id, None);
-  assert_eq!(output.matches[0].admin_levels[0].osm_way_id, Some(2));
-  assert_eq!(output.matches[0].admin_levels[1].level, 12);
-  assert_eq!(output.matches[0].admin_levels[1].name, "test_street");
-  assert_eq!(output.matches[0].admin_levels[1].osm_relation_id, None);
-  assert_eq!(output.matches[0].admin_levels[1].osm_way_id, Some(1));
+  assert_level(&output.matches[0], 0, area_level, area_name, 2);
+  assert_level(&output.matches[0], 1, level::street, "test_street", 1);
 }
 
 #[test]
@@ -483,79 +478,24 @@ fn run_split_hierarchy_case(area_level: level) {
     vec![],
   );
 
-  let rows = vec![
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(1),
-      level: level::street,
-      wkb: Geometry::LineString(street_a_ls).into(),
-      name: "street_a".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(2),
-      level: level::street,
-      wkb: Geometry::LineString(street_b_ls).into(),
-      name: "street_b".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(3),
-      level: area_level,
-      wkb: Geometry::Polygon(area_a_poly).into(),
-      name: "area_a".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(4),
-      level: area_level,
-      wkb: Geometry::Polygon(area_b_poly).into(),
-      name: "area_b".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-  ];
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
-  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
-
-  let output = crate::query::run(
+  let output = resolve_and_query(
     &conn,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    None,
-    None,
-    true,
+    &[
+      way_row(1, level::street, "street_a", Geometry::LineString(street_a_ls)),
+      way_row(2, level::street, "street_b", Geometry::LineString(street_b_ls)),
+      way_row(3, area_level, "area_a", Geometry::Polygon(area_a_poly)),
+      way_row(4, area_level, "area_b", Geometry::Polygon(area_b_poly)),
+    ],
   );
   assert_eq!(output.matches.len(), 2);
 
   assert_eq!(output.matches[0].admin_levels.len(), 2);
-  assert_eq!(output.matches[0].admin_levels[0].level, area_level.value());
-  assert_eq!(output.matches[0].admin_levels[0].name, "area_a");
-  assert_eq!(output.matches[0].admin_levels[0].osm_relation_id, None);
-  assert_eq!(output.matches[0].admin_levels[0].osm_way_id, Some(3));
-  assert_eq!(output.matches[0].admin_levels[1].level, 12);
-  assert_eq!(output.matches[0].admin_levels[1].name, "street_a");
-  assert_eq!(output.matches[0].admin_levels[1].osm_relation_id, None);
-  assert_eq!(output.matches[0].admin_levels[1].osm_way_id, Some(1));
+  assert_level(&output.matches[0], 0, area_level, "area_a", 3);
+  assert_level(&output.matches[0], 1, level::street, "street_a", 1);
 
   assert_eq!(output.matches[1].admin_levels.len(), 2);
-  assert_eq!(output.matches[1].admin_levels[0].level, area_level.value());
-  assert_eq!(output.matches[1].admin_levels[0].name, "area_b");
-  assert_eq!(output.matches[1].admin_levels[0].osm_relation_id, None);
-  assert_eq!(output.matches[1].admin_levels[0].osm_way_id, Some(4));
-  assert_eq!(output.matches[1].admin_levels[1].level, 12);
-  assert_eq!(output.matches[1].admin_levels[1].name, "street_b");
-  assert_eq!(output.matches[1].admin_levels[1].osm_relation_id, None);
-  assert_eq!(output.matches[1].admin_levels[1].osm_way_id, Some(2));
+  assert_level(&output.matches[1], 0, area_level, "area_b", 4);
+  assert_level(&output.matches[1], 1, level::street, "street_b", 2);
 }
 
 #[test]
@@ -646,57 +586,14 @@ fn run_nested_polygons_case(area_level: level) {
     vec![],
   );
 
-  let rows = vec![
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(1),
-      level: level::street,
-      wkb: Geometry::LineString(street_ls).into(),
-      name: "test_street".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(2),
-      level: area_level,
-      wkb: Geometry::Polygon(area_a_poly).into(),
-      name: "area_a".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(3),
-      level: area_level,
-      wkb: Geometry::Polygon(area_b_poly).into(),
-      name: "area_b".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-    admin_levels_row {
-      relation_id: None,
-      way_id: Some(4),
-      level: area_level,
-      wkb: Geometry::Polygon(area_c_poly).into(),
-      name: "area_c".to_string(),
-      country_iso_code: None,
-      post_code: None,
-    },
-  ];
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
-  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
-
-  let output = crate::query::run(
+  let output = resolve_and_query(
     &conn,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    None,
-    None,
-    true,
+    &[
+      way_row(1, level::street, "test_street", Geometry::LineString(street_ls)),
+      way_row(2, area_level, "area_a", Geometry::Polygon(area_a_poly)),
+      way_row(3, area_level, "area_b", Geometry::Polygon(area_b_poly)),
+      way_row(4, area_level, "area_c", Geometry::Polygon(area_c_poly)),
+    ],
   );
   assert_eq!(output.matches.len(), 1);
   assert_eq!(
@@ -704,22 +601,10 @@ fn run_nested_polygons_case(area_level: level) {
     "test_street, area_c, area_b, area_a"
   );
   assert_eq!(output.matches[0].admin_levels.len(), 4);
-  assert_eq!(output.matches[0].admin_levels[0].level, area_level.value());
-  assert_eq!(output.matches[0].admin_levels[0].name, "area_a");
-  assert_eq!(output.matches[0].admin_levels[0].osm_relation_id, None);
-  assert_eq!(output.matches[0].admin_levels[0].osm_way_id, Some(2));
-  assert_eq!(output.matches[0].admin_levels[1].level, area_level.value());
-  assert_eq!(output.matches[0].admin_levels[1].name, "area_b");
-  assert_eq!(output.matches[0].admin_levels[1].osm_relation_id, None);
-  assert_eq!(output.matches[0].admin_levels[1].osm_way_id, Some(3));
-  assert_eq!(output.matches[0].admin_levels[2].level, area_level.value());
-  assert_eq!(output.matches[0].admin_levels[2].name, "area_c");
-  assert_eq!(output.matches[0].admin_levels[2].osm_relation_id, None);
-  assert_eq!(output.matches[0].admin_levels[2].osm_way_id, Some(4));
-  assert_eq!(output.matches[0].admin_levels[3].level, 12);
-  assert_eq!(output.matches[0].admin_levels[3].name, "test_street");
-  assert_eq!(output.matches[0].admin_levels[3].osm_relation_id, None);
-  assert_eq!(output.matches[0].admin_levels[3].osm_way_id, Some(1));
+  assert_level(&output.matches[0], 0, area_level, "area_a", 2);
+  assert_level(&output.matches[0], 1, area_level, "area_b", 3);
+  assert_level(&output.matches[0], 2, area_level, "area_c", 4);
+  assert_level(&output.matches[0], 3, level::street, "test_street", 1);
 }
 
 #[test]

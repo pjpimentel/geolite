@@ -7,8 +7,8 @@ pub mod osm_tag;
 pub mod osm_way;
 
 pub(crate) trait table {
-  const CREATE: &'static str;
-  const INDEXES: &'static str;
+  const CREATE: &str;
+  const INDEXES: &str;
 
   fn create_table(conn: &rusqlite::Connection) {
     conn

@@ -2,6 +2,7 @@ use geo::{Area, BoundingRect, Centroid, Geometry};
 use rstar::{AABB, RTree, RTreeObject};
 use rusqlite::Connection;
 use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::mpsc;
 use std::thread;
 
@@ -143,7 +144,7 @@ pub fn run(conn: &Connection, progress: impl Fn(progress_report)) {
 
 fn worker_count() -> usize {
   thread::available_parallelism()
-    .map(|n| n.get())
+    .map(NonZeroUsize::get)
     .unwrap_or(4)
     .min(MAX_WORKERS)
 }

@@ -1,5 +1,6 @@
 use rusqlite::Connection;
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use tantivy::{
   Index, IndexReader, Searcher, TantivyDocument, Term,
@@ -91,7 +92,7 @@ fn schema() -> (Schema, Field, Field, Field, Field, Field, Field, Field, Field) 
 pub(crate) fn build_entity_text(name: &str, post_code: Option<&str>) -> String {
   match post_code.map(str::trim).filter(|s| !s.is_empty()) {
     Some(pc) => {
-      let digits: String = pc.chars().filter(|c| c.is_ascii_digit()).collect();
+      let digits: String = pc.chars().filter(char::is_ascii_digit).collect();
       if digits.is_empty() || digits == pc {
         format!("{name} {pc}")
       } else {
@@ -134,7 +135,7 @@ pub fn default_path_for(sqlite_path: &str) -> Option<PathBuf> {
     return None;
   }
   let p = Path::new(sqlite_path);
-  let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("database");
+  let stem = p.file_stem().and_then(OsStr::to_str).unwrap_or("database");
   let parent = p.parent().unwrap_or(Path::new(""));
   Some(parent.join(format!("{stem}.tantivy")))
 }

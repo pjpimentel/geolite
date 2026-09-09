@@ -18,8 +18,8 @@ const SQL_DROP: &str = "DROP TABLE IF EXISTS admin_levels_hierarchy;";
 pub struct admin_levels_hierarchy;
 
 impl table for admin_levels_hierarchy {
-  const CREATE: &'static str = SQL_CREATE;
-  const INDEXES: &'static str = "";
+  const CREATE: &str = SQL_CREATE;
+  const INDEXES: &str = "";
 }
 
 pub(crate) fn drop_table(conn: &Connection) {
