@@ -382,11 +382,12 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
       let id: u64 = match (row.relation_id, row.way_id) {
         (Some(rel), _) => admin_level_id::from_relation(rel).raw(),
         (None, Some(w)) => admin_level_id::from_way(w).raw(),
+        // the message carries no field of the row itself: a name on its way to stderr is read as
+        // cleartext logging of user data (codeql rust/cleartext-logging)
         (None, None) => panic!(
-          "admin_levels row has neither way_id nor relation_id; \
-           cannot derive a stable id (admin_level={}, name={:?})",
+          "admin_levels row at level {} has neither way_id nor relation_id; \
+           cannot derive a stable id",
           row.level.value(),
-          row.name,
         ),
       };
       let changes = stmt
