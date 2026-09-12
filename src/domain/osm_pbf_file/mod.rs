@@ -77,6 +77,21 @@ impl<'a> osm_pbf_file<'a> {
     })
   }
 
+  pub fn delete(&self, path: &str) -> u64 {
+    let conn = self.database();
+    if let Some(file_id) = repository::get_id_by_path(conn, path) {
+      blob_index::delete_by_file_id(conn, file_id);
+      repository::clear_download(conn, path);
+    }
+    let file = std::path::Path::new(path);
+    if !file.exists() {
+      return 0;
+    }
+    let bytes = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
+    std::fs::remove_file(file).expect("failed to remove osm.pbf file");
+    bytes
+  }
+
   fn database(&self) -> &'a rusqlite::Connection {
     self.conn.expect("only `ls local` runs without a database")
   }

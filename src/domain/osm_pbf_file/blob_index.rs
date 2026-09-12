@@ -72,6 +72,17 @@ pub fn count_by_file_id(conn: &Connection, file_id: u32) -> i64 {
     .expect("failed to count blob chunks")
 }
 
+pub fn delete_by_file_id(conn: &Connection, file_id: u32) {
+  const SQL_DELETE_BY_FILE_ID: &str = "
+    DELETE FROM osm_data.osm_pbf_blob_chunks
+    WHERE file_id = ?1
+  ";
+
+  conn
+    .execute(SQL_DELETE_BY_FILE_ID, rusqlite::params![file_id])
+    .expect("failed to delete blob chunks");
+}
+
 pub fn get_header_chunk(conn: &Connection, file_id: u32) -> Option<osm_pbf_blob_chunk> {
   const SQL_HEADER_CHUNK: &str = "
     SELECT

@@ -117,3 +117,29 @@ fn _03_extract_osm_data_returns_none_without_blob_chunks() {
     "the ledger must not be stamped"
   );
 }
+
+#[test]
+fn _04_delete_removes_the_file_its_chunks_and_forgets_the_download() {
+  let scene = temp_scene("facade_04");
+  write_pbf(&scene.pbf_path, &tiny_pbf());
+  let data_path = data_dir(&scene);
+  let conn = crate::database::open_write(&scene.db_path);
+  let file = osm_pbf_file::open(Some(&conn), &data_path);
+  file.extract_blob_chunks(&scene.pbf_path, |_| {});
+  let file_id = repository::ensure_by_file_path(&conn, &scene.pbf_path);
+  let size = std::fs::metadata(&scene.pbf_path)
+    .expect("the pbf exists")
+    .len();
+
+  let bytes = file.delete(&scene.pbf_path);
+
+  assert_eq!(bytes, size, "the bytes freed are the file's size");
+  assert!(!std::path::Path::new(&scene.pbf_path).exists());
+  assert_eq!(blob_index::count_by_file_id(&conn, file_id), 0);
+  assert_eq!(
+    repository::get_file_path(&conn, &file_id.to_string()),
+    None,
+    "a deleted file resolves to nothing"
+  );
+  assert_eq!(file.delete(&scene.pbf_path), 0, "deleting twice frees nothing");
+}

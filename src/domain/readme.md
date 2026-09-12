@@ -5,7 +5,7 @@
 the domain is organised as vertical slices. a concept's folder holds its model and methods, its
 policy, its services and — one patch release at a time — its own persistence. the technical
 modules that came before (`extract`, `index`, `query`, `optimize`, `database`) are being emptied
-into these folders and disappear as the concepts arrive; `index` was the first to go, `extract` the second.
+into these folders and disappear as the concepts arrive; `index`, `extract` and `optimize` are gone.
 
 ```
 admin_level/    a named administrative area — the `admin_levels` table
@@ -96,8 +96,8 @@ persistence still sit in `src/database` and come with each one's own slice.
   fills a table creates its indexes. everything else a repository exposes is `pub`.
 - an index is named `<table>_search_by_<purpose>`.
 - **a folder's use cases are methods on one type declared in `mod.rs`** — `osm_pbf_file::list`,
-  `extract_blob_chunks`, `extract_osm_header` and `extract_osm_data` are the first four; `download`
-  and `delete` follow. the cli parses arguments, resolves the input, opens the connection and
+  `extract_blob_chunks`, `extract_osm_header`, `extract_osm_data` and `delete` are the first five;
+  `download` follows. the cli parses arguments, resolves the input, opens the connection and
   prints, nothing else.
 - `mod.rs` re-exports exactly what production code outside the folder names, and nothing else.
 - test scenarios are numbered contiguously from `_00` within their file, and the file names and
@@ -246,7 +246,7 @@ failed here on both halves:
 | | `admin_levels_rtree` | `admin_levels_hierarchy` |
 |---|---|---|
 | what it stores | a bounding box, recomputable in milliseconds | `user_friendly_name` — **rendered content**, with regional formatting |
-| who reads it | only `admin_level`'s own coordinate query | the tantivy index, the query path, and `optimize` |
+| who reads it | only `admin_level`'s own coordinate query | the tantivy index, the query path, and the cli's `optimize` guard |
 
 the tantivy document is one per **hierarchy** row, not per admin level — the hierarchy row, not the
 area, is the unit of search, which is why the search index lives here and not in `admin_level`.
@@ -487,6 +487,17 @@ for `geofabrik`:
 1. verifies md5 checksum against `<url>.md5` (ok / mismatch / unavailable)
 1. records the result (`path`, `size_bytes`, `md5`, `downloaded_at`) in the matching
    `osm_pbf_files` row
+
+### delete
+
+`osm_pbf_file::delete(path)` is the undo of the download and of the chunk index: it deletes the
+file's blob chunks, clears the four download columns (`path`, `size_bytes`, `md5`,
+`downloaded_at`) and removes the file. the row stays, with its header and its counts — the ledger
+still says what was extracted from the file, it just no longer points at a file that is gone, so
+nothing resolves to it. `optimize delete-intermediary-data` is this for every `.osm.pbf` under
+`data_path`, followed by `database::remove_osm_data_files`, which drops the whole `osm_data`
+sibling (chunks, nodes, ways, relations) in one go; the sibling goes last because a writable
+connection recreates it.
 
 ### the wire format — `message` and `compression`
 

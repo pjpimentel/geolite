@@ -4,12 +4,15 @@
 
 1. REMOVED `database/house_numbers` mod.
 1. REMOVED `extract` mod.
+1. REMOVED `optimize` mod.
 1. MODIFIED presets: `extract_house_numbers` became `house_numbers`, a `house_number_policy` (`number_tags`, `street_tags`, `drop_values`, `max_digits`, `shapes`, `allow_hash_prefix`).
 1. MODIFIED `extract osm-house-numbers`: the tag value is normalised in the domain (`house_number::normalize`) instead of in sql; the stored forms do not change.
 1. MODIFIED `extract osm-house-numbers`: the count it prints is the number of rows inserted; it was the number of candidates, so a rerun reported every candidate again instead of 0.
 1. MODIFIED `query` and `http-server` under the `colombia` preset: a compound number (`82-52`, `25B-48`, `16i56`) and the `#` prefix are read from the input, match their stored value exactly and are never interpolated; no rebuild required.
 1. ADDED `house_number` domain (`entity`, `value`, `policy`, `strategy`, `token`, `resolution`, `repository`, `extract`, `linker`).
 1. ADDED `house_number_link::extract`: the house-number stage as one use case of the domain.
+1. ADDED `osm_pbf_file::delete`: the file, its blob chunks and its download columns (`path`, `size_bytes`, `md5`, `downloaded_at`) go together.
+1. MODIFIED `optimize delete-intermediary-data`: the ledger row of every deleted file forgets its path, so nothing resolves to a file that is gone; the pbf files are reported before the `osm_data` sibling.
 
 ## **2026-09-12** - 0.0.8
 

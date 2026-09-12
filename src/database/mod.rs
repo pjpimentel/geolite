@@ -68,17 +68,45 @@ pub fn osm_data_path(main_path: &str) -> String {
     .into_owned()
 }
 
-fn remove_osm_data_files(main_path: &str) {
+pub fn remove_osm_data_files(main_path: &str) -> u64 {
   if main_path == ":memory:" {
-    return;
+    return 0;
   }
   let sibling = osm_data_path(main_path);
+  let mut bytes = 0u64;
   for suffix in ["", "-wal", "-shm"] {
     let p = format!("{sibling}{suffix}");
     if std::path::Path::new(&p).exists() {
+      bytes += std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
       std::fs::remove_file(&p).expect("failed to remove osm_data sibling");
     }
   }
+  bytes
+}
+
+pub fn compact(conn: &Connection) -> (u64, u64) {
+  const SQL_PAGE_SIZE: &str = "PRAGMA page_size";
+  const SQL_PAGE_COUNT: &str = "PRAGMA page_count";
+  const SQL_COMPACT: &str = "
+    ANALYZE;
+    PRAGMA optimize;
+    PRAGMA wal_checkpoint(TRUNCATE);
+    VACUUM;
+  ";
+
+  let page_size: u64 = conn
+    .query_row(SQL_PAGE_SIZE, [], |r| r.get(0))
+    .unwrap_or(4096);
+  let pages_before: u64 = conn
+    .query_row(SQL_PAGE_COUNT, [], |r| r.get(0))
+    .unwrap_or(0);
+  conn
+    .execute_batch(SQL_COMPACT)
+    .expect("failed to compact sqlite file");
+  let pages_after: u64 = conn
+    .query_row(SQL_PAGE_COUNT, [], |r| r.get(0))
+    .unwrap_or(0);
+  (page_size * pages_before, page_size * pages_after)
 }
 
 pub fn destroy_data(

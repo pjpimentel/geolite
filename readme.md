@@ -40,7 +40,6 @@ $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
     1. [admin-level](src/domain/readme.md#admin_level)
     1. [admin-level-hierarchy](src/domain/readme.md#admin_level_hierarchy)
     1. [house-number](src/domain/readme.md#house_number)
-    1. [optimize](src/optimize/readme.md)
     1. [query](src/query/readme.md)
     1. [cli](src/cli/)
     1. [http](src/http/readme.md)

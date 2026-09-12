@@ -75,7 +75,7 @@ pub fn command_handler_merge(
   println!();
   println!("\x1b[2m── optimize\x1b[0m");
   let conn = crate::database::open_write_main(base);
-  let (bytes_before, bytes_after) = crate::optimize::sqlite_file::run(&conn);
+  let (bytes_before, bytes_after) = crate::database::compact(&conn);
   println!("\x1b[1;32moptimized\x1b[0m {bytes_before} → {bytes_after} bytes");
 }
 

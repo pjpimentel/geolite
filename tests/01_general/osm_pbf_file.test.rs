@@ -565,9 +565,17 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
   assert_eq!(rows[0].origin, 2);
   assert_eq!(rows[0].url.as_deref(), Some(url.as_str()));
   assert_eq!(
-    rows[0].path.as_deref(),
-    Some(joined(&dir, "alpha.osm.pbf").as_str())
+    rows[0].path, None,
+    "optimize deleted the download, so the ledger must forget its path"
   );
+  let download: (Option<i64>, Option<String>, Option<i64>) = conn
+    .query_row(
+      "SELECT size_bytes, md5, downloaded_at FROM osm_pbf_files",
+      [],
+      |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )
+    .expect("failed to read the download columns");
+  assert_eq!(download, (None, None, None));
   for column in [
     "node_count",
     "way_count",

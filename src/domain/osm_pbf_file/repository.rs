@@ -193,6 +193,16 @@ pub fn get_geofabrik_url(conn: &Connection, geofabrik_id: &str) -> Option<String
     .flatten()
 }
 
+const SQL_GET_ID_BY_PATH: &str = "SELECT id FROM osm_pbf_files WHERE path = ?1";
+
+pub fn get_id_by_path(conn: &Connection, file_path: &str) -> Option<u32> {
+  conn
+    .query_row(SQL_GET_ID_BY_PATH, rusqlite::params![file_path], |row| {
+      row.get(0)
+    })
+    .ok()
+}
+
 pub fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
   const SQL_ENSURE_LOCAL_PATH: &str = "
     INSERT OR IGNORE INTO osm_pbf_files (
@@ -206,8 +216,6 @@ pub fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
     )
   ";
 
-  const SQL_GET_ID_BY_PATH: &str = "SELECT id FROM osm_pbf_files WHERE path = ?1";
-
   let from = origin::local_path(file_path.to_string());
   conn
     .execute(
@@ -220,6 +228,21 @@ pub fn ensure_by_file_path(conn: &Connection, file_path: &str) -> u32 {
       row.get(0)
     })
     .expect("failed to get id after ensure")
+}
+
+pub fn clear_download(conn: &Connection, file_path: &str) {
+  const SQL_CLEAR_DOWNLOAD: &str = "
+    UPDATE osm_pbf_files SET
+      path = NULL,
+      size_bytes = NULL,
+      md5 = NULL,
+      downloaded_at = NULL
+    WHERE path = ?1
+  ";
+
+  conn
+    .execute(SQL_CLEAR_DOWNLOAD, rusqlite::params![file_path])
+    .expect("failed to clear download");
 }
 
 pub fn get_file_path(conn: &Connection, id_or_geofabrik_id: &str) -> Option<String> {
