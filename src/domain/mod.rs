@@ -1,3 +1,4 @@
+pub mod address;
 pub mod admin_level;
 pub mod admin_level_hierarchy;
 pub mod house_number;

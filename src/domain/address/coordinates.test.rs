@@ -1,9 +1,13 @@
-use super::*;
+use super::best_admin_levels;
+use crate::domain::address::{address, bounding_geometry, query_match, query_opts, query_output};
+use crate::domain::admin_level::geometry::bounding_box;
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::domain::admin_level::{admin_level as admin_levels_row, level};
-use geo::{Coord, Polygon};
+use crate::domain::house_number::house_number_policy;
+use geo::{Coord, Geometry, HaversineDistance, LineString, Point, Polygon};
+use rusqlite::Connection;
 
-const POLICY: crate::domain::house_number::house_number_policy = crate::presets::DEFAULT.house_numbers;
+const POLICY: house_number_policy = crate::presets::DEFAULT.house_numbers;
 
 const SQL_UPDATE_WKB: &str = "
   UPDATE admin_levels
@@ -209,18 +213,73 @@ fn way_row(way_id: u64, level: level, name: &str, geometry: Geometry<f64>) -> ad
   }
 }
 
+fn ask(conn: &Connection, latitude: f64, longitude: f64) -> query_output {
+  ask_with(
+    conn,
+    latitude,
+    longitude,
+    &query_opts {
+      include_wkt: true,
+      ..Default::default()
+    },
+  )
+}
+
+fn ask_with(conn: &Connection, latitude: f64, longitude: f64, opts: &query_opts) -> query_output {
+  address::open(conn, None, &POLICY).query_by_coordinates(latitude, longitude, opts)
+}
+
+// the 25 streets stored and boxed in the rtree: the scene of every filter case
+fn boxed_streets() -> Connection {
+  let conn = crate::database::open_write(":memory:");
+  let rows: Vec<admin_levels_row> = STREETS
+    .iter()
+    .enumerate()
+    .map(|(i, s)| make_street_row(s, (i + 1) as u64))
+    .collect();
+  batch_upsert(&conn, &rows);
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  conn
+}
+
+fn ask_in_rect(conn: &Connection, rect: bounding_box) -> query_output {
+  ask_with(
+    conn,
+    -23.97241,
+    -46.31980,
+    &query_opts {
+      bounding: Some(bounding_geometry::from_rect(rect)),
+      include_wkt: true,
+      ..Default::default()
+    },
+  )
+}
+
+fn ask_last_levels(conn: &Connection, levels: Vec<level>) -> query_output {
+  ask_with(
+    conn,
+    -23.97241,
+    -46.31980,
+    &query_opts {
+      last_admin_levels: Some(levels),
+      include_wkt: true,
+      ..Default::default()
+    },
+  )
+}
+
 // the hierarchy cases share the tail: store the areas, box them in the rtree, resolve the chains
 // and ask for the documented point
-fn resolve_and_query(conn: &Connection, rows: &[admin_levels_row]) -> crate::query::query_output {
+fn resolve_and_query(conn: &Connection, rows: &[admin_levels_row]) -> query_output {
   batch_upsert(conn, rows);
   crate::domain::admin_level::spatial_index::run(conn, |_| {});
   crate::domain::admin_level_hierarchy::resolver::run(conn, |_| {});
-  crate::query::run(conn, &POLICY, None, "-23.97241,-46.31980", None, None, None, None, true)
+  ask(conn, -23.97241, -46.31980)
 }
 
 // the four fields every hierarchy case checks on one resolved level of a match
 fn assert_level(
-  m: &crate::query::query_match,
+  m: &query_match,
   index: usize,
   level: level,
   name: &str,
@@ -249,26 +308,9 @@ fn make_street_row(s: &street_data, way_id: u64) -> admin_levels_row {
 
 #[test]
 fn _00_returns_the_10_closest_records() {
-  let conn = crate::database::open_write(":memory:");
-  let rows: Vec<admin_levels_row> = STREETS
-    .iter()
-    .enumerate()
-    .map(|(i, s)| make_street_row(s, (i + 1) as u64))
-    .collect();
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  let conn = boxed_streets();
 
-  let output = crate::query::run(
-    &conn,
-    &POLICY,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    None,
-    None,
-    true,
-  );
+  let output = ask(&conn, -23.97241, -46.31980);
   assert_eq!(output.matches.len(), 10);
 
   let m0 = &output.matches[0];
@@ -328,17 +370,7 @@ fn _01_results_are_ordered_by_distance_from_coordinates_to_street() {
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
-  let output = crate::query::run(
-    &conn,
-    &POLICY,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    None,
-    None,
-    true,
-  );
+  let output = ask(&conn, -23.97241, -46.31980);
   assert_eq!(output.matches.len(), 3);
 
   assert_eq!(output.matches[0].admin_levels.len(), 1);
@@ -627,32 +659,16 @@ fn _04_when_street_is_inside_three_polygons_at_same_level_all_are_grouped_and_or
 
 #[test]
 fn _05_bounding_box_keeps_only_matches_inside_the_box() {
-  let conn = crate::database::open_write(":memory:");
-  let rows: Vec<admin_levels_row> = STREETS
-    .iter()
-    .enumerate()
-    .map(|(i, s)| make_street_row(s, (i + 1) as u64))
-    .collect();
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  let conn = boxed_streets();
 
-  let bbox = crate::query::bounding_box {
-    min_lat: -23.97245,
-    max_lat: -23.97235,
-    min_lon: -46.31985,
-    max_lon: -46.31975,
-  };
-  let bounds = crate::query::bounding_geometry::from_rect(bbox);
-  let output = crate::query::run(
+  let output = ask_in_rect(
     &conn,
-    &POLICY,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    Some(bounds),
-    None,
-    true,
+    bounding_box {
+      min_lat: -23.97245,
+      max_lat: -23.97235,
+      min_lon: -46.31985,
+      max_lon: -46.31975,
+    },
   );
   assert_eq!(output.matches.len(), 1);
   assert_eq!(output.matches[0].admin_levels[0].name, "street_00");
@@ -660,131 +676,55 @@ fn _05_bounding_box_keeps_only_matches_inside_the_box() {
 
 #[test]
 fn _06_bounding_box_excluding_all_matches_returns_empty_matches() {
-  let conn = crate::database::open_write(":memory:");
-  let rows: Vec<admin_levels_row> = STREETS
-    .iter()
-    .enumerate()
-    .map(|(i, s)| make_street_row(s, (i + 1) as u64))
-    .collect();
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  let conn = boxed_streets();
 
-  let bbox = crate::query::bounding_box {
-    min_lat: 10.0,
-    max_lat: 11.0,
-    min_lon: 10.0,
-    max_lon: 11.0,
-  };
-  let bounds = crate::query::bounding_geometry::from_rect(bbox);
-  let output = crate::query::run(
+  let output = ask_in_rect(
     &conn,
-    &POLICY,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    Some(bounds),
-    None,
-    true,
+    bounding_box {
+      min_lat: 10.0,
+      max_lat: 11.0,
+      min_lon: 10.0,
+      max_lon: 11.0,
+    },
   );
   assert!(output.matches.is_empty());
 }
 
 #[test]
 fn _07_degenerate_bounding_geometry_with_zero_area_does_not_panic() {
-  let conn = crate::database::open_write(":memory:");
-  let rows: Vec<admin_levels_row> = STREETS
-    .iter()
-    .enumerate()
-    .map(|(i, s)| make_street_row(s, (i + 1) as u64))
-    .collect();
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  let conn = boxed_streets();
 
-  let bbox = crate::query::bounding_box {
-    min_lat: -23.97241,
-    max_lat: -23.97241,
-    min_lon: -46.31980,
-    max_lon: -46.31980,
-  };
-  // geo::contains é boundary-exclusive: um poligono de area zero nao contem ponto algum
-  let bounds = crate::query::bounding_geometry::from_rect(bbox);
-  let output = crate::query::run(
+  // geo::contains is boundary-exclusive: a polygon of zero area contains no point at all
+  let output = ask_in_rect(
     &conn,
-    &POLICY,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    Some(bounds),
-    None,
-    true,
+    bounding_box {
+      min_lat: -23.97241,
+      max_lat: -23.97241,
+      min_lon: -46.31980,
+      max_lon: -46.31980,
+    },
   );
   assert!(output.matches.is_empty());
 }
 
 #[test]
 fn _08_admin_level_filter_keeps_matches_with_requested_level() {
-  let conn = crate::database::open_write(":memory:");
-  let rows: Vec<admin_levels_row> = STREETS
-    .iter()
-    .enumerate()
-    .map(|(i, s)| make_street_row(s, (i + 1) as u64))
-    .collect();
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  let conn = boxed_streets();
 
-  let output = crate::query::run(
-    &conn,
-    &POLICY,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    None,
-    Some(vec![level::street]),
-    true,
-  );
+  let output = ask_last_levels(&conn, vec![level::street]);
   assert_eq!(output.matches.len(), 10);
 }
 
 #[test]
 fn _09_admin_level_filter_with_no_matching_level_returns_empty_matches() {
-  let conn = crate::database::open_write(":memory:");
-  let rows: Vec<admin_levels_row> = STREETS
-    .iter()
-    .enumerate()
-    .map(|(i, s)| make_street_row(s, (i + 1) as u64))
-    .collect();
-  batch_upsert(&conn, &rows);
-  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  let conn = boxed_streets();
 
-  let output = crate::query::run(
-    &conn,
-    &POLICY,
-    None,
-    "-23.97241,-46.31980",
-    None,
-    None,
-    None,
-    Some(vec![level::city]),
-    true,
-  );
+  let output = ask_last_levels(&conn, vec![level::city]);
   assert!(output.matches.is_empty());
 }
 
 #[test]
-fn _10_include_wkt_emits_wkt_per_admin_level() {
-  // todo!()
-}
-
-#[test]
-fn _11_bounding_wkt_clips_points_outside_polygon_but_inside_envelope() {
-  // todo!()
-}
-
-#[test]
-fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
+fn _10_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
   let conn = crate::database::open_write(":memory:");
   let mut rows: Vec<admin_levels_row> = Vec::new();
   for i in 1..=10 {
@@ -825,12 +765,22 @@ fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
-  // interior do triangulo: x+y > 0.06 → contem far (0.10), exclui as 10 near (≤0.02). o envelope
-  // [-0.02,0.08]² cobre todas, entao as near passam o rtree e (sem a correcao) truncariam a far fora
+  // the triangle's interior is x+y > 0.06: it holds far (0.10) and excludes the 10 near (≤0.02).
+  // the envelope [-0.02,0.08]² covers them all, so the near ones pass the rtree and, without the
+  // exact containment, would truncate far out of the ten
   let bounds =
     crate::http::parse_bounding_wkt("POLYGON((0.08 0.08, -0.02 0.08, 0.08 -0.02, 0.08 0.08))")
       .unwrap();
-  let output = crate::query::run(&conn, &POLICY, None, "0,0", None, None, Some(bounds), None, true);
+  let output = ask_with(
+    &conn,
+    0.0,
+    0.0,
+    &query_opts {
+      bounding: Some(bounds),
+      include_wkt: true,
+      ..Default::default()
+    },
+  );
   let names: Vec<&str> = output
     .matches
     .iter()
@@ -840,7 +790,7 @@ fn _12_bounding_wkt_keeps_in_polygon_match_ranked_beyond_max_results() {
 }
 
 #[test]
-fn _13_no_candidates_returns_empty() {
+fn _11_no_candidates_returns_empty() {
   let conn = crate::database::open_write(":memory:");
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
@@ -849,7 +799,7 @@ fn _13_no_candidates_returns_empty() {
 }
 
 #[test]
-fn _14_candidate_outside_rtree_delta_is_not_returned() {
+fn _12_candidate_outside_rtree_delta_is_not_returned() {
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
@@ -861,7 +811,7 @@ fn _14_candidate_outside_rtree_delta_is_not_returned() {
 }
 
 #[test]
-fn _15_candidate_within_delta_is_included_with_distance() {
+fn _13_candidate_within_delta_is_included_with_distance() {
   let conn = crate::database::open_write(":memory:");
   batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
@@ -877,7 +827,7 @@ fn _15_candidate_within_delta_is_included_with_distance() {
 }
 
 #[test]
-fn _16_multiple_candidates_ordered_by_distance_ascending() {
+fn _14_multiple_candidates_ordered_by_distance_ascending() {
   let conn = crate::database::open_write(":memory:");
   let rows: Vec<admin_levels_row> = (0..3)
     .map(|i| make_street_row(&STREETS[i], (i + 1) as u64))
@@ -898,7 +848,7 @@ fn _16_multiple_candidates_ordered_by_distance_ascending() {
 }
 
 #[test]
-fn _17_empty_linestring_candidate_is_discarded() {
+fn _15_empty_linestring_candidate_is_discarded() {
   use geozero::{CoordDimensions, ToWkb};
 
   let conn = crate::database::open_write(":memory:");
@@ -958,7 +908,7 @@ fn insert_horizontal_segment(conn: &Connection) {
 }
 
 #[test]
-fn _18_point_on_the_line_has_zero_distance() {
+fn _16_point_on_the_line_has_zero_distance() {
   let conn = crate::database::open_write(":memory:");
   insert_horizontal_segment(&conn);
 
@@ -974,7 +924,7 @@ fn _18_point_on_the_line_has_zero_distance() {
 }
 
 #[test]
-fn _19_point_perpendicular_to_segment_has_correct_distance() {
+fn _17_point_perpendicular_to_segment_has_correct_distance() {
   let conn = crate::database::open_write(":memory:");
   insert_horizontal_segment(&conn);
 
@@ -996,7 +946,7 @@ fn _19_point_perpendicular_to_segment_has_correct_distance() {
 }
 
 #[test]
-fn _20_point_beyond_endpoint_snaps_to_endpoint() {
+fn _18_point_beyond_endpoint_snaps_to_endpoint() {
   let conn = crate::database::open_write(":memory:");
   insert_horizontal_segment(&conn);
 

@@ -6,7 +6,7 @@ use crate::domain::admin_level::id::admin_level_id;
 use crate::domain::admin_level::{admin_level as admin_levels_row, level};
 use crate::domain::admin_level_hierarchy::search_index as tantivy;
 use crate::presets::DEFAULT;
-use crate::query;
+use crate::domain::address::{address, query_opts, query_output};
 use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 use std::path::Path;
@@ -94,7 +94,7 @@ fn make_street_at(name: &str, way_id: u64, lon: f64, lat: f64) -> admin_levels_r
 }
 
 // the matched street is the most specific admin_level (highest level) of the top result.
-fn top_street_name(out: &query::query_output) -> Option<String> {
+fn top_street_name(out: &query_output) -> Option<String> {
   out
     .matches
     .first()
@@ -189,19 +189,27 @@ fn _02_merge_matches_single_combined_build_query_parity() {
     "house_numbers count differs between merged and combined"
   );
 
+  let merged_address = address::open(&mconn, Some(&mindex), &POLICY);
+  let combined_address = address::open(&cconn, Some(&cindex), &POLICY);
+  let opts = query_opts::default();
+
   // text queries in each region resolve to the same street in both builds.
   for q in ["Alpha", "Beta", "Gamma", "Delta"] {
-    let m = top_street_name(&query::run(&mconn, &POLICY, Some(&mindex), q, None, None, None, None, false));
-    let c = top_street_name(&query::run(&cconn, &POLICY, Some(&cindex), q, None, None, None, None, false));
+    let m = top_street_name(&merged_address.query_by_text(q, &opts));
+    let c = top_street_name(&combined_address.query_by_text(q, &opts));
     assert!(m.is_some(), "query '{q}' returned no match in the merged build");
     assert_eq!(m, c, "merged vs combined differ for text query '{q}'");
   }
 
   // reverse geocoding (coordinates) is identical too: a point in each region.
-  for coord in ["-23.90,-46.30", "43.70,7.40"] {
-    let m = top_street_name(&query::run(&mconn, &POLICY, Some(&mindex), coord, None, None, None, None, false));
-    let c = top_street_name(&query::run(&cconn, &POLICY, Some(&cindex), coord, None, None, None, None, false));
-    assert_eq!(m, c, "merged vs combined differ for coordinate query '{coord}'");
+  for (latitude, longitude) in [(-23.90, -46.30), (43.70, 7.40)] {
+    let m = top_street_name(&merged_address.query_by_coordinates(latitude, longitude, &opts));
+    let c = top_street_name(&combined_address.query_by_coordinates(latitude, longitude, &opts));
+    assert_eq!(
+      m,
+      c,
+      "merged vs combined differ for coordinate query '{latitude},{longitude}'"
+    );
   }
 
   cleanup_build(&source_a);

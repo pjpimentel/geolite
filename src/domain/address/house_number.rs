@@ -2,7 +2,7 @@ use geo::{Geometry, HaversineDistance, Point};
 use rusqlite::Connection;
 use std::collections::HashMap;
 
-use super::{house_number_match, query_house_number};
+use super::entity::{house_number_match, query_house_number, query_match, round5};
 use crate::domain::admin_level::level;
 use crate::domain::house_number::{
   house_number, house_number_policy, house_number_resolution, resolution, token,
@@ -36,42 +36,24 @@ fn numbers_by_street(
 }
 
 fn place_on_house_number(
-  m: &mut super::query_match,
+  m: &mut query_match,
   point: Point<f64>,
   number: &house_number,
   friendly_name_format: Option<&str>,
 ) {
-  m.latitude = super::round5(point.y());
-  m.longitude = super::round5(point.x());
-  append_house_number_level(m, number.stored_form(), friendly_name_format);
+  m.latitude = round5(point.y());
+  m.longitude = round5(point.x());
+  m.append_house_number_level(number.stored_form(), friendly_name_format);
   // nudge similarity so a match with the house number resolved outranks the bare street
   if let Some(s) = m.similarity {
-    m.similarity = Some(super::round5(s as f64 + 0.01) as f32);
+    m.similarity = Some(round5(s as f64 + 0.01) as f32);
   }
 }
 
-fn append_house_number_level(
-  m: &mut super::query_match,
-  number: &str,
-  friendly_name_format: Option<&str>,
-) {
-  m.admin_levels.push(super::admin_level {
-    level: level::house_number.value(),
-    name: number.to_string(),
-    osm_relation_id: None,
-    osm_way_id: None,
-    wkt: None,
-  });
-  m.friendly_name = match friendly_name_format {
-    Some(fmt) => super::render_friendly_name(fmt, &m.admin_levels),
-    None => super::default_friendly_name(&m.admin_levels),
-  };
-}
-
-pub fn enrich_house_number_from_query(
+pub(super) fn enrich_house_number_from_query(
   conn: &Connection,
   query: &str,
-  matches: &mut [super::query_match],
+  matches: &mut [query_match],
   friendly_name_format: Option<&str>,
   policy: &house_number_policy,
 ) {
@@ -115,7 +97,7 @@ pub fn enrich_house_number_from_query(
   }
 }
 
-fn street_name_of(m: &super::query_match) -> String {
+fn street_name_of(m: &query_match) -> String {
   let street = level::street.value();
   m.admin_levels
     .iter()
@@ -124,10 +106,10 @@ fn street_name_of(m: &super::query_match) -> String {
     .unwrap_or_default()
 }
 
-pub fn enrich_house_numbers(
+pub(super) fn enrich_house_numbers(
   conn: &Connection,
   input_pt: Point<f64>,
-  matches: &mut [super::query_match],
+  matches: &mut [query_match],
   friendly_name_format: Option<&str>,
 ) {
   let admin_level_ids: Vec<i64> = matches.iter().filter_map(|m| m.admin_level_id).collect();
@@ -153,7 +135,7 @@ pub fn enrich_house_numbers(
 
     if let Some((number, _)) = closest {
       let name = number.stored_form().to_string();
-      append_house_number_level(m, &name, friendly_name_format);
+      m.append_house_number_level(&name, friendly_name_format);
     }
   }
 }

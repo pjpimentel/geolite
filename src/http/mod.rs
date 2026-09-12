@@ -160,7 +160,7 @@ fn handle(
     "/geocode" => {
       let q = query_param(&query_string, "query");
       let friendly_name_format = query_param(&query_string, "friendly_name_format")
-        .map(|s| crate::query::validate_friendly_name_format(&s))
+        .map(|s| crate::domain::address::validate_friendly_name_format(&s))
         .transpose();
       let min_quality: Option<f64> = query_param(&query_string, "quality")
         .and_then(|s| s.parse::<f64>().ok())
@@ -171,7 +171,7 @@ fn handle(
       let last_admin_levels = query_param(&query_string, "last_admin_levels")
         .map(|s| parse_last_admin_levels(&s))
         .transpose();
-      // default true (opt-out): so include_wkt=false desliga; ausente ou qualquer outro valor mantem
+      // opt-out: only include_wkt=false switches it off; absent or any other value keeps it
       let include_wkt = query_param(&query_string, "include_wkt")
         .map(|s| s != "false")
         .unwrap_or(true);
@@ -185,8 +185,9 @@ fn handle(
           let body = serde_json::json!({ "error": msg }).to_string();
           respond_json(request, StatusCode(400), &body)
         }
-        (Some(raw), Ok(friendly_name_format), Ok(bounding_wkt), Ok(last_admin_levels)) => {
-          if index.is_none() && crate::query::try_parse_coordinates(&raw).is_none() {
+        (Some(raw), Ok(friendly_name_format), Ok(bounding), Ok(last_admin_levels)) => {
+          let input = crate::domain::address::query_input::parse(&raw);
+          if index.is_none() && input == crate::domain::address::query_input::text {
             // degraded boot: text search needs the tantivy index; coordinate queries still work.
             respond_json(
               request,
@@ -194,17 +195,21 @@ fn handle(
               r#"{"error":"text_to_address service unavailable"}"#,
             )
           } else {
-            let result = crate::query::run(
-              conn,
-              house_numbers,
-              index,
-              &raw,
-              friendly_name_format.as_deref(),
+            let opts = crate::domain::address::query_opts {
+              friendly_name_format: friendly_name_format.as_deref(),
               min_quality,
-              bounding_wkt,
+              bounding,
               last_admin_levels,
               include_wkt,
-            );
+            };
+            let address = crate::domain::address::address::open(conn, index, house_numbers);
+            let result = match input {
+              crate::domain::address::query_input::coordinates {
+                latitude,
+                longitude,
+              } => address.query_by_coordinates(latitude, longitude, &opts),
+              crate::domain::address::query_input::text => address.query_by_text(&raw, &opts),
+            };
             match serde_json::to_string(&result) {
               Ok(body) => respond_json(request, StatusCode(200), &body),
               Err(_) => respond_json(
@@ -293,9 +298,9 @@ fn url_decode(s: &str) -> String {
   String::from_utf8_lossy(&out).into_owned()
 }
 
-// wkt usa ordem "x y" = "lon lat". so aceitamos area (poligono/multipoligono): a contencao
-// exata roda no query layer; aqui derivamos o envelope (aabb) que alimenta o pre-filtro do rtree.
-pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::query::bounding_geometry, String> {
+// wkt orders "x y" = "lon lat". only an area (polygon/multipolygon) is accepted: the exact
+// containment runs in the address domain; the envelope derived here feeds the rtree pre-filter
+pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::domain::address::bounding_geometry, String> {
   use geo::BoundingRect;
   use geozero::ToGeo;
 
@@ -311,13 +316,13 @@ pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::query::bounding_geome
   let rect = geometry
     .bounding_rect()
     .ok_or("bounding_wkt: empty geometry")?;
-  let envelope = crate::query::bounding_box {
+  let envelope = crate::domain::admin_level::geometry::bounding_box {
     min_lat: rect.min().y,
     max_lat: rect.max().y,
     min_lon: rect.min().x,
     max_lon: rect.max().x,
   };
-  Ok(crate::query::bounding_geometry { geometry, envelope })
+  Ok(crate::domain::address::bounding_geometry { geometry, envelope })
 }
 
 fn parse_last_admin_levels(s: &str) -> Result<Vec<level>, String> {

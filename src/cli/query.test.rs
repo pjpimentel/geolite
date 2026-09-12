@@ -1,11 +1,19 @@
 use super::command_handler_query;
 use crate::cli::tests::street_row;
-use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::open_write;
-use crate::domain::pbf_fixtures::tempdir_guard;
+use crate::domain::address::query_opts;
+use crate::domain::admin_level::repository::batch_upsert;
 use crate::domain::admin_level_hierarchy::search_index as tantivy;
+use crate::domain::pbf_fixtures::tempdir_guard;
 use crate::presets::DEFAULT;
 use std::path::Path;
+
+fn defaults() -> query_opts<'static> {
+  query_opts {
+    include_wkt: true,
+    ..Default::default()
+  }
+}
 
 // two indexed streets on disk: sqlite + coordinates + hierarchy + tantivy, everything the
 // query handler loads by path.
@@ -31,11 +39,7 @@ fn _00_00_prints_json_for_a_text_query_with_defaults() {
     &db,
     &index,
     "Rua Alpha",
-    None,
-    None,
-    None,
-    None,
-    true,
+    defaults(),
     DEFAULT.index_user_friendly_name.boosts,
     DEFAULT.house_numbers,
   );
@@ -50,11 +54,13 @@ fn _00_01_applies_every_optional_filter() {
     &db,
     &index,
     "Rua Beta",
-    Some("{admin_level_12_name}"),
-    Some(0.1),
-    Some(bounding),
-    Some(vec![crate::domain::admin_level::level::street]),
-    false,
+    query_opts {
+      friendly_name_format: Some("{admin_level_12_name}"),
+      min_quality: Some(0.1),
+      bounding: Some(bounding),
+      last_admin_levels: Some(vec![crate::domain::admin_level::level::street]),
+      include_wkt: false,
+    },
     DEFAULT.index_user_friendly_name.boosts,
     DEFAULT.house_numbers,
   );
@@ -70,11 +76,7 @@ fn _90_query_without_tantivy_index() {
     &db,
     &guard.path.join("missing.tantivy").to_string_lossy(),
     "anything",
-    None,
-    None,
-    None,
-    None,
-    true,
+    defaults(),
     DEFAULT.index_user_friendly_name.boosts,
     DEFAULT.house_numbers,
   );

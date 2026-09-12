@@ -5,7 +5,8 @@
 the domain is organised as vertical slices. a concept's folder holds its model and methods, its
 policy, its services and — one patch release at a time — its own persistence. the technical
 modules that came before (`extract`, `index`, `query`, `optimize`, `database`) are being emptied
-into these folders and disappear as the concepts arrive; `index`, `extract` and `optimize` are gone.
+into these folders and disappear as the concepts arrive; `index`, `extract`, `optimize` and `query`
+are gone.
 
 ```
 admin_level/    a named administrative area — the `admin_levels` table
@@ -36,6 +37,14 @@ house_number/   a door number placed on a street — the `house_numbers` table
   repository        the ddl, the index, the candidate scan, the street reads, the numbers of a street and the insert
   extract           `house_number_link::extract(policy)`: candidates, tiles of 2°, the fan-out and the batches it reports
   linker            the pass over one tile: by name first, then the nearest street within 0.15°, projected onto it
+address/        an address resolved from a text or from a coordinate — not a table
+  entity            the response as the api renders it: the match, its level ladder, its attributes, built from one set of loads
+  input             what the user typed: a `lat,lon` pair or a text
+  label             the friendly-name template: parse, validate, render, and the default order
+  filter            the region of `--bounding-wkt`, and the shared last pass: quality, region, last levels, the cut at ten
+  text              `address::query_by_text`: the search, the matches, the house number, the sort
+  coordinates       `address::query_by_coordinates`: the nearest streets, the matches, the nearest number
+  house_number      the house-number step of both services; the rule itself is `domain/house_number`
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the ten writes and reads
   catalog           the `source` enum, the endpoint it resolves, and the listing of each source
@@ -70,8 +79,9 @@ whole; `admin_level_hierarchy` followed with the last of `src/index`, which no l
 `house_number` took the last stage of `src/extract`, which is gone too, and is the first folder
 whose rule runs on both sides of the database: the same value object normalises what the
 extraction writes and recognises what the query reads.
-`osm_pbf_file` is a folder without an `entity` and
-`osm_tag` the one that is not a table, both for reasons given below; `osm_node`, `osm_way` and
+`osm_pbf_file` is a folder without an `entity`; `osm_tag` and `address` are the two that are not a
+table — the first is shared vocabulary, the second composes what the others read and writes
+nothing — all for reasons given below; `osm_node`, `osm_way` and
 `osm_relation` arrived with their entity and decoder only — their payload encoding and their
 persistence still sit in `src/database` and come with each one's own slice.
 
@@ -266,7 +276,7 @@ when that one is larger.
 composed from the parent's *finished* label rather than from the chain of ids, which is what makes
 it a single step — every ancestor's own post code is already inside the string it hands down.
 
-it is not the same thing as `query::render_friendly_name`, which renders a user-supplied template
+it is not the same thing as `address::label::render_friendly_name`, which renders a user-supplied template
 (`{admin_level_8_name}`) over the resolved areas at query time. the two diverge, and reconciling
 them is the open `place_label` task in the backlog; `label` is where it will land.
 
@@ -318,8 +328,8 @@ query path, and the resolution beside it. the two rules disagreed, and the disag
 bug: the extraction stored `addr:housenumber=82-52` intact while the query rejected that token,
 kept only the `52`, matched nothing and fell into a meaningless interpolation. the folder took
 `src/database/house_numbers.rs`, `src/extract/house_numbers.rs` and the parser of
-`src/query/house_number.rs`; `src/extract/` is gone with them, and what is left in
-`src/query/house_number.rs` only carries data between the database and the domain.
+`src/query/house_number.rs`; `src/extract/` and `src/query/` are gone with them, and what carries
+data between the database and this domain on the query path is `address::house_number`.
 
 ### two forms, one number — `value`
 
@@ -415,6 +425,108 @@ numbers of a set of streets (`by_admin_level_ids`, where `from_stored` runs) and
 `search_index::build` does; they move behind `admin_level::repository` when a second consumer
 appears. `osm_pbf_file::repository::update_house_numbers_count` reads the table the other way
 round, for the ledger.
+
+## address
+
+an address resolved from what the user typed: `Rua Januário dos Santos, 197` from a text, or the
+nearest streets from a `lat,lon` pair. the concept used to be `src/query`, the last technical module
+with rules of its own — the shape of the response, the reading of the input, the ranking, the
+filters, the label template and the two services — and it is the second folder that is not a
+table: it composes what `admin_level`, `admin_level_hierarchy` and `house_number` read and writes
+nothing. the move was a move: the json of every query is byte-identical to the one `src/query`
+produced, checked over the same database and the same index.
+
+### the input — `input`
+
+`query_input::parse` reads `<lat>,<lon>` — two numbers around one comma, whitespace tolerated,
+latitude within ±90 and longitude within ±180 — and everything else is a text. the reverse order
+(`lon,lat`) is not detected: nothing in the string tells the two apart, so the geographic convention
+wins. the domain has no dispatcher on purpose: the cli and the http server call `parse` themselves
+and pick the service, because "a text without an index" is their decision — the cli exits, the http
+server answers 503 and keeps answering coordinates.
+
+### the two services — `text` and `coordinates`
+
+`address::open(conn, index, house_numbers)` holds the connection, the optional tantivy index and
+the house-number policy of the preset; `query_opts` carries what the flags carry
+(`friendly_name_format`, `min_quality`, `bounding`, `last_admin_levels`, `include_wkt`) in place
+of the five positional arguments the old dispatcher took.
+
+`query_by_text` runs the fts on the whole text — a number can be part of a street name (`25` in
+`rua 25 de marco`), so nothing is stripped before the search. with a region, the ranking is
+restricted inside tantivy to the ids of the region's envelope instead of being filtered after the
+fts cut, so a match of the region ranked below the global cap of fifty is not lost. each hit becomes
+one match: the level ladder from `match_sources`, the centroid of the geometry as the point, `score`
+as the raw bm25 and `similarity` as the token coverage — the fraction of the query's tokens found
+exactly in the document's text, a house number counting as uncovered, so `rua x 100` scores below
+1.0. the house-number step comes next, then the sort by score with similarity breaking the tie,
+then the filters.
+
+`query_by_coordinates` asks the rtree for the streets around the point (`RTREE_DELTA_DEG`), keeps
+the lines only, projects the point onto each one (`ClosestPoint`, haversine) and sorts by level and
+distance. there is no distance cap on streets: `min_quality` runs on the candidates and, when no
+`last_admin_levels` was asked, the cut at ten happens before the loads. the match carries the
+closest point and the distance in metres, and the nearest house number within 50 m is appended as
+level 30.
+
+### the house-number step — `house_number`
+
+the adapter between a match and `domain/house_number`. on the text path `token::first_house_number`
+picks the number left after the street's own name tokens are removed, `resolution::resolve` places
+it, and on `exact` and `interpolated` the point moves to the number, level 30 is appended, the label
+is re-rendered and `similarity` gains +0.01: a street split into several osm segments shares one
+score, and the nudge is what lifts the segment that placed the number above the bare ones. on the
+coordinate path only the nearest stored number within 50 m is appended — tighter than the 100 m of
+the street quality on purpose, since a number is a point and a street is a line.
+
+### the response — `entity`
+
+the seven types of the json (`query_output`, `query_service`, `query_match`, `admin_level`,
+`query_match_attributes`, `query_house_number`, `house_number_match`) are the openapi schema and
+keep their names; coordinates are rounded to five decimals (`round5`). the ladder of a match is
+built once, in `match_sources`: the hierarchy rows of the ids, the metadata of the ids and their
+ancestors, and the wkt only when `include_wkt` asks for it (the polygons of countries and states are
+megabytes). the two services still differ in three deliberate places, each at its call site rather
+than inside the shared code:
+
+| | text | coordinates |
+|---|---|---|
+| ancestors of one level | the chain's order | the chain reversed, so general → specific |
+| `attributes.post_code` | the most specific ancestor with one | the same, then the street's own |
+| the point | the centroid | the closest point on the street |
+
+the post code rule is an open item in the backlog; the other two are the behaviour the tests pin.
+
+### the label — `label`
+
+`friendly_name_format` is a template over the ladder: `{admin_level_<N>_name}` and
+`{house_number}` (the alias of level 30). the parse is strict — any other `{...}`, an unterminated
+one or a level that is not a `u8` is an error — and it runs at the boundary
+(`validate_friendly_name_format` is the cli `value_parser` and the http check), so `render` never
+sees a bad template. a placeholder without a level swallows the literal that follows it
+(`"{a}, {b}, {c}"` with `b` missing renders `a, c`) and the result is trimmed of commas and
+whitespace. without a template the label is the one the hierarchy stored, and once a house number
+is appended it is rebuilt in the default order: the street, the number, then the rest from the most
+specific to the least. this renderer and `admin_level_hierarchy::label` are the two label rules the
+`place_label` item in the backlog reconciles.
+
+### the filters — `filter`
+
+`bounding_geometry` is the region of `--bounding-wkt`: the polygon for the exact containment and
+its envelope for the rtree. the last pass of both services runs in one order — quality (the
+similarity, or `1 - distance / 100 m` for a coordinate), the exact containment in the polygon (the
+rtree tested the envelope only), the leaf level against `last_admin_levels` — and cuts at
+`MAX_RESULTS` (ten) only after every filter, so no filter discards a match that would have made the
+cut.
+
+### what still belongs elsewhere
+
+the move was pure, and five pieces sit here until their owners take them, each an item in the
+backlog: the rtree read behind `best_admin_levels` belongs to `admin_level::spatial_index`;
+`bounding_geometry` and the wkt parse the http module still owns belong to `admin_level::geometry`;
+`doc_text` and `token_coverage` replicate the index pipeline and belong to
+`admin_level_hierarchy::search_index`; the 50 m rule and `numbers_by_street` belong to
+`house_number`; the wkt load of `match_sources` belongs to `admin_level::repository`.
 
 ## osm_pbf_file
 
