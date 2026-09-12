@@ -9,8 +9,10 @@ pub mod message;
 pub mod osm_data;
 pub mod repository;
 
+use crate::domain::table;
+
 pub use blob_index::osm_pbf_blob_chunks;
-pub use catalog::{listing, source};
+pub use catalog::{input_kind, listing, source};
 pub use osm_data::data_opts;
 pub use repository::{origin, osm_pbf_files};
 
@@ -37,6 +39,22 @@ impl<'a> osm_pbf_file<'a> {
   pub fn resolve_geofabrik_url(&self, id: &str, custom_endpoint: Option<&str>) -> Option<String> {
     let endpoint = endpoint_of(source::geofabrik, custom_endpoint);
     catalog::resolve_geofabrik_url(self.database(), id, endpoint)
+  }
+
+  pub fn local_file(&self, input: &str) -> Option<String> {
+    if std::path::Path::new(input).exists() {
+      return Some(input.to_string());
+    }
+    let in_data = std::path::Path::new(self.data_path).join(input);
+    in_data
+      .exists()
+      .then(|| in_data.to_string_lossy().into_owned())
+  }
+
+  pub fn resolve(&self, input: &str) -> Option<String> {
+    self
+      .local_file(input)
+      .or_else(|| repository::get_file_path(self.database(), input))
   }
 
   pub fn extract_blob_chunks(
@@ -75,6 +93,27 @@ impl<'a> osm_pbf_file<'a> {
       ways,
       relations,
     })
+  }
+
+  pub fn download(
+    &self,
+    from: &origin,
+    threads: u8,
+    on_event: impl Fn(download::download_event) + Send + Sync + 'static,
+  ) -> download::download_output {
+    let url = from.download_url().expect("a download origin has a url");
+    let output = download::run(self.data_path, url, threads, on_event)
+      .expect("download produced no output");
+    let conn = self.database();
+    osm_pbf_files::create_indexes(conn);
+    repository::update_downloaded(
+      conn,
+      from,
+      output.path.to_str().unwrap_or(""),
+      output.total_bytes,
+      &output.actual_md5,
+    );
+    output
   }
 
   pub fn delete(&self, path: &str) -> u64 {

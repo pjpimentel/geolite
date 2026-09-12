@@ -50,8 +50,7 @@ pub fn run(
 ) -> Option<download_output> {
   let on_event: Arc<dyn Fn(download_event) + Send + Sync> = Arc::new(on_event);
 
-  let filename = url.split('/').next_back().unwrap_or("download.osm.pbf");
-  let dest = Path::new(data_path).join(filename);
+  let dest = Path::new(data_path).join(super::repository::file_name_of(url));
 
   if dest.exists() {
     on_event(download_event::file_already_exists { path: &dest });

@@ -8,6 +8,7 @@ use crate::cli::extract::{
 use crate::cli::index::command_handler_index;
 use crate::cli::optimize::command_handler_optimize;
 use crate::cli::osm_pbf_file::download::command_handler_osm_pbf_file_download;
+use crate::domain::osm_pbf_file::{input_kind, osm_pbf_file};
 
 #[allow(clippy::too_many_arguments)]
 pub fn command_handler_build(
@@ -22,12 +23,13 @@ pub fn command_handler_build(
 ) {
   println!("\x1b[2mpreset: {}\x1b[0m", preset.name);
   println!();
-  let source_path = std::path::Path::new(source);
-  let source_in_data = std::path::Path::new(data_path).join(source);
-  let is_url = source.starts_with("http://") || source.starts_with("https://");
-  let looks_like_path =
-    !is_url && (source.ends_with(".pbf") || source.contains('/') || source.contains('\\'));
-  if looks_like_path && !source_path.exists() && !source_in_data.exists() {
+  // filesystem only, on purpose: the database may not exist yet at this point of the build, and a
+  // local source must never reach resolve_geofabrik_url, which fetches the geofabrik index with an
+  // `expect` that would take the whole pipeline down when the network fails
+  let is_local = osm_pbf_file::open(None, data_path)
+    .local_file(source)
+    .is_some();
+  if input_kind::of(source) == input_kind::local_path && !is_local {
     eprintln!("\x1b[1;31merror\x1b[0m: source file not found: {source}");
     std::process::exit(1);
   }
@@ -35,11 +37,7 @@ pub fn command_handler_build(
   let inputs = vec![source.to_string()];
 
   println!("\x1b[2m── download\x1b[0m");
-  // a origem local ja esta em disco: baixar seria inutil e, pior, resolve_geofabrik_url
-  // busca o indice da geofabrik com `expect`, derrubando o pipeline inteiro quando a rede
-  // falha. checagem so de filesystem de proposito — resolve_osm_pbf_path abriria o sqlite,
-  // que neste ponto do build pode ainda nao existir.
-  if source_path.exists() || source_in_data.exists() {
+  if is_local {
     println!("\x1b[1;33mskipping\x1b[0m download — '{source}' is already a local file");
   } else {
     command_handler_osm_pbf_file_download(
@@ -52,7 +50,13 @@ pub fn command_handler_build(
     );
   }
 
-  if crate::resolve_osm_pbf_path(data_path, sqlite_path, source).is_none() {
+  let resolved = is_local || {
+    let conn = crate::database::open_readonly(sqlite_path);
+    osm_pbf_file::open(Some(&conn), data_path)
+      .resolve(source)
+      .is_some()
+  };
+  if !resolved {
     eprintln!(
       "\x1b[1;31merror\x1b[0m: could not resolve source after download — aborting pipeline"
     );

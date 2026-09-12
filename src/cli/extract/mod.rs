@@ -119,7 +119,6 @@ pub(super) struct resolved_input {
 pub(super) fn resolve_input(
   conn: &Connection,
   data_path: &str,
-  sqlite_path: &str,
   ordinal: usize,
   input: &str,
 ) -> Option<resolved_input> {
@@ -127,15 +126,15 @@ pub(super) fn resolve_input(
     println!();
   }
 
-  let is_path =
-    std::path::Path::new(input).exists() || std::path::Path::new(data_path).join(input).exists();
+  let file = crate::domain::osm_pbf_file::osm_pbf_file::open(Some(conn), data_path);
+  let is_path = file.local_file(input).is_some();
 
   if !is_path {
     print!("\x1b[1;32mresolving\x1b[0m '{input}'...");
     let _ = std::io::stdout().flush();
   }
 
-  let Some(path) = crate::resolve_osm_pbf_path(data_path, sqlite_path, input) else {
+  let Some(path) = file.resolve(input) else {
     if !is_path {
       println!();
     }

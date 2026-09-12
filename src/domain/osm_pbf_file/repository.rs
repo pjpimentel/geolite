@@ -85,9 +85,16 @@ impl origin {
       origin::url(url) => Some(url),
     }
   }
+
+  pub fn file_name(&self) -> &str {
+    match self {
+      origin::local_path(path) => file_name_of(path),
+      origin::geofabrik { url, .. } | origin::url(url) => file_name_of(url),
+    }
+  }
 }
 
-fn file_name_of(path_or_url: &str) -> &str {
+pub(super) fn file_name_of(path_or_url: &str) -> &str {
   std::path::Path::new(path_or_url)
     .file_name()
     .and_then(|name| name.to_str())

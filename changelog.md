@@ -13,6 +13,9 @@
 1. ADDED `house_number_link::extract`: the house-number stage as one use case of the domain.
 1. ADDED `osm_pbf_file::delete`: the file, its blob chunks and its download columns (`path`, `size_bytes`, `md5`, `downloaded_at`) go together.
 1. MODIFIED `optimize delete-intermediary-data`: the ledger row of every deleted file forgets its path, so nothing resolves to a file that is gone; the pbf files are reported before the `osm_data` sibling.
+1. MODIFIED `build` and `download`: one rule (`input_kind`) tells a url, a local path and a geofabrik id apart; `download` refuses a path without asking the catalogue.
+1. ADDED `osm_pbf_file::resolve`: the path as given, the name under `data_path` or the file the ledger holds for an id or a url, moved out of `main.rs`.
+1. ADDED `osm_pbf_file::download`: the transfer, the md5 verdict and the ledger row in one use case; the cli only renders it.
 
 ## **2026-09-12** - 0.0.8
 

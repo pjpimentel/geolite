@@ -96,9 +96,8 @@ persistence still sit in `src/database` and come with each one's own slice.
   fills a table creates its indexes. everything else a repository exposes is `pub`.
 - an index is named `<table>_search_by_<purpose>`.
 - **a folder's use cases are methods on one type declared in `mod.rs`** — `osm_pbf_file::list`,
-  `extract_blob_chunks`, `extract_osm_header`, `extract_osm_data` and `delete` are the first five;
-  `download` follows. the cli parses arguments, resolves the input, opens the connection and
-  prints, nothing else.
+  `resolve`, `download`, `extract_blob_chunks`, `extract_osm_header`, `extract_osm_data` and
+  `delete`. the cli parses arguments, opens the connection and prints, nothing else.
 - `mod.rs` re-exports exactly what production code outside the folder names, and nothing else.
 - test scenarios are numbered contiguously from `_00` within their file, and the file names and
   scenario names are in english.
@@ -476,6 +475,13 @@ for `geofabrik`:
    and of the api; a region without a readable geometry keeps the column null
 1. subsequent calls read from sqlite — skips http unless `recreate_cache` is set
 
+what the user types as a source is read by one rule, `input_kind::of`: `http://` or `https://`
+makes a url, a `.pbf` suffix or a path separator makes a local path, anything else is a geofabrik
+id — `build` and `download` used to decide this each with a heuristic of its own. `resolve(input)`
+turns any of the three into the file on disk: the path as given, the name under `data_path`, or
+the `path` the ledger holds for an id, a geofabrik id or a url; `local_file(input)` is its
+filesystem half, for the moment in a build when the database does not exist yet.
+
 ### download
 
 1. resolves the origin: geofabrik id → looks up its `url` in sqlite (fetching the index if not
@@ -487,6 +493,11 @@ for `geofabrik`:
 1. verifies md5 checksum against `<url>.md5` (ok / mismatch / unavailable)
 1. records the result (`path`, `size_bytes`, `md5`, `downloaded_at`) in the matching
    `osm_pbf_files` row
+
+`osm_pbf_file::download(&origin, threads, on_event)` is steps 2 to 6 in one call: the transfer,
+the md5 verdict and the ledger row; step 1 is `resolve_geofabrik_url`, kept apart because the cli
+reports it. the file is named by `origin::file_name`, the last segment of the url, the one rule the
+transfer, the ledger and the progress bar share.
 
 ### delete
 

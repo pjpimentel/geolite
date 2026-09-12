@@ -15,19 +15,6 @@ macro_rules! debug {
   };
 }
 
-fn resolve_osm_pbf_path(data: &str, sqlite_path: &str, input: &str) -> Option<String> {
-  let p = std::path::Path::new(input);
-  if p.exists() {
-    return Some(input.to_string());
-  }
-  let in_data = std::path::Path::new(data).join(input);
-  if in_data.exists() {
-    return in_data.to_str().map(|s| s.to_string());
-  }
-  let conn = database::open_readonly(sqlite_path);
-  domain::osm_pbf_file::repository::get_file_path(&conn, input)
-}
-
 fn main() {
   cli::run();
 }

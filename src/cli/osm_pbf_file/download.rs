@@ -1,6 +1,5 @@
-use crate::domain::osm_pbf_file::download::{download_event, md5_status, run};
-use crate::domain::osm_pbf_file::origin;
-use crate::domain::table;
+use crate::domain::osm_pbf_file::download::{download_event, md5_status};
+use crate::domain::osm_pbf_file::{input_kind, origin, osm_pbf_file};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::sync::{Arc, OnceLock};
@@ -19,58 +18,44 @@ pub fn command_handler_osm_pbf_file_download(
       println!();
     }
 
-    let is_url = input.starts_with("http://") || input.starts_with("https://");
-    let from = if is_url {
-      origin::url(input.clone())
-    } else {
-      print!("\x1b[1;32mresolving\x1b[0m url for '{input}'...");
-      let _ = std::io::stdout().flush();
-      let resolved = {
-        let conn = crate::database::open_write(sqlite_path);
-        crate::domain::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path)
-          .resolve_geofabrik_url(input, ls_endpoint)
-      };
-      match resolved {
-        Some(u) => {
-          println!(" done");
-          origin::geofabrik {
-            id: input.clone(),
-            url: u,
-          }
-        }
-        None => {
-          eprintln!(
-            "\n\x1b[1;31merror\x1b[0m: '{input}' is not a valid url nor a known geofabrik id"
-          );
-          if abort_on_any_error {
-            std::process::exit(1);
-          }
-          continue;
-        }
+    let conn = crate::database::open_write(sqlite_path);
+    let file = osm_pbf_file::open(Some(&conn), data_path);
+    let resolved = match input_kind::of(input) {
+      input_kind::url => Some(origin::url(input.clone())),
+      input_kind::local_path => None,
+      input_kind::geofabrik_id => {
+        print!("\x1b[1;32mresolving\x1b[0m url for '{input}'...");
+        let _ = std::io::stdout().flush();
+        let url = file.resolve_geofabrik_url(input, ls_endpoint);
+        println!("{}", if url.is_some() { " done" } else { "" });
+        url.map(|url| origin::geofabrik {
+          id: input.clone(),
+          url,
+        })
       }
     };
+    let Some(from) = resolved else {
+      eprintln!("\x1b[1;31merror\x1b[0m: '{input}' is not a valid url nor a known geofabrik id");
+      if abort_on_any_error {
+        std::process::exit(1);
+      }
+      continue;
+    };
 
-    let url = from
-      .download_url()
-      .expect("a download origin has a url")
-      .to_string();
-    println!("\x1b[1;32mfetching\x1b[0m {url}");
+    println!(
+      "\x1b[1;32mfetching\x1b[0m {}",
+      from.download_url().expect("a download origin has a url")
+    );
 
     let pb: Arc<OnceLock<ProgressBar>> = Arc::new(OnceLock::new());
     let start_time: Arc<OnceLock<Instant>> = Arc::new(OnceLock::new());
-    let fname = Arc::new(
-      url
-        .split('/')
-        .next_back()
-        .unwrap_or("file.osm.pbf")
-        .to_string(),
-    );
+    let fname = from.file_name().to_string();
 
     let pb_cb = pb.clone();
     let start_cb = start_time.clone();
     let fname_cb = fname.clone();
 
-    let output = run(data_path, &url, *threads, move |event| match event {
+    let output = file.download(&from, *threads, move |event| match event {
       download_event::download_start { total, .. } => {
         let _ = start_cb.set(Instant::now());
         let b = ProgressBar::new(total);
@@ -83,7 +68,7 @@ pub fn command_handler_osm_pbf_file_download(
           .progress_chars("=> "),
         );
         b.set_prefix("downloading");
-        b.set_message((*fname_cb).clone());
+        b.set_message(fname_cb.clone());
         let _ = pb_cb.set(b);
       }
       download_event::download_progress { delta } => {
@@ -112,14 +97,6 @@ pub fn command_handler_osm_pbf_file_download(
       }
     });
 
-    // never None: download::run panics on any transport failure before returning.
-    let output = output.expect("download produced no output");
-
-    let fname = output
-      .path
-      .file_name()
-      .unwrap_or_default()
-      .to_string_lossy();
     match start_time.get() {
       Some(t) => {
         let elapsed = t.elapsed().as_secs_f64();
@@ -139,15 +116,6 @@ pub fn command_handler_osm_pbf_file_download(
     if let md5_status::mismatch { expected, actual } = &output.md5 {
       eprintln!("\x1b[1;33mwarning\x1b[0m: md5 mismatch: expected {expected} got {actual}");
     }
-    let conn = crate::database::open_write(sqlite_path);
-    crate::domain::osm_pbf_file::osm_pbf_files::create_indexes(&conn);
-    crate::domain::osm_pbf_file::repository::update_downloaded(
-      &conn,
-      &from,
-      output.path.to_str().unwrap_or(""),
-      output.total_bytes,
-      &output.actual_md5,
-    );
   }
 }
 
