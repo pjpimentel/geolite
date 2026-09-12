@@ -23,7 +23,7 @@ jobs:
       needs_release: ${{ steps.detect.outputs.needs_release }}
     steps:
       - name: checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
       - name: detect release needed
         id: detect
         env:
@@ -68,7 +68,7 @@ jobs:
       contents: read
     steps:
       - name: checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
 
       - name: setup rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
