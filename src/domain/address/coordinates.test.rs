@@ -16,190 +16,33 @@ const SQL_UPDATE_WKB: &str = "
 ";
 
 struct street_data {
-  name: &'static str,
+  name: String,
   lon1: f64,
   lat1: f64,
   lon2: f64,
   lat2: f64,
 }
 
-const STREETS: &[street_data] = &[
+const STREET_COUNT: usize = 25;
+
+// street_00 starts at (-46.31980, -23.97241) and each next street is 0.0001° further along both
+// axes; the segments are built from integers so the values are the same doubles the literals were
+fn street(i: usize) -> street_data {
+  let step = 10 * i as i64;
+  let coordinate = |base: i64| (base + step) as f64 / 100_000.0;
   street_data {
-    name: "street_00",
-    lon1: -46.31980,
-    lat1: -23.97241,
-    lon2: -46.31979,
-    lat2: -23.97240,
-  },
-  street_data {
-    name: "street_01",
-    lon1: -46.31970,
-    lat1: -23.97231,
-    lon2: -46.31969,
-    lat2: -23.97230,
-  },
-  street_data {
-    name: "street_02",
-    lon1: -46.31960,
-    lat1: -23.97221,
-    lon2: -46.31959,
-    lat2: -23.97220,
-  },
-  street_data {
-    name: "street_03",
-    lon1: -46.31950,
-    lat1: -23.97211,
-    lon2: -46.31949,
-    lat2: -23.97210,
-  },
-  street_data {
-    name: "street_04",
-    lon1: -46.31940,
-    lat1: -23.97201,
-    lon2: -46.31939,
-    lat2: -23.97200,
-  },
-  street_data {
-    name: "street_05",
-    lon1: -46.31930,
-    lat1: -23.97191,
-    lon2: -46.31929,
-    lat2: -23.97190,
-  },
-  street_data {
-    name: "street_06",
-    lon1: -46.31920,
-    lat1: -23.97181,
-    lon2: -46.31919,
-    lat2: -23.97180,
-  },
-  street_data {
-    name: "street_07",
-    lon1: -46.31910,
-    lat1: -23.97171,
-    lon2: -46.31909,
-    lat2: -23.97170,
-  },
-  street_data {
-    name: "street_08",
-    lon1: -46.31900,
-    lat1: -23.97161,
-    lon2: -46.31899,
-    lat2: -23.97160,
-  },
-  street_data {
-    name: "street_09",
-    lon1: -46.31890,
-    lat1: -23.97151,
-    lon2: -46.31889,
-    lat2: -23.97150,
-  },
-  street_data {
-    name: "street_10",
-    lon1: -46.31880,
-    lat1: -23.97141,
-    lon2: -46.31879,
-    lat2: -23.97140,
-  },
-  street_data {
-    name: "street_11",
-    lon1: -46.31870,
-    lat1: -23.97131,
-    lon2: -46.31869,
-    lat2: -23.97130,
-  },
-  street_data {
-    name: "street_12",
-    lon1: -46.31860,
-    lat1: -23.97121,
-    lon2: -46.31859,
-    lat2: -23.97120,
-  },
-  street_data {
-    name: "street_13",
-    lon1: -46.31850,
-    lat1: -23.97111,
-    lon2: -46.31849,
-    lat2: -23.97110,
-  },
-  street_data {
-    name: "street_14",
-    lon1: -46.31840,
-    lat1: -23.97101,
-    lon2: -46.31839,
-    lat2: -23.97100,
-  },
-  street_data {
-    name: "street_15",
-    lon1: -46.31830,
-    lat1: -23.97091,
-    lon2: -46.31829,
-    lat2: -23.97090,
-  },
-  street_data {
-    name: "street_16",
-    lon1: -46.31820,
-    lat1: -23.97081,
-    lon2: -46.31819,
-    lat2: -23.97080,
-  },
-  street_data {
-    name: "street_17",
-    lon1: -46.31810,
-    lat1: -23.97071,
-    lon2: -46.31809,
-    lat2: -23.97070,
-  },
-  street_data {
-    name: "street_18",
-    lon1: -46.31800,
-    lat1: -23.97061,
-    lon2: -46.31799,
-    lat2: -23.97060,
-  },
-  street_data {
-    name: "street_19",
-    lon1: -46.31790,
-    lat1: -23.97051,
-    lon2: -46.31789,
-    lat2: -23.97050,
-  },
-  street_data {
-    name: "street_20",
-    lon1: -46.31780,
-    lat1: -23.97041,
-    lon2: -46.31779,
-    lat2: -23.97040,
-  },
-  street_data {
-    name: "street_21",
-    lon1: -46.31770,
-    lat1: -23.97031,
-    lon2: -46.31769,
-    lat2: -23.97030,
-  },
-  street_data {
-    name: "street_22",
-    lon1: -46.31760,
-    lat1: -23.97021,
-    lon2: -46.31759,
-    lat2: -23.97020,
-  },
-  street_data {
-    name: "street_23",
-    lon1: -46.31750,
-    lat1: -23.97011,
-    lon2: -46.31749,
-    lat2: -23.97010,
-  },
-  street_data {
-    name: "street_24",
-    lon1: -46.31740,
-    lat1: -23.97001,
-    lon2: -46.31739,
-    lat2: -23.97000,
-  },
-];
+    name: format!("street_{i:02}"),
+    lon1: coordinate(-4_631_980),
+    lat1: coordinate(-2_397_241),
+    lon2: coordinate(-4_631_979),
+    lat2: coordinate(-2_397_240),
+  }
+}
+
+fn first_street_point() -> Point<f64> {
+  let first = street(0);
+  Point::new(first.lon1, first.lat1)
+}
 
 fn way_row(way_id: u64, level: level, name: &str, geometry: Geometry<f64>) -> admin_levels_row {
   admin_levels_row {
@@ -232,10 +75,8 @@ fn ask_with(conn: &Connection, latitude: f64, longitude: f64, opts: &query_opts)
 // the 25 streets stored and boxed in the rtree: the scene of every filter case
 fn boxed_streets() -> Connection {
   let conn = crate::database::open_write(":memory:");
-  let rows: Vec<admin_levels_row> = STREETS
-    .iter()
-    .enumerate()
-    .map(|(i, s)| make_street_row(s, (i + 1) as u64))
+  let rows: Vec<admin_levels_row> = (0..STREET_COUNT)
+    .map(|i| make_street_row(&street(i), (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
@@ -303,7 +144,7 @@ fn make_street_row(s: &street_data, way_id: u64) -> admin_levels_row {
       y: s.lat2,
     },
   ]);
-  way_row(way_id, level::street, s.name, Geometry::LineString(ls))
+  way_row(way_id, level::street, &s.name, Geometry::LineString(ls))
 }
 
 #[test]
@@ -341,21 +182,21 @@ fn _01_results_are_ordered_by_distance_from_coordinates_to_street() {
   let conn = crate::database::open_write(":memory:");
   let streets = [
     street_data {
-      name: "street_far",
+      name: "street_far".to_string(),
       lon1: -46.31980,
       lat1: -23.97151,
       lon2: -46.31979,
       lat2: -23.97150,
     },
     street_data {
-      name: "street_mid",
+      name: "street_mid".to_string(),
       lon1: -46.31980,
       lat1: -23.97196,
       lon2: -46.31979,
       lat2: -23.97195,
     },
     street_data {
-      name: "street_near",
+      name: "street_near".to_string(),
       lon1: -46.31980,
       lat1: -23.97232,
       lon2: -46.31979,
@@ -794,14 +635,14 @@ fn _11_no_candidates_returns_empty() {
   let conn = crate::database::open_write(":memory:");
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
-  let candidates = best_admin_levels(&conn, Point::new(STREETS[0].lon1, STREETS[0].lat1), None);
+  let candidates = best_admin_levels(&conn, first_street_point(), None);
   assert!(candidates.is_empty());
 }
 
 #[test]
 fn _12_candidate_outside_rtree_delta_is_not_returned() {
   let conn = crate::database::open_write(":memory:");
-  batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
+  batch_upsert(&conn, &[make_street_row(&street(0), 1)]);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // street_00 sits near (-46.3, -23.97); a query at (0, 0) is far beyond the
@@ -813,12 +654,12 @@ fn _12_candidate_outside_rtree_delta_is_not_returned() {
 #[test]
 fn _13_candidate_within_delta_is_included_with_distance() {
   let conn = crate::database::open_write(":memory:");
-  batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
+  batch_upsert(&conn, &[make_street_row(&street(0), 1)]);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // querying exactly on the street's first endpoint → closest point is that
   // vertex → haversine distance is 0.
-  let candidates = best_admin_levels(&conn, Point::new(STREETS[0].lon1, STREETS[0].lat1), None);
+  let candidates = best_admin_levels(&conn, first_street_point(), None);
   assert_eq!(candidates.len(), 1);
   let c = &candidates[0];
   assert_eq!(c.id, 2);
@@ -830,7 +671,7 @@ fn _13_candidate_within_delta_is_included_with_distance() {
 fn _14_multiple_candidates_ordered_by_distance_ascending() {
   let conn = crate::database::open_write(":memory:");
   let rows: Vec<admin_levels_row> = (0..3)
-    .map(|i| make_street_row(&STREETS[i], (i + 1) as u64))
+    .map(|i| make_street_row(&street(i), (i + 1) as u64))
     .collect();
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
@@ -838,7 +679,7 @@ fn _14_multiple_candidates_ordered_by_distance_ascending() {
   // every candidate is admin_level 12 (streets_for_coordinates hardcodes
   // `admin_level = 12`), so the `admin_level DESC` tier of the sort is never
   // exercised here — only the `distance ASC` tie-breaker is observable.
-  let candidates = best_admin_levels(&conn, Point::new(STREETS[0].lon1, STREETS[0].lat1), None);
+  let candidates = best_admin_levels(&conn, first_street_point(), None);
   assert_eq!(candidates.len(), 3);
 
   let distances: Vec<Option<u32>> = candidates.iter().map(|c| c.distance_in_meters).collect();
@@ -852,7 +693,7 @@ fn _15_empty_linestring_candidate_is_discarded() {
   use geozero::{CoordDimensions, ToWkb};
 
   let conn = crate::database::open_write(":memory:");
-  batch_upsert(&conn, &[make_street_row(&STREETS[0], 1)]);
+  batch_upsert(&conn, &[make_street_row(&street(0), 1)]);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
   // rewrite the indexed street to an empty linestring. the rtree row (built from
@@ -860,12 +701,8 @@ fn _15_empty_linestring_candidate_is_discarded() {
   // best_admin_levels — which must drop it silently (rej_empty). the writer's
   // ToSql rejects no-bbox geometries, so we encode the blob directly here.
   let empty: Geometry<f64> = Geometry::LineString(LineString(vec![]));
-  let envelope = vec![
-    STREETS[0].lon1,
-    STREETS[0].lat1,
-    STREETS[0].lon2,
-    STREETS[0].lat2,
-  ];
+  let first = street(0);
+  let envelope = vec![first.lon1, first.lat1, first.lon2, first.lat2];
   let blob = empty
     .to_spatialite_wkb(CoordDimensions::default(), Some(4326), envelope)
     .expect("failed to encode empty linestring");
@@ -873,7 +710,7 @@ fn _15_empty_linestring_candidate_is_discarded() {
     .execute(SQL_UPDATE_WKB, rusqlite::params![blob, 2_i64])
     .expect("failed to update wkb");
 
-  let candidates = best_admin_levels(&conn, Point::new(STREETS[0].lon1, STREETS[0].lat1), None);
+  let candidates = best_admin_levels(&conn, first_street_point(), None);
   assert!(candidates.is_empty());
 }
 
