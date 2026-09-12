@@ -202,14 +202,10 @@ fn _02_merge_matches_single_combined_build_query_parity() {
   }
 
   // reverse geocoding (coordinates) is identical too: a point in each region.
-  for (latitude, longitude) in [(-23.90, -46.30), (43.70, 7.40)] {
+  for (region, latitude, longitude) in [("region a", -23.90, -46.30), ("region b", 43.70, 7.40)] {
     let m = top_street_name(&merged_address.query_by_coordinates(latitude, longitude, &opts));
     let c = top_street_name(&combined_address.query_by_coordinates(latitude, longitude, &opts));
-    assert_eq!(
-      m,
-      c,
-      "merged vs combined differ for coordinate query '{latitude},{longitude}'"
-    );
+    assert_eq!(m, c, "merged vs combined differ for the coordinate query in {region}");
   }
 
   cleanup_build(&source_a);

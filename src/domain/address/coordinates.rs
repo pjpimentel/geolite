@@ -141,12 +141,7 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
   if opts.last_admin_levels.is_none() {
     candidates.truncate(filter::MAX_RESULTS as usize);
   }
-  crate::debug!(
-    "debug: candidates={} raw_query=({}, {})",
-    candidates.len(),
-    latitude,
-    longitude
-  );
+  crate::debug!("debug: candidates={}", candidates.len());
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
   let sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);
 
