@@ -3,7 +3,6 @@
 #[rustfmt::skip] mod cli; // 0
 #[rustfmt::skip] mod database; // 1
 #[rustfmt::skip] mod extract; // 2
-#[rustfmt::skip] mod index; // 3
 #[rustfmt::skip] mod optimize; // 4
 #[rustfmt::skip] mod query; // 5
 #[rustfmt::skip] mod http; // 6

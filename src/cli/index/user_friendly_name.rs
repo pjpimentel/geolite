@@ -10,14 +10,14 @@ pub fn command_handler_index_user_friendly_name(
 ) {
   crate::cli::require_sqlite(sqlite_path);
   let conn = crate::database::open_write(sqlite_path);
-  if crate::database::admin_levels::count_with_geometry(&conn) == 0 {
+  if crate::domain::admin_level::repository::count_with_geometry(&conn) == 0 {
     eprintln!("\x1b[1;31merror\x1b[0m: admin_levels is empty — run extract first");
     return;
   }
   let path = Path::new(index_path);
   print!("\x1b[1;32mclearing\x1b[0m user-friendly-name...");
   let _ = std::io::stdout().flush();
-  crate::index::admin_levels_hierarchy_tantivy::destroy(path);
+  crate::domain::admin_level_hierarchy::search_index::destroy(path);
   println!(" done");
 
   let bar = super::progress_bar();
@@ -33,7 +33,7 @@ pub fn command_handler_index_user_friendly_name(
 
   let start = Instant::now();
 
-  let _ = crate::index::user_friendly_name::run(
+  let _ = crate::domain::admin_level_hierarchy::search_index::run(
     &conn,
     path,
     preset,
@@ -41,9 +41,9 @@ pub fn command_handler_index_user_friendly_name(
       if let Some(total) = p.total
         && bar.length().is_none()
       {
-        bar.set_length(total as u64);
+        bar.set_length(total);
       }
-      bar.set_position(p.processed as u64);
+      bar.set_position(p.processed);
     },
   );
 

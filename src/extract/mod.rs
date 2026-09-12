@@ -1,4 +1,3 @@
-pub mod admin_levels;
 pub mod house_numbers;
 
 #[cfg(test)]

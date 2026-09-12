@@ -145,14 +145,15 @@ fn _10_housenumber_tag_fallback_is_used() {
 
 #[test]
 fn _12_streets_with_centroid_reads_mbr_center_of_each_street() {
-  use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
+  use crate::domain::admin_level::repository::batch_upsert;
+  use crate::domain::admin_level::{admin_level as admin_levels_row, level};
   use geo::{Coord, Geometry, LineString};
 
   let conn = setup_db();
   let street = |way_id: u64, name: &str, a: (f64, f64), b: (f64, f64)| admin_levels_row {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: level::street,
     wkb: Geometry::LineString(LineString(vec![
       Coord { x: a.0, y: a.1 },
       Coord { x: b.0, y: b.1 },

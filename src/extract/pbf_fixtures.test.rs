@@ -674,20 +674,24 @@ pub(crate) const NAME_PRIORITY: &[&str] = &["name"];
 
 // override de regras de um nivel so, no formato que o run dos estagios aceita
 pub(crate) fn level_rules(
-  level: u8,
+  level: crate::domain::admin_level::level,
   include: &'static [crate::database::osm_ways::filters],
   exclude: &'static [crate::database::osm_ways::filters],
-) -> [super::admin_levels::extraction_rules; 1] {
-  [super::admin_levels::extraction_rules {
+) -> [crate::domain::admin_level::extraction_rules; 1] {
+  [crate::domain::admin_level::extraction_rules {
     level,
     include,
     exclude,
   }]
 }
 
+pub(crate) fn coords(points: &[(f64, f64)]) -> Vec<geo::Coord<f64>> {
+  points.iter().map(|&(x, y)| geo::Coord { x, y }).collect()
+}
+
 // runs a level stage and returns the progress events it emitted
 pub(crate) fn progress_events(
-  stage: impl FnOnce(&dyn Fn(super::admin_levels::progress_report)),
+  stage: impl FnOnce(&dyn Fn(crate::domain::admin_level::extract::progress_report)),
 ) -> Vec<(Option<u64>, u64)> {
   let seen = std::cell::RefCell::new(Vec::new());
   stage(&|p| seen.borrow_mut().push((p.total, p.processed)));
@@ -696,15 +700,15 @@ pub(crate) fn progress_events(
 
 // os campos que os testes de nivel checam em uma linha recem-montada
 pub(crate) fn assert_admin_row(
-  row: &crate::database::admin_levels::admin_levels,
+  row: &crate::domain::admin_level::admin_level,
   way_id: u64,
-  admin_level: u8,
+  level: crate::domain::admin_level::level,
   name: &str,
   post_code: Option<&str>,
 ) {
   assert_eq!(row.way_id, Some(way_id));
   assert_eq!(row.relation_id, None);
-  assert_eq!(row.admin_level, admin_level);
+  assert_eq!(row.level, level);
   assert_eq!(row.name, name);
   assert_eq!(row.post_code.as_deref(), post_code);
   assert_eq!(
@@ -743,7 +747,7 @@ pub(crate) fn stored_admin_levels(conn: &rusqlite::Connection) -> Vec<(Option<u6
 pub(crate) fn stored_geometry(
   conn: &rusqlite::Connection,
   way_id: u64,
-) -> crate::database::admin_levels::admin_geometry {
+) -> crate::domain::admin_level::geometry::admin_geometry {
   conn
     .query_row(SQL_SELECT_ADMIN_LEVEL_GEOMETRY, [way_id], |r| r.get(0))
     .expect("failed to read geometry")

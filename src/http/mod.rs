@@ -4,7 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
-use crate::index::admin_levels_hierarchy_tantivy::tantivy_index;
+use crate::domain::admin_level::{level, level_error};
+use crate::domain::admin_level_hierarchy::tantivy_index;
 
 mod openapi;
 mod status;
@@ -32,7 +33,7 @@ pub fn serve(
   host: &str,
   port: u16,
   threads: u8,
-  boosts: crate::index::admin_levels_hierarchy_tantivy::tantivy_boosts,
+  boosts: crate::domain::admin_level_hierarchy::tantivy_boosts,
 ) {
   let addr = format!("{host}:{port}");
   let server = Arc::new(Server::http(&addr).expect("failed to start http server"));
@@ -41,7 +42,7 @@ pub fn serve(
   // degraded boot: a missing index disables text_to_address (reported via /status) instead of
   // refusing to start, so the server keeps serving coordinate queries and the health endpoint.
   let index: Option<Arc<tantivy_index>> =
-    crate::index::admin_levels_hierarchy_tantivy::load(Path::new(index_path), boosts).map(Arc::new);
+    crate::domain::admin_level_hierarchy::search_index::load(Path::new(index_path), boosts).map(Arc::new);
   if index.is_none() {
     eprintln!(
       "\x1b[1;33mwarn\x1b[0m: tantivy index not found at {index_path} — text_to_address disabled; run `geolite index user-friendly-name` to enable"
@@ -316,7 +317,7 @@ pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::query::bounding_geome
   Ok(crate::query::bounding_geometry { geometry, envelope })
 }
 
-fn parse_last_admin_levels(s: &str) -> Result<Vec<u8>, String> {
+fn parse_last_admin_levels(s: &str) -> Result<Vec<level>, String> {
   let parts: Vec<&str> = s.split(',').map(str::trim).collect();
   if parts.iter().all(|p| p.is_empty()) {
     return Err("last_admin_levels must be a comma-separated list of levels".to_string());
@@ -324,8 +325,12 @@ fn parse_last_admin_levels(s: &str) -> Result<Vec<u8>, String> {
   parts
     .iter()
     .map(|p| {
-      p.parse::<u8>()
-        .map_err(|_| format!("last_admin_levels: invalid level '{p}'"))
+      level::parse(p).map_err(|error| match error {
+        level_error::not_a_level_number(_) => format!("last_admin_levels: invalid level '{p}'"),
+        level_error::outside_the_scale(value) => {
+          format!("last_admin_levels: level {value} is not supported")
+        }
+      })
     })
     .collect()
 }

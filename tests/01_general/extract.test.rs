@@ -17,15 +17,16 @@ const MUNICIPALITY: u64 = 298_442;
 const STREET_WAY: u64 = 169_924_327;
 const STREET_NODE: u64 = 1_785_552_339;
 
-const REGENERATE: &str = "the fixture changed; regenerate deliberately and update the constants";
+pub(crate) const REGENERATE: &str =
+  "the fixture changed; regenerate deliberately and update the constants";
 
-struct scratch {
-  dir: PathBuf,
+pub(crate) struct scratch {
+  pub(crate) dir: PathBuf,
   stdout: String,
 }
 
 impl scratch {
-  fn ledger(&self) -> rusqlite::Connection {
+  pub(crate) fn ledger(&self) -> rusqlite::Connection {
     open_sqlite_at(&self.dir.join("database.sqlite3"))
   }
 
@@ -57,7 +58,7 @@ impl ledger_row {
   }
 }
 
-fn stage(w: &world, dir: &Path, args: &[&str]) -> output {
+pub(crate) fn stage(w: &world, dir: &Path, args: &[&str]) -> output {
   let out = w.geolite_in(dir, args);
   assert_eq!(
     out.status, 0,
@@ -81,7 +82,7 @@ fn osm_data(w: &world, dir: &Path, threads: &str, data_args: &[&str], inputs: &[
 }
 
 // the three stages of the file in a scratch of its own, keeping the osm-data stdout
-fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]) -> scratch {
+pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]) -> scratch {
   let dir = w.scratch(name);
   let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
   stage(w, &dir, &["extract", "osm-pbf-blob-chunks", &pbf]);
@@ -103,7 +104,7 @@ fn admin_levels(w: &world, dir: &Path, extra: &[&str]) {
   stage(w, dir, &args);
 }
 
-fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
+pub(crate) fn count(conn: &rusqlite::Connection, sql: &str) -> i64 {
   conn
     .query_row(sql, [], |r| r.get(0))
     .unwrap_or_else(|e| panic!("{sql} failed: {e}"))
@@ -598,4 +599,93 @@ fn _12_recreate_rebuilds_the_element_tables_without_touching_the_chunk_index() {
     CHUNKS
   );
   assert_full_fixture(&s);
+}
+
+// 13. the scale is closed at the cli edge
+#[test]
+#[ignore]
+fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
+  let w = world();
+  let s = extracted(w, "extract_unknown_level", "2", &[]);
+  let out = w.geolite_in(
+    &s.dir,
+    &[
+      "--preset",
+      "brazil",
+      "extract",
+      "osm-admin-levels",
+      "--admin-level",
+      "2,11",
+    ],
+  );
+  assert_eq!(
+    out.status, 1,
+    "an unsupported level must exit with 1:\n{}",
+    out.stderr
+  );
+  assert!(
+    out
+      .stderr
+      .contains("invalid --admin-level: level 11 is not supported"),
+    "stderr: {}",
+    out.stderr
+  );
+  assert_eq!(
+    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels"),
+    0,
+    "nothing is extracted when the list is refused"
+  );
+}
+
+// 14. one level, two stages, through the binary
+#[test]
+#[ignore]
+fn _14_level_10_runs_the_relation_and_the_way_stages() {
+  let w = world();
+  let s = extracted(w, "extract_level_ten", "2", &[]);
+  let out = stage(
+    w,
+    &s.dir,
+    &[
+      "--preset",
+      "brazil",
+      "extract",
+      "osm-admin-levels",
+      "--admin-level",
+      "10",
+    ],
+  );
+  for line in [
+    "stage 1/2: relations",
+    "41 neighborhood in",
+    "stage 2/2: ways (place=neighbourhood,suburb)",
+    "22 neighborhood ways in",
+  ] {
+    assert!(
+      out.stdout.contains(line),
+      "missing {line:?} in:\n{}",
+      out.stdout
+    );
+  }
+  assert!(
+    out.stdout.find("stage 1/2") < out.stdout.find("stage 2/2"),
+    "the relations stage runs before the ways stage:\n{}",
+    out.stdout
+  );
+  assert_eq!(
+    count(
+      &s.ledger(),
+      "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 10 AND relation_id IS NOT NULL"
+    ),
+    41,
+    "the neighbourhood boundaries of the fixture"
+  );
+  assert_eq!(
+    count(
+      &s.ledger(),
+      "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 10 AND way_id IS NOT NULL"
+    ),
+    22,
+    "the place ways of the fixture"
+  );
 }

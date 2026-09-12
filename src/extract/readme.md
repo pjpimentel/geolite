@@ -8,9 +8,8 @@ and decoding its nodes, ways and relations — belong to the file itself and liv
 
 ## admin_levels
 
-1. selects candidate ids per level: relations from `osm_relations` by `admin_level` tag (levels 1–9, and 10), or ways from `osm_ways` by `place`/name (levels 10 and 12) — all requiring a non-null `name`
-2. assembles the member way segments into rings, building a polygon when the ring closes, otherwise a line (streets at level 12 are always lines)
-3. inserts each feature into `admin_levels` (name, country/post codes, and a spatialite WKB geometry blob)
+the stage moved into the area it produces: `admin_level::extract(level)` in
+[`domain/admin_level`](../domain/readme.md#admin_level).
 
 ## house_numbers
 

@@ -1,6 +1,6 @@
 use super::*;
 use crate::cli::tests::street_row;
-use crate::database::admin_levels::batch_upsert;
+use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::open_write;
 use crate::extract::pbf_fixtures::tempdir_guard;
 use crate::presets::DEFAULT;
@@ -28,7 +28,7 @@ fn _00_00_dispatches_each_named_subcommand() {
 
   let conn = open_write(&db);
   assert!(
-    crate::database::admin_levels_hierarchy::count(&conn) > 0,
+    crate::domain::admin_level_hierarchy::repository::count(&conn) > 0,
     "the hierarchy stage must index the streets"
   );
   assert!(
@@ -51,7 +51,7 @@ fn _00_01_every_leaf_returns_early_when_admin_levels_is_empty() {
 
   let conn = open_write(&db);
   assert_eq!(
-    crate::database::admin_levels_hierarchy::count(&conn),
+    crate::domain::admin_level_hierarchy::repository::count(&conn),
     0,
     "nothing must be indexed on an empty database"
   );

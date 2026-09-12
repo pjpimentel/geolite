@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 
 use super::{house_number_match, query_house_number};
-use crate::extract::admin_levels::osm_admin_level;
+use crate::domain::admin_level::level;
 
 // house numbers are precise points; 50m is intentionally tighter than the 100m used for
 // streets, which are lines with a broader snap area
@@ -43,7 +43,7 @@ fn parse_leading_number(s: &str) -> Option<u32> {
   digits.parse().ok()
 }
 
-fn point_of(wkb: Option<&crate::database::admin_levels::admin_geometry>) -> Option<Point<f64>> {
+fn point_of(wkb: Option<&crate::domain::admin_level::geometry::admin_geometry>) -> Option<Point<f64>> {
   match wkb.map(|g| g.geometry()) {
     Some(Geometry::Point(p)) => Some(*p),
     _ => None,
@@ -107,7 +107,7 @@ pub fn enrich_house_number_from_query(
         m.latitude = super::round5(pt.y());
         m.longitude = super::round5(pt.x());
         m.admin_levels.push(super::admin_level {
-          level: osm_admin_level::house_numbers as u8,
+          level: level::house_number.value(),
           name: number.clone(),
           osm_relation_id: None,
           osm_way_id: None,
@@ -140,7 +140,7 @@ fn first_house_number(query_tokens: &[&str], street_name: &str) -> Option<String
 }
 
 fn street_name_of(m: &super::query_match) -> String {
-  let street = osm_admin_level::street as u8;
+  let street = level::street.value();
   m.admin_levels
     .iter()
     .find(|a| a.level == street)
@@ -243,7 +243,7 @@ pub fn enrich_house_numbers(
 
     if let Some((hn, _)) = closest {
       m.admin_levels.push(super::admin_level {
-        level: osm_admin_level::house_numbers as u8,
+        level: level::house_number.value(),
         name: hn.number.clone(),
         osm_relation_id: None,
         osm_way_id: None,

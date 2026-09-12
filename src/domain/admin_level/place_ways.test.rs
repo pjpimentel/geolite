@@ -1,8 +1,9 @@
-use super::*;
+use geo::{Geometry, Winding};
 
-fn coords(points: &[(f64, f64)]) -> Vec<Coord<f64>> {
-  points.iter().map(|&(x, y)| Coord { x, y }).collect()
-}
+use super::super::scale::level;
+use super::{load_chunk, process_one_way, run, way_meta, way_work};
+use crate::database::osm_ways::filters;
+use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, coords, stored_admin_levels, stored_geometry};
 
 fn work(way_id: u64, points: &[(f64, f64)]) -> way_work {
   way_work {
@@ -12,7 +13,7 @@ fn work(way_id: u64, points: &[(f64, f64)]) -> way_work {
       post_code: Some("1700-001".to_string()),
     },
     coords: coords(points),
-    admin_level: super::super::osm_admin_level::neighborhood,
+    level: level::neighborhood,
   }
 }
 
@@ -80,14 +81,12 @@ fn _00_03_closed_ring_with_too_few_points_is_not_a_polygon() {
 fn _00_04_row_is_identified_by_way_id() {
   let row = process_one_way(work(99, &[(0.0, 0.0), (1.0, 1.0)])).expect("deve produzir uma linha");
 
-  pbf_fixtures::assert_admin_row(&row, 99, 10, "Alvalade", Some("1700-001"));
+  pbf_fixtures::assert_admin_row(&row, 99, level::neighborhood, "Alvalade", Some("1700-001"));
 }
 
 /////////////////////////////////////////////////////////////////////////////////
 // 01 — run e load_chunk ponta a ponta
 /////////////////////////////////////////////////////////////////////////////////
-
-use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, stored_admin_levels, stored_geometry};
 
 const ALVALADE: &[(&str, &str)] = &[("name", "Alvalade"), ("place", "neighbourhood")];
 
@@ -154,11 +153,11 @@ fn _01_04_deduplicates_ways_matching_more_than_one_include_filter() {
   let conn = pbf_fixtures::memory_db();
   // place so pode ter um valor; para forcar a duplicata usamos um override
   // cujos dois filtros casam com o mesmo way
-  const BOTH: &[crate::database::osm_ways::filters] = &[
-    crate::database::osm_ways::filters::include_place_neighbourhood,
-    crate::database::osm_ways::filters::include_place_neighbourhood,
+  const BOTH: &[filters] = &[
+    filters::include_place_neighbourhood,
+    filters::include_place_neighbourhood,
   ];
-  let rules = pbf_fixtures::level_rules(10, BOTH, &[]);
+  let rules = pbf_fixtures::level_rules(level::neighborhood, BOTH, &[]);
   pbf_fixtures::insert_unit_square_way(&conn, 10, 1, ALVALADE);
 
   run(&conn, &rules, NAME_PRIORITY, |_| {});
@@ -183,12 +182,7 @@ fn _01_05_load_chunk_groups_coordinates_by_way_in_order() {
     ],
   );
 
-  let works = load_chunk(
-    &conn,
-    &[10],
-    super::super::osm_admin_level::neighborhood,
-    NAME_PRIORITY,
-  );
+  let works = load_chunk(&conn, &[10], level::neighborhood, NAME_PRIORITY);
 
   assert_eq!(works.len(), 1);
   assert_eq!(works[0].way_id, 10);

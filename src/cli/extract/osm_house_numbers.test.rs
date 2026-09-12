@@ -31,7 +31,16 @@ fn street_with_candidate(db_path: &str) {
     0.00002,
     &[("addr:housenumber", "100"), ("addr:street", "Rua Alfa")],
   );
-  crate::extract::admin_levels::level_12::run(&conn, &[], &["name"], |_| {});
+  crate::domain::admin_level::admin_level::extract(
+    &conn,
+    crate::domain::admin_level::level::street,
+    &crate::domain::admin_level::extract_opts {
+      threads: 1,
+      name_priority: &["name"],
+      rules: &[],
+    },
+    |_| {},
+  );
 }
 
 #[test]

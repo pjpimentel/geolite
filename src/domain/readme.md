@@ -5,9 +5,27 @@
 the domain is organised as vertical slices. a concept's folder holds its model and methods, its
 policy, its services and — one patch release at a time — its own persistence. the technical
 modules that came before (`extract`, `index`, `query`, `optimize`, `database`) are being emptied
-into these folders and disappear as the concepts arrive.
+into these folders and disappear as the concepts arrive; `index` was the first to go.
 
 ```
+admin_level/    a named administrative area — the `admin_levels` table
+  entity            the row as it is written: osm element, level, shape, name, codes
+  scale             the closed set of levels, their names and their order
+  id                stable identity, packed from the osm way or relation it came from
+  geometry          the wkb column codec, its mbr shortcut, the bounding box and the ring assembly
+  repository        the ddl, the index, the nine queries and the upsert
+  spatial_index     the rtree of every level's bounding box, and the pass that fills it
+  rules             which ways each level includes or excludes, and the preset override
+  extract           `admin_level::extract(level)`: the stages of a level and the events they emit
+  relations         the stage that assembles boundary relations into areas
+  place_ways        the stage that reads `place=neighbourhood|suburb` ways at level 10
+  streets           the stage that reads named ways at level 12
+admin_level_hierarchy/  which area contains which — the `admin_levels_hierarchy` table
+  entity            the row as it is written: the chain of ancestor ids and the label
+  label             the label rule: a name, its parent's finished label, its own post code
+  repository        the ddl, the pending queries, the lookup by ids and the insert
+  resolver          the pass that finds every area's parent and writes the chain
+  search_index      the tantivy index, one document per hierarchy row, and the search over it
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the ten writes and reads
   catalog           the `source` enum, the endpoint it resolves, and the listing of each source
@@ -36,7 +54,10 @@ osm_relation/   an openstreetmap relation — the `osm_data.osm_relations` table
 
 every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
 objects and services sit alongside. everything a concept needs is in one place, and the only write
-path into a table is through its entity. `osm_pbf_file` is a folder without an `entity` and
+path into a table is through its entity. `admin_level` is the first folder whose table the queries
+read, and the first to take its module out of `src/database` and its stage out of `src/extract`
+whole; `admin_level_hierarchy` followed with the last of `src/index`, which no longer exists.
+`osm_pbf_file` is a folder without an `entity` and
 `osm_tag` the one that is not a table, both for reasons given below; `osm_node`, `osm_way` and
 `osm_relation` arrived with their entity and decoder only — their payload encoding and their
 persistence still sit in `src/database` and come with each one's own slice.
@@ -71,6 +92,210 @@ persistence still sit in `src/database` and come with each one's own slice.
 
 what stays outside the domain is what belongs to no concept in particular: the sqlite connection
 lifecycle, the cli and the http server.
+
+## admin_level
+
+the `admin_levels` table and everything around it: a country, a state, a city, a neighborhood, a
+street — each one a named area with a shape, sitting somewhere on a scale. the ddl, the queries and
+the upsert live in `repository`, the rtree in `spatial_index`, the three stages that produce the
+rows behind `admin_level::extract(level)`, and the connection lifecycle in `src/database/mod.rs`
+calls into the first two; `src/database/admin_levels.rs`, `src/index/coordinates.rs` and
+`src/extract/admin_levels/` are gone.
+
+### the scale — `level`
+
+the scale every named area sits on. osm tags levels 1..11 on boundary relations; geolite extends it
+with 12 for streets, which are mapped as ways rather than boundaries, and 30 for house numbers,
+which are synthesized while answering a query and never stored as an area.
+
+| level | name | | level | name |
+|---:|---|---|---:|---|
+| 1 | continent | | 8 | city |
+| 2 | country | | 9 | locality |
+| 3 | region | | 10 | neighborhood |
+| 4 | state | | 12 | street |
+| 5 | district | | 14 | address |
+| 6 | county | | 30 | house_number |
+| 7 | municipality | | | |
+
+**the set is closed on the way in.** `new` accepts only the levels above, and everything that
+writes a level goes through it: the entity carries a `level`, the presets list `level`s, and
+`--admin-level 11` is refused where it is parsed instead of travelling downstream as a number that
+would quietly extract nothing. `name()` returns `&'static str`, not an `Option` — there is no
+"unknown" to return, because an unnamed level cannot be constructed.
+
+what comes back out is a `level` too: every row the repository returns carries
+`admin_level: level`, read through `level_of`, which skips a row whose stored value is outside the
+scale with a warning — a defence, since no release ever wrote one. `u8` survives in exactly two
+places, both of them edges: the `admin_levels.admin_level` column (and the tantivy term that mirrors
+it) and the `level` field of the json response. a level outside the scale is refused where it is
+read: `--admin-level 11`, `--last-admin-levels 11` and `?last_admin_levels=11` all answer with an
+error instead of extracting or filtering nothing; `level::parse` is the one reading of a level
+from text.
+
+ordering is by the level value — a higher level is more specific, so a street sorts after the city
+that contains it — and it is implemented explicitly rather than derived, so that moving a variant
+cannot silently change it.
+
+### the identity — `admin_level_id`
+
+an area's id is the osm id of the way or relation it came from, shifted left one bit, with the
+low bit set for relations: a way and a relation that share an osm id stay distinct, the id is a
+pure function of the source and never an insert-order rowid, and `osm_id()` and `kind()` read it
+back. `batch_upsert` derives it, and a row with neither a way nor a relation is a programming
+error that panics.
+
+### the shape — `geometry`
+
+`admin_geometry` is the `wkb` column: spatialite's blob layout on the way in, decoded with
+`SpatiaLiteWkb` on the way out, because geozero's writer omits the byte-order byte and uses its own
+sub-geometry separator, which the ISO WKB reader rejects. a blob that cannot be read degrades to an
+empty geometry with a warning instead of failing the query. `mbr_center` reads the centre of the
+blob's MBR header without decoding the geometry, the shortcut the house-number stage snaps with.
+`bounding_box` is the envelope the rtree indexes; it moved here from `query` because the
+persistence imported it, and a repository importing from the query layer is the wrong direction.
+
+### the rtree — `spatial_index`
+
+`admin_levels_rtree` is a second table subordinate to the first, the same arrangement
+`osm_pbf_blob_chunks` has with `osm_pbf_files`: a box means nothing without the row it bounds. it
+is a virtual table with no indexes of its own, dropped and recreated by every run, which is why it
+has functions rather than an `impl table`. `run` pages through every row with a geometry and
+inserts one box per row; on a file database up to eight readers scan disjoint id ranges in
+parallel while the connection that owns the table writes, and an in-memory database is scanned on
+the calling thread, because `conn.path()` is empty for it and a worker could not reopen it.
+
+### the extraction — `extract`
+
+`admin_level::extract(conn, level, opts, on_event)` is the one way rows get into the table. the
+domain decides what a level is made of; the caller only watches:
+
+| level | stages | reads |
+|---|---|---|
+| any other | `relations` | boundary relations tagged `admin_level=N`, assembled into areas |
+| 10 | `relations`, then `place_ways` | the same, then ways tagged `place=neighbourhood` or `suburb` |
+| 12 | `streets` | every named way the exclude rules let through |
+
+`stages_of(level)` returns that list as `stage { level, source, ordinal, of }`, and `extract` runs
+it in order, emitting an `extract_event { stage, step }` at each step: `started`; `candidates`,
+from relations stages only, with how many relations the level has and how many are not extracted
+yet; `progress(progress_report)` after every batch; `finished`. an event carries its stage, so a
+consumer needs no state to know what it is looking at. the cli's renderer keeps one bar per stage
+and prints the lines it always printed. `extract_opts` carries the thread count of the relations
+stage, the name priority and the rule overrides.
+
+what the cli keeps is the run, not the level: the `--recreate` wipe before the loop, and after the
+last level the index and the count on the ledger — the index is created once at the end because
+maintaining it through the upserts is the expensive way round.
+
+each stage reads its candidates through the legacy repositories (`database::osm_relations`,
+`database::osm_ways`) and writes through `repository::batch_upsert`. the relations stage assembles
+the member ways of each relation into rings (`geometry::assemble_rings`), closes each ring that
+comes back to its start into a polygon wound clockwise, the way spatialite's `st_buildarea` does,
+and falls back to a multi-line when nothing closes; a place way closes into one polygon by the same
+rule; a street is always a line, even when the way is a ring.
+
+### the rules — `rules`
+
+`extraction_rules { level, include, exclude }` is what a preset can override per level
+(`admin_levels_rules`); `resolve_rules` answers with the override when there is one and with the
+defaults below otherwise. relations stages take no rules: they are selected by the `admin_level`
+tag alone. every source drops elements without a `name`, because a nameless area cannot produce
+useful data.
+
+| level | include | because | exclude | because |
+|---|---|---|---|---|
+| any other, and 10 | relations tagged `admin_level=N` | the simplest selection; neighbourhood boundaries are mapped as relations too | | |
+| 10 | ways tagged `place=neighbourhood` | the simplest selection | | |
+| 10 | ways tagged `place=suburb` | in some regions suburbs are the de-facto neighbourhood unit when `place=neighbourhood` is not mapped | | |
+| 12 | every way | the simplest selection | ways tagged `place=neighbourhood` or `place=suburb` | already captured at level 10 |
+| 12 | | | ways tagged `leisure=park`, `building` or `waterway` | noise in street-level data |
+
+the filter vocabulary (`filters`) still lives in `database::osm_ways`, where each variant is a
+sql clause; it moves to `osm_way::filter` with that slice, and `rules` is its last consumer
+outside `src/database`. this table is the reference for those defaults: a change to `rules.rs`
+changes it too (CLAUDE.md, rule 8).
+
+## admin_level_hierarchy
+
+which area contains which, and the label you would read out loud —
+`"Rua Castro Alves, Embaré, Santos, São Paulo, Brasil"`. the folder took `src/index/hierarchy.rs`,
+`src/database/admin_levels_hierarchy.rs`, the tantivy index and the pass that built it; `src/index/`
+is gone with them.
+
+### why it is not two columns of `admin_level`
+
+the row is one-to-one with an `admin_levels` row (`admin_level_id INTEGER PRIMARY KEY REFERENCES
+admin_levels(id) ON DELETE CASCADE`) and cannot outlive it, which is the shape of a table extension.
+what makes it a concept of its own is the same test that kept the rtree inside `admin_level` and
+failed here on both halves:
+
+| | `admin_levels_rtree` | `admin_levels_hierarchy` |
+|---|---|---|
+| what it stores | a bounding box, recomputable in milliseconds | `user_friendly_name` — **rendered content**, with regional formatting |
+| who reads it | only `admin_level`'s own coordinate query | the tantivy index, the query path, and `optimize` |
+
+the tantivy document is one per **hierarchy** row, not per admin level — the hierarchy row, not the
+area, is the unit of search, which is why the search index lives here and not in `admin_level`.
+
+### the chain points upward
+
+`ancestor_ids` is a json array of admin level ids ordered from the most specific enclosing area to
+the most general — `[bairro, cidade, estado, país]` — denormalised onto the child, because every
+read starts from a leaf and works outward. a directory view would want the opposite traversal and is
+a separate read model; nothing here provides it yet.
+
+the chain is **sparse and not strictly ranked**: a street whose centroid falls inside no
+neighbourhood attaches straight to its city, and an area may sit inside another at the same level
+when that one is larger.
+
+### the label — `label`
+
+composed from the parent's *finished* label rather than from the chain of ids, which is what makes
+it a single step — every ancestor's own post code is already inside the string it hands down.
+
+it is not the same thing as `query::render_friendly_name`, which renders a user-supplied template
+(`{admin_level_8_name}`) over the resolved areas at query time. the two diverge, and reconciling
+them is the open `place_label` task in the backlog; `label` is where it will land.
+
+### the resolver — `resolver`
+
+`run` answers "who contains whom" for every area the table does not know yet. it loads every area
+below street level with its rings, centroid and area into memory, builds an in-memory rtree over
+their boxes, then walks the levels in ascending order so that a parent is always finished before
+its children look it up. inside one level the areas resolve in parallel against the entries as
+they were when the level started, so a chain between peers (a neighbourhood inside a larger one
+inside the city) comes back one step short; a second pass over the level, largest area first,
+re-applies the first ancestor's finished chain and propagates it transitively. streets never
+contain anything, so they come last, in pages, against the same tree — on a file database up to
+eight readers scan disjoint id ranges while the owning connection writes, and an in-memory
+database is scanned on the calling thread, because a worker could not reopen it.
+
+for one area the parent is, at the most specific level that has one, the smallest area whose
+polygon contains the centroid, considering only a lower level or the same level with a larger
+area. an area nobody contains is a root, and its label is its own name.
+
+### the search index — `search_index`
+
+one tantivy document per hierarchy row: the area's own name with its post code in both forms
+(`01310-100` and `01310100`), and the names of every ancestor concatenated, each of the two in
+three field variants — folded (lower case, no diacritics), strict (as written) and lower
+(diacritics kept). a preset's abbreviations are expanded in both directions into the folded text,
+so `rua` finds `r.` and back.
+
+`search` runs two queries with a fallback: the strict one demands every token exactly, in the name
+or in the ancestry, and wins when it finds anything — phrase order and the strict and lower forms
+only re-rank that set, never widen it; the loose one runs only when the strict one is empty, with
+exact and fuzzy terms as optional clauses, which covers a typo, an extra word or partial coverage.
+the score is the raw bm25 of whichever query found the document. `last_admin_levels` and the
+region filter are Must clauses with boost 0.0: they restrict the document set without touching the
+score. why exact and fuzzy carry separate boosts, and why short tokens get one edit of tolerance,
+is written next to the boosts in the source.
+
+`build` still reads `admin_levels` with sql of its own, the one query in the domain that reads
+another folder's table directly; it moves behind `admin_level::repository` when a second consumer
+appears. `run` is what the cli's `index user-friendly-name` calls: the build, with the row count
+reported around it.
 
 ## osm_pbf_file
 
@@ -171,7 +396,7 @@ that belongs to someone lives with them.
 ### the byte layout — `blob_index`
 
 `osm_data.osm_pbf_blob_chunks` is a second table subordinate to the first, the same arrangement
-`admin_levels` has with `admin_levels_rtree` in `src/database/admin_levels.rs`: a chunk is a byte
+`admin_levels` has with `admin_levels_rtree` in `domain/admin_level/spatial_index.rs`: a chunk is a byte
 range **of a file** and means nothing without one. `blob_scanner` fills it by walking the file front
 to back, reading only the length-prefixed blob headers and skipping every body — the one pass that
 never decompresses anything. `osm_data` then reads it to know which ranges to hand each decoder

@@ -1,3 +1,5 @@
+pub mod admin_level;
+pub mod admin_level_hierarchy;
 pub mod osm_node;
 pub mod osm_pbf_file;
 pub mod osm_relation;
@@ -5,8 +7,8 @@ pub mod osm_tag;
 pub mod osm_way;
 
 pub(crate) trait table {
-  const CREATE: &'static str;
-  const INDEXES: &'static str;
+  const CREATE: &str;
+  const INDEXES: &str;
 
   fn create_table(conn: &rusqlite::Connection) {
     conn

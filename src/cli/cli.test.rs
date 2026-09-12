@@ -76,12 +76,12 @@ pub(crate) fn street_row(
   name: &str,
   way_id: u64,
   lon_offset: f64,
-) -> crate::database::admin_levels::admin_levels {
+) -> crate::domain::admin_level::admin_level {
   use geo::{Coord, Geometry, LineString};
-  crate::database::admin_levels::admin_levels {
+  crate::domain::admin_level::admin_level {
     relation_id: None,
     way_id: Some(way_id),
-    admin_level: 12,
+    level: crate::domain::admin_level::level::street,
     wkb: Geometry::LineString(LineString(vec![
       Coord { x: -46.3198 + lon_offset, y: -23.9724 },
       Coord { x: -46.3197 + lon_offset, y: -23.9724 },
@@ -379,7 +379,13 @@ fn _02_07_query_parses_every_option() {
       );
       assert_eq!(min_quality, Some(0.5));
       assert!(bounding_wkt.is_some());
-      assert_eq!(last_admin_levels, Some(vec![8, 12]));
+      assert_eq!(
+        last_admin_levels,
+        Some(vec![
+          crate::domain::admin_level::level::city,
+          crate::domain::admin_level::level::street
+        ])
+      );
       assert!(!include_wkt);
     }
     _ => panic!("expected query command"),

@@ -1,9 +1,10 @@
 use crate::cli::index::command_handler_index;
 use crate::cli::optimize::command_handler_optimize;
 use crate::cli::tests::street_row;
-use crate::database::admin_levels::{admin_levels as admin_levels_row, batch_upsert};
+use crate::domain::admin_level::admin_level as admin_levels_row;
+use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::{open_write, osm_data_path};
-use crate::index::admin_levels_hierarchy_tantivy as tantivy;
+use crate::domain::admin_level_hierarchy::search_index as tantivy;
 use crate::domain::osm_pbf_file::http_stubs::start_json_server;
 use crate::presets::{BRAZIL, DEFAULT};
 use crate::query;
@@ -60,8 +61,8 @@ fn synthetic_index(
     .map(|(i, name)| street_row(name, (i + 1) as u64, i as f64 * 0.0005))
     .collect();
   batch_upsert(&conn, &rows);
-  crate::index::coordinates::run(&conn, |_| {});
-  crate::index::hierarchy::run(&conn, |_| {});
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   let index = tantivy::build(
     &conn,
     Path::new(&work.index_path),
@@ -233,7 +234,7 @@ fn _03_full_pipeline_from_local_pbf_fixture_runs_every_stage() {
 
   let conn = crate::database::open_readonly(&work.sqlite_path);
   assert!(
-    crate::database::admin_levels::count_with_geometry(&conn) >= 1,
+    crate::domain::admin_level::repository::count_with_geometry(&conn) >= 1,
     "the street way must land in admin_levels"
   );
   assert!(

@@ -1,6 +1,6 @@
 use super::*;
 use crate::cli::tests::street_row;
-use crate::database::admin_levels::batch_upsert;
+use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::{open_write, osm_data_path};
 use crate::extract::pbf_fixtures::tempdir_guard;
 
@@ -16,7 +16,7 @@ fn scene(tag: &str, with_streets: bool, with_hierarchy: bool) -> (tempdir_guard,
     );
   }
   if with_hierarchy {
-    crate::index::hierarchy::run(&conn, |_| {});
+    crate::domain::admin_level_hierarchy::resolver::run(&conn, |_| {});
   }
   (guard, db, index)
 }

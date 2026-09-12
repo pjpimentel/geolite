@@ -48,8 +48,8 @@ const SQL_CREATE_INDEXES: &str = "
 pub struct osm_pbf_files;
 
 impl table for osm_pbf_files {
-  const CREATE: &'static str = SQL_CREATE;
-  const INDEXES: &'static str = SQL_CREATE_INDEXES;
+  const CREATE: &str = SQL_CREATE;
+  const INDEXES: &str = SQL_CREATE_INDEXES;
 }
 
 pub(crate) fn add_origin_wkt(conn: &Connection) {

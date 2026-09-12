@@ -133,7 +133,7 @@ pub(crate) fn relation_coords_chunk(
   ids: &[u64],
   name_priority: &[&str],
 ) -> Vec<relation_coord_row> {
-  let placeholders = super::placeholders_for(ids);
+  let placeholders = super::placeholders_for(ids.len());
   let name_select = crate::domain::osm_tag::select::coalesce_of("osm_data.osm_relations.payload", name_priority);
   let sql = format!(
     "WITH way_members AS (
@@ -169,7 +169,7 @@ pub(crate) fn relation_coords_chunk(
      INNER JOIN osm_data.osm_nodes ON osm_data.osm_nodes.id = CAST(node_refs.value AS INTEGER)
      ORDER BY way_members.relation_id ASC, way_members.way_order ASC, node_refs.key ASC",
   );
-  super::query_by_ids(conn, &sql, ids, |row| {
+  super::query_by_ids(conn, &sql, ids.iter().map(|&id| id as i64), |row| {
     Ok(relation_coord_row {
       relation_id: row.get(0)?,
       relation_name: row.get(1)?,

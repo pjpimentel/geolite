@@ -1,8 +1,10 @@
-use super::*;
+use geo::{Coord, Geometry};
+use rusqlite::Connection;
 
-fn coords(points: &[(f64, f64)]) -> Vec<Coord<f64>> {
-  points.iter().map(|&(x, y)| Coord { x, y }).collect()
-}
+use super::super::geometry::approx_eq;
+use super::super::scale::level;
+use super::{load_chunk, process_one_way, run};
+use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, coords, stored_admin_levels, stored_geometry};
 
 // 00.00: way sem coordenada nenhuma e descartado
 #[test]
@@ -24,7 +26,7 @@ fn _00_01_open_way_becomes_linestring() {
   match row.wkb.geometry() {
     Geometry::LineString(ls) => {
       assert_eq!(ls.0.len(), 3);
-      assert!(super::super::approx_eq(ls.0[2], Coord { x: 2.0, y: 0.0 }));
+      assert!(approx_eq(ls.0[2], Coord { x: 2.0, y: 0.0 }));
     }
     other => panic!("esperado LineString, veio {other:?}"),
   }
@@ -65,7 +67,7 @@ fn _00_03_row_is_identified_by_way_id_at_level_12() {
   )
   .expect("deve produzir uma linha");
 
-  pbf_fixtures::assert_admin_row(&row, 77, 12, "Rua do Ouro", Some("1100-060"));
+  pbf_fixtures::assert_admin_row(&row, 77, level::street, "Rua do Ouro", Some("1100-060"));
 }
 
 // 00.04: post_code ausente e propagado como None
@@ -80,8 +82,6 @@ fn _00_04_missing_post_code_stays_none() {
 /////////////////////////////////////////////////////////////////////////////////
 // 01 — run e load_chunk ponta a ponta
 /////////////////////////////////////////////////////////////////////////////////
-
-use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, stored_admin_levels, stored_geometry};
 
 fn insert_street(conn: &Connection, way_id: u64, first_node: u64, tags: &[(&str, &str)]) {
   pbf_fixtures::insert_way_at(conn, way_id, first_node, &[(0.0, 0.0), (1.0, 0.0)], tags);
@@ -175,7 +175,7 @@ fn _01_04_rules_override_replaces_the_default_excludes() {
   insert_street(&conn, 11, 3, &[("name", "Bairro"), ("place", "neighbourhood")]);
 
   // sem filtro de exclusao nenhum, o way de bairro passa a ser aceito
-  let rules = pbf_fixtures::level_rules(12, &[], &[]);
+  let rules = pbf_fixtures::level_rules(level::street, &[], &[]);
   run(&conn, &rules, NAME_PRIORITY, |_| {});
 
   assert_eq!(stored_admin_levels(&conn).len(), 1, "sem excludes o way de bairro deve entrar");
