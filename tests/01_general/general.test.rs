@@ -1,6 +1,8 @@
 use crate::common::ask::ask;
-use crate::common::harness::{encode, get, request, scenario, world, world_cell};
+use crate::common::harness::{encode, get, plain, request, scenario, world, world_cell};
 use crate::common::query::{first, matches};
+use crate::extract::REGENERATE;
+use crate::house_number::HOUSE_NUMBERS;
 use serde_json::{Value, json};
 
 pub static SCENARIO: scenario = scenario {
@@ -222,6 +224,30 @@ fn _00_09_fixture_counts_stay_within_expected_bounds() {
     (lo..hi).contains(&house_numbers),
     "house number count {house_numbers} left its expected band {lo}..{hi}"
   );
+}
+
+// 00.10. pipeline integrity: the house-number count and the optimize steps, in order
+#[test]
+#[ignore]
+fn _00_10_the_build_reports_the_house_numbers_it_linked_and_the_optimize_steps() {
+  let w = world();
+  let stdout = plain(&w.build_stdout);
+  let house_numbers = format!("extracted {HOUSE_NUMBERS} house numbers in");
+  let mut at = 0;
+  for line in [
+    house_numbers.as_str(),
+    "── optimize",
+    "deleted osm_data.sqlite3",
+    "deleted 1 tables in",
+    "optimizing sqlite file...",
+    "optimized sqlite in",
+    "after   main:",
+  ] {
+    let found = stdout[at..]
+      .find(line)
+      .unwrap_or_else(|| panic!("missing {line:?} after offset {at}; {REGENERATE}:\n{stdout}"));
+    at += found + line.len();
+  }
 }
 
 // 01.00. contract

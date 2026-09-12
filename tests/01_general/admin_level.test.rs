@@ -1,10 +1,9 @@
 use std::path::Path;
 
-use crate::common::harness::{output, plain, world};
+use crate::common::harness::{output, plain, query_at, world};
 use crate::common::query::{first, levels_of, matches, name_at};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
 use crate::general::world;
-use serde_json::Value;
 
 const SANTOS_RELATION: u64 = 298_442;
 const SANTOS_ID: i64 = 596_885;
@@ -28,26 +27,6 @@ fn index_at(w: &world, dir: &Path, stages: &[&str]) -> output {
   let mut args = vec!["--preset", "brazil", "index"];
   args.extend_from_slice(stages);
   stage(w, dir, &args)
-}
-
-fn query_at(w: &world, dir: &Path, text: &str) -> Value {
-  let out = w.geolite_in(
-    dir,
-    &[
-      "--preset",
-      "brazil",
-      "query",
-      text,
-      "--include-wkt",
-      "false",
-    ],
-  );
-  assert_eq!(
-    out.status, 0,
-    "query {text:?} exited {}:\n{}",
-    out.status, out.stderr
-  );
-  serde_json::from_str(&out.stdout).expect("the query must print json")
 }
 
 fn level_counts(conn: &rusqlite::Connection) -> Vec<(u8, i64)> {
@@ -301,7 +280,7 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
   index_at(w, &s.dir, &["user-friendly-name"]);
-  let empty = query_at(w, &s.dir, "santos");
+  let empty = query_at(w, &s.dir, "brazil", "santos");
   assert!(
     matches(&empty).is_empty(),
     "without hierarchy rows there is nothing to find, got {empty}"
@@ -309,7 +288,7 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
 
   index_at(w, &s.dir, &["admin-levels-hierarchy"]);
   index_at(w, &s.dir, &["user-friendly-name"]);
-  let found = query_at(w, &s.dir, "santos");
+  let found = query_at(w, &s.dir, "brazil", "santos");
   let top = first(&found);
   assert_eq!(levels_of(top).last(), Some(&8));
   assert_eq!(name_at(top, 8).as_deref(), Some("Santos"));
