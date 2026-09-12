@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::common::harness::{output, world};
+use crate::common::harness::{output, plain, world};
 use crate::common::query::{first, levels_of, matches, name_at};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
 use crate::general::world;
@@ -48,21 +48,6 @@ fn query_at(w: &world, dir: &Path, text: &str) -> Value {
     out.status, out.stderr
   );
   serde_json::from_str(&out.stdout).expect("the query must print json")
-}
-
-// the stage colours its verbs with ansi escapes; the words are asserted without them
-fn plain(text: &str) -> String {
-  let mut out = String::with_capacity(text.len());
-  let mut rest = text;
-  while let Some(start) = rest.find('\x1b') {
-    out.push_str(&rest[..start]);
-    rest = match rest[start..].find('m') {
-      Some(end) => &rest[start + end + 1..],
-      None => "",
-    };
-  }
-  out.push_str(rest);
-  out
 }
 
 fn level_counts(conn: &rusqlite::Connection) -> Vec<(u8, i64)> {

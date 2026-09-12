@@ -73,7 +73,7 @@ fn synthetic_index(
 }
 
 fn query_text(conn: &Connection, index: &tantivy::tantivy_index, q: &str) -> query::query_output {
-  query::run(conn, Some(index), q, None, None, None, None, false)
+  query::run(conn, &DEFAULT.house_numbers, Some(index), q, None, None, None, None, false)
 }
 
 // the most specific admin_level of a match is the matched street (highest level number).
@@ -179,7 +179,7 @@ fn _02_build_creates_then_deletes_osm_data_sibling() {
 // smallest input where every build stage (download probe, blob-chunks, header, osm-data,
 // admin-levels, house-numbers, index, optimize) has real work to do.
 fn write_street_fixture(pbf_path: &str) {
-  use crate::extract::pbf_fixtures::{
+  use crate::domain::pbf_fixtures::{
     blob_compression, block_spec, data_chunk, header_chunk, node, way, write_pbf,
   };
   write_pbf(

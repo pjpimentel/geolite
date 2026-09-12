@@ -1,7 +1,8 @@
 use super::enrich_house_numbers;
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::domain::admin_level::{admin_level as admin_levels_row, level};
-use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
+use crate::domain::house_number::fixtures::link;
+use crate::domain::house_number::repository::batch_insert_links;
 use crate::query::{admin_level, query_match, query_match_attributes};
 use geo::{Coord, Geometry, LineString, Point};
 use rusqlite::Connection;
@@ -27,14 +28,7 @@ fn setup() -> (Connection, i64) {
 }
 
 fn insert_hn(conn: &Connection, admin_level_id: i64, node_id: u64, number: &str, lon: f64, lat: f64) {
-  let row = house_numbers_row {
-    node_id,
-    admin_level_id,
-    number: number.to_string(),
-    wkb: Geometry::Point(Point::new(lon, lat)).into(),
-    strategy: 0,
-  };
-  batch_insert(conn, &[row]);
+  batch_insert_links(conn, &[link(node_id, admin_level_id, number, lon, lat)]);
 }
 
 fn al(level: u8, name: &str) -> admin_level {

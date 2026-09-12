@@ -1,5 +1,5 @@
 use super::command_handler_extract_osm_house_numbers;
-use crate::extract::pbf_fixtures::{insert_node, insert_way_at, temp_scene};
+use crate::domain::pbf_fixtures::{insert_node, insert_way_at, temp_scene};
 use crate::presets::DEFAULT;
 
 const SQL_COUNT_HOUSE_NUMBERS: &str = "
@@ -47,7 +47,7 @@ fn street_with_candidate(db_path: &str) {
 fn _00_00_extracts_house_number_near_the_street() {
   let scene = temp_scene("cli_house_numbers_extract");
   street_with_candidate(&scene.db_path);
-  command_handler_extract_osm_house_numbers(&scene.db_path, false, DEFAULT.extract_house_numbers);
+  command_handler_extract_osm_house_numbers(&scene.db_path, false, DEFAULT.house_numbers);
   assert!(
     house_number_count(&scene.db_path) >= 1,
     "the candidate node must be attached to the street"
@@ -58,10 +58,10 @@ fn _00_00_extracts_house_number_near_the_street() {
 fn _00_01_recreate_clears_house_numbers_before_extracting() {
   let scene = temp_scene("cli_house_numbers_recreate");
   street_with_candidate(&scene.db_path);
-  command_handler_extract_osm_house_numbers(&scene.db_path, false, DEFAULT.extract_house_numbers);
+  command_handler_extract_osm_house_numbers(&scene.db_path, false, DEFAULT.house_numbers);
   let first = house_number_count(&scene.db_path);
 
-  command_handler_extract_osm_house_numbers(&scene.db_path, true, DEFAULT.extract_house_numbers);
+  command_handler_extract_osm_house_numbers(&scene.db_path, true, DEFAULT.house_numbers);
   assert_eq!(
     house_number_count(&scene.db_path),
     first,
@@ -72,6 +72,6 @@ fn _00_01_recreate_clears_house_numbers_before_extracting() {
 #[test]
 fn _00_02_runs_on_an_empty_database_without_progress() {
   let scene = temp_scene("cli_house_numbers_empty");
-  command_handler_extract_osm_house_numbers(&scene.db_path, false, DEFAULT.extract_house_numbers);
+  command_handler_extract_osm_house_numbers(&scene.db_path, false, DEFAULT.house_numbers);
   assert_eq!(house_number_count(&scene.db_path), 0);
 }

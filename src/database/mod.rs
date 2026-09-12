@@ -21,7 +21,6 @@ macro_rules! impl_table_ops {
 // database stamped with another version, and `geolite merge` refuses to combine one.
 pub const SCHEMA_VERSION: u32 = 2;
 
-pub mod house_numbers;
 pub mod jsonb;
 pub mod merge;
 
@@ -102,13 +101,13 @@ pub fn destroy_data(
     open_write_main(path)
   };
   if house_numbers {
-    house_numbers::drop_table(&conn);
+    crate::domain::house_number::repository::drop_table(&conn);
   }
   if admin_levels {
     crate::domain::admin_level_hierarchy::repository::drop_table(&conn);
     crate::domain::admin_level::spatial_index::drop_table(&conn);
     crate::domain::admin_level::repository::drop_table(&conn);
-    house_numbers::drop_table(&conn);
+    crate::domain::house_number::repository::drop_table(&conn);
   }
   conn.execute_batch("VACUUM;").expect("failed to vacuum");
 }
@@ -164,7 +163,7 @@ pub fn open_write_main(path: &str) -> Connection {
   crate::domain::admin_level::admin_levels::create_table(&conn);
   crate::domain::admin_level_hierarchy::admin_levels_hierarchy::create_table(&conn);
   crate::domain::admin_level::spatial_index::create_table(&conn);
-  house_numbers::create_table(&conn);
+  crate::domain::house_number::house_numbers::create_table(&conn);
   conn
 }
 

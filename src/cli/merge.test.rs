@@ -11,6 +11,8 @@ use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 use std::path::Path;
 
+const POLICY: crate::domain::house_number::house_number_policy = DEFAULT.house_numbers;
+
 #[test]
 fn _00_open_write_main_stamps_schema_version() {
   let path = temp_path("version");
@@ -189,16 +191,16 @@ fn _02_merge_matches_single_combined_build_query_parity() {
 
   // text queries in each region resolve to the same street in both builds.
   for q in ["Alpha", "Beta", "Gamma", "Delta"] {
-    let m = top_street_name(&query::run(&mconn, Some(&mindex), q, None, None, None, None, false));
-    let c = top_street_name(&query::run(&cconn, Some(&cindex), q, None, None, None, None, false));
+    let m = top_street_name(&query::run(&mconn, &POLICY, Some(&mindex), q, None, None, None, None, false));
+    let c = top_street_name(&query::run(&cconn, &POLICY, Some(&cindex), q, None, None, None, None, false));
     assert!(m.is_some(), "query '{q}' returned no match in the merged build");
     assert_eq!(m, c, "merged vs combined differ for text query '{q}'");
   }
 
   // reverse geocoding (coordinates) is identical too: a point in each region.
   for coord in ["-23.90,-46.30", "43.70,7.40"] {
-    let m = top_street_name(&query::run(&mconn, Some(&mindex), coord, None, None, None, None, false));
-    let c = top_street_name(&query::run(&cconn, Some(&cindex), coord, None, None, None, None, false));
+    let m = top_street_name(&query::run(&mconn, &POLICY, Some(&mindex), coord, None, None, None, None, false));
+    let c = top_street_name(&query::run(&cconn, &POLICY, Some(&cindex), coord, None, None, None, None, false));
     assert_eq!(m, c, "merged vs combined differ for coordinate query '{coord}'");
   }
 

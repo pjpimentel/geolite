@@ -270,6 +270,7 @@ pub fn run() {
       last_admin_levels,
       include_wkt,
       preset.index_user_friendly_name.boosts,
+      preset.house_numbers,
     ),
     commands::http_server { host, port } => http_server::command_handler_http_server(
       &sqlite_path,
@@ -278,6 +279,7 @@ pub fn run() {
       port,
       args.threads,
       preset.index_user_friendly_name.boosts,
+      preset.house_numbers,
     ),
     commands::build { source } => {
       let preset = crate::presets::resolve(args.preset.or(Some(source.clone())));

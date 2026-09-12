@@ -1,7 +1,7 @@
 use super::{blob_index, data_opts, osm_pbf_file, repository};
 
 use crate::domain::osm_tag::tag_policy;
-use crate::extract::pbf_fixtures::{header_chunk, indexed_scene, temp_scene, tiny_pbf, write_pbf};
+use crate::domain::pbf_fixtures::{header_chunk, indexed_scene, temp_scene, tiny_pbf, write_pbf};
 
 fn data_dir(scene: &temp_scene) -> String {
   scene.guard.path.to_string_lossy().into_owned()

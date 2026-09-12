@@ -2,7 +2,7 @@ use super::command_handler_query;
 use crate::cli::tests::street_row;
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::open_write;
-use crate::extract::pbf_fixtures::tempdir_guard;
+use crate::domain::pbf_fixtures::tempdir_guard;
 use crate::domain::admin_level_hierarchy::search_index as tantivy;
 use crate::presets::DEFAULT;
 use std::path::Path;
@@ -37,6 +37,7 @@ fn _00_00_prints_json_for_a_text_query_with_defaults() {
     None,
     true,
     DEFAULT.index_user_friendly_name.boosts,
+    DEFAULT.house_numbers,
   );
 }
 
@@ -55,6 +56,7 @@ fn _00_01_applies_every_optional_filter() {
     Some(vec![crate::domain::admin_level::level::street]),
     false,
     DEFAULT.index_user_friendly_name.boosts,
+    DEFAULT.house_numbers,
   );
 }
 
@@ -74,6 +76,7 @@ fn _90_query_without_tantivy_index() {
     None,
     true,
     DEFAULT.index_user_friendly_name.boosts,
+    DEFAULT.house_numbers,
   );
 }
 

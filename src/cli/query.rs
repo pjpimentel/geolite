@@ -11,6 +11,7 @@ pub fn command_handler_query(
   last_admin_levels: Option<Vec<crate::domain::admin_level::level>>,
   include_wkt: bool,
   boosts: crate::domain::admin_level_hierarchy::tantivy_boosts,
+  house_numbers: crate::domain::house_number::house_number_policy,
 ) {
   crate::cli::require_sqlite(sqlite_path);
   let conn = crate::database::open_readonly(sqlite_path);
@@ -28,6 +29,7 @@ pub fn command_handler_query(
   };
   let result = crate::query::run(
     &conn,
+    &house_numbers,
     Some(&index),
     input,
     friendly_name_format,

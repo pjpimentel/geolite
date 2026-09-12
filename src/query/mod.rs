@@ -127,6 +127,7 @@ const COORDINATE_QUALITY_REFERENCE_M: f64 = 100.0;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
   conn: &rusqlite::Connection,
+  house_numbers: &crate::domain::house_number::house_number_policy,
   tantivy_index: Option<&crate::domain::admin_level_hierarchy::tantivy_index>,
   query: &str,
   friendly_name_format: Option<&str>,
@@ -150,6 +151,7 @@ pub(crate) fn run(
     let index = tantivy_index.expect("can not query because index is unavailable");
     address::run(
       conn,
+      house_numbers,
       index,
       query,
       friendly_name_format,

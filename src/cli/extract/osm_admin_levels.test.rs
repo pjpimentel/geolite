@@ -1,5 +1,5 @@
 use super::*;
-use crate::extract::pbf_fixtures::{
+use crate::domain::pbf_fixtures::{
   insert_closed_way, insert_relation, insert_way_at, stored_admin_levels, temp_scene,
 };
 

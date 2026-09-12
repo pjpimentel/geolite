@@ -479,3 +479,18 @@ fn probe_free_port() -> u16 {
     .expect("failed to read the probe address")
     .port()
 }
+
+// the stages colour their verbs with ansi escapes; the words are asserted without them
+pub fn plain(text: &str) -> String {
+  let mut out = String::with_capacity(text.len());
+  let mut rest = text;
+  while let Some(start) = rest.find('\x1b') {
+    out.push_str(&rest[..start]);
+    rest = match rest[start..].find('m') {
+      Some(end) => &rest[start + end + 1..],
+      None => "",
+    };
+  }
+  out.push_str(rest);
+  out
+}

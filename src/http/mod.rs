@@ -34,6 +34,7 @@ pub fn serve(
   port: u16,
   threads: u8,
   boosts: crate::domain::admin_level_hierarchy::tantivy_boosts,
+  house_numbers: crate::domain::house_number::house_number_policy,
 ) {
   let addr = format!("{host}:{port}");
   let server = Arc::new(Server::http(&addr).expect("failed to start http server"));
@@ -77,7 +78,7 @@ pub fn serve(
         // shutdown flag every poll interval (tiny_http's unblock() only wakes one thread).
         while !SHUTDOWN.load(Ordering::Relaxed) {
           match server.recv_timeout(Duration::from_millis(250)) {
-            Ok(Some(request)) => handle(request, &conn, index.as_deref(), &db_file),
+            Ok(Some(request)) => handle(request, &conn, index.as_deref(), &db_file, &house_numbers),
             Ok(None) => {}
             Err(_) => break,
           }
@@ -97,6 +98,7 @@ fn handle(
   conn: &rusqlite::Connection,
   index: Option<&tantivy_index>,
   db_file: &str,
+  house_numbers: &crate::domain::house_number::house_number_policy,
 ) {
   let start = Instant::now();
   let url = request.url().to_string();
@@ -194,6 +196,7 @@ fn handle(
           } else {
             let result = crate::query::run(
               conn,
+              house_numbers,
               index,
               &raw,
               friendly_name_format.as_deref(),

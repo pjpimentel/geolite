@@ -12,6 +12,7 @@ mod streets;
 
 pub use entity::admin_level;
 pub use extract::{extract_event, extract_opts, extract_step};
+pub use id::admin_level_id;
 pub use repository::admin_levels;
 pub use rules::extraction_rules;
 pub use scale::{level, level_error};

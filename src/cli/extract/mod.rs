@@ -252,7 +252,7 @@ pub fn command_handler_extract(
       osm_house_numbers::command_handler_extract_osm_house_numbers(
         sqlite_path,
         recreate,
-        preset.extract_house_numbers,
+        preset.house_numbers,
       );
     }
   }

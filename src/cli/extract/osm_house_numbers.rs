@@ -1,10 +1,13 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
+use crate::domain::house_number::{house_number_link, house_number_policy, house_numbers};
+use crate::domain::table;
+
 pub fn command_handler_extract_osm_house_numbers(
   sqlite_path: &str,
   recreate: bool,
-  preset: crate::presets::extract_house_numbers_preset,
+  policy: house_number_policy,
 ) {
   if recreate {
     crate::database::destroy_data(sqlite_path, false, false, false, true);
@@ -24,18 +27,19 @@ pub fn command_handler_extract_osm_house_numbers(
   bar.set_message("house-numbers");
 
   let start = Instant::now();
+  let mut count: u64 = 0;
 
-  crate::extract::house_numbers::run(&conn, preset, |p| {
+  house_number_link::extract(&conn, &policy, |p| {
     if bar.length().is_none() && p.total > 0 {
       bar.set_length(p.total);
     }
     bar.set_position(p.processed);
+    count = p.processed;
   });
 
   bar.finish();
-  crate::database::house_numbers::create_indexes(&conn);
+  house_numbers::create_indexes(&conn);
 
-  let count = bar.position();
   let elapsed = start.elapsed().as_secs_f64();
   println!("\x1b[1;32mextracted\x1b[0m {count} house numbers in {elapsed:.1}s");
 

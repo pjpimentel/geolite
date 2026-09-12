@@ -49,7 +49,7 @@ pub fn command_handler_merge(
   {
     let conn = crate::database::open_write_main(base);
     crate::domain::admin_level::repository::drop_indexes(&conn);
-    crate::database::house_numbers::drop_indexes(&conn);
+    crate::domain::house_number::repository::drop_indexes(&conn);
 
     for db in databases {
       let (admins, houses) = crate::database::merge::merge_source(&conn, db);
@@ -62,7 +62,7 @@ pub fn command_handler_merge(
     }
 
     crate::domain::admin_level::admin_levels::create_indexes(&conn);
-    crate::database::house_numbers::create_indexes(&conn);
+    crate::domain::house_number::house_numbers::create_indexes(&conn);
   }
 
   // rebuild every derived artifact (hierarchy + rtree + tantivy) from the unified set; each index

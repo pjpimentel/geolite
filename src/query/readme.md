@@ -12,9 +12,12 @@
 
 0. the input is **not** stripped of numbers: the fts runs on the full text (step 2), because a
    number can be part of the street name (`25` in `rua 25 de marco`) and removing it would break
-   the match. a house number is shaped as 1–5 digits with at most one trailing letter (`123`,
-   `123a`), a single trailing comma tolerated (`35,`), no hyphen — so postcodes (`01310-100`,
-   `01310100`) are never treated as house numbers. resolution happens per candidate in step 5.
+   the match. what reads as a house number is `house_number::recognize` under the preset's policy
+   ([`domain/house_number`](../domain/readme.md#house_number)): 1–5 digits with at most one
+   trailing letter (`123`, `123a`) everywhere, a single trailing comma tolerated (`35,`), compound
+   forms (`82-52`) and the `#` prefix only where the preset enables them (colombia) — so postcodes
+   (`01310-100`, `01310100`) are never treated as house numbers. resolution happens per candidate
+   in step 5.
 1. tokenises the input (lowercase + ascii-fold)
 2. searches the tantivy index (`domain/admin_level_hierarchy/search_index`) with a two-stage strategy:
    - **Q1 strict**: every query token must match exactly in `name` or `hier` (`Must` per token). returns only docs that cover 100% of the query exactly. if non-empty, this is the result. on top of that backbone, Q1 adds `Should` boosts — a phrase-order bonus and case/diacritic-sensitive matches against the `*_strict` / `*_lower` field variants — that only re-rank the matching set, never widen it.
@@ -24,13 +27,14 @@
    - `similarity` = token coverage (fraction of query tokens that appear exactly in the doc's indexed text); 1.0 means every word of the query was found. a house number counts as an uncovered token, so `rua x 100` scores below 1.0
    - `score` = raw BM25 score from tantivy (no transformation); unbounded, only meaningful relative to other matches in the same response
 5. resolves a house number against the `house_numbers` of each street match (by value, not
-   proximity). per street, the street's own name tokens are removed from the query (so every
+   proximity; `house_number::token` picks the token and `house_number::resolution` places it). per street, the street's own name tokens are removed from the query (so every
    number that belongs to the name — `25` and `2024` in `rua 25 de marco de 2024` — is ignored)
    and the **first** remaining numeric token is taken as the house number, then resolved into
    `house_number.kind`:
    - **exact**: a stored number equals it; the match coordinate moves to the house-number point
    - **interpolated**: no exact match, but it falls between two known numbers on the street —
-     the coordinate is a linear interpolation between their points
+     the coordinate is a linear interpolation between their points; a compound number (colombia)
+     is never interpolated
    - **absent**: a number was taken but couldn't be placed (the street is still returned, unchanged)
 
    when no numeric token remains for a street, `house_number` is omitted. on `exact`/`interpolated`
@@ -41,8 +45,10 @@
 
 ## house_number
 
-enriches an existing set of street matches with the closest house number node.
-every stored house number comes from an osm node; the `strategy` column records how it was linked to its street:
+the adapter between the query and [`domain/house_number`](../domain/readme.md#house_number): it carries the
+matched streets to the domain and brings back the resolved point, the level-30 entry and the re-rendered
+`friendly_name`. every stored house number comes from an osm node; the `strategy` column (`domain/house_number/strategy`)
+records how it was linked to its street:
 
 - **by_proximity** snapped to the nearest street geometry
 - **by_name** its `addr:street` tag matched the street's name

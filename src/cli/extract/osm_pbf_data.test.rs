@@ -1,5 +1,5 @@
 use super::*;
-use crate::extract::pbf_fixtures::{indexed_scene, temp_scene, tiny_pbf, write_pbf};
+use crate::domain::pbf_fixtures::{indexed_scene, temp_scene, tiny_pbf, write_pbf};
 
 const SQL_COUNT_OSM_WAYS: &str = "
   SELECT COUNT(*)

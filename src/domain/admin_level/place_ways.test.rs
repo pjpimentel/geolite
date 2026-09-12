@@ -3,7 +3,7 @@ use geo::{Geometry, Winding};
 use super::super::scale::level;
 use super::{load_chunk, process_one_way, run, way_meta, way_work};
 use crate::database::osm_ways::filters;
-use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, coords, stored_admin_levels, stored_geometry};
+use crate::domain::pbf_fixtures::{self, NAME_PRIORITY, coords, stored_admin_levels, stored_geometry};
 
 fn work(way_id: u64, points: &[(f64, f64)]) -> way_work {
   way_work {
