@@ -4,15 +4,16 @@
 
 1. ADDED house_number domain.
 
-## **2026-XX-XX** - 0.0.8
+## **2026-09-12** - 0.0.8
 
 1. REMOVED `database/admin_levels` mod.
 1. REMOVED `extract/admin_levels` mod.
 1. REMOVED `database/admin_levels_hierarchy` mod.
-1. REMOVED `index` mod (`hierarchy`, `user_friendly_name`, `admin_levels_hierarchy_tantivy`).
-1. MODIFIED `extract osm-admin-levels`: `--admin-level` refuses a level outside the scale instead of dropping it.
-1. MODIFIED `query` and `http-server`: `--last-admin-levels` and `?last_admin_levels=` refuse a level outside the scale.
-1. ADDED `admin_level` domain (`entity`, `scale`, `id`, `geometry`, `repository`, `spatial_index`, `rules`, `extract`).
+1. REMOVED `index` mod (`coordinates`, `hierarchy`, `user_friendly_name`, `admin_levels_hierarchy_tantivy`).
+1. MODIFIED `extract osm-admin-levels`: `--admin-level` refuses a level outside the scale, a value that is not a number and an empty list instead of dropping them; the list is checked before `--recreate` touches the database.
+1. MODIFIED `query` and `http-server`: `--last-admin-levels` and `?last_admin_levels=` refuse a level outside the scale (the http server answers 400 where it answered an empty list); `--last-admin-levels` tolerates spaces around the values.
+1. MODIFIED `admin_levels` reads: a row whose level is outside the scale is skipped with a warning instead of being returned; no release ever writes one.
+1. ADDED `admin_level` domain (`entity`, `scale`, `id`, `geometry`, `repository`, `spatial_index`, `rules`, `extract`, `relations`, `place_ways`, `streets`).
 1. ADDED `admin_level::extract(level)`: the three extraction stages as one use case of the domain.
 1. ADDED `admin_level_hierarchy` domain (`entity`, `label`, `repository`, `resolver`, `search_index`).
 
