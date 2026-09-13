@@ -8,6 +8,9 @@
 1. ADDED `database::insert_in_chunks`: the one chunked multi-row insert behind the three element repositories.
 1. MODIFIED `admin_level::extraction_rules`: `include` and `exclude` are `osm_way::way_filter`.
 1. REMOVED the `ToSql`/`FromSql` impls and the serde derives of `osm_node`, `osm_way` and `osm_relation`: nothing read an element back through rusqlite.
+1. MODIFIED `/geocode`: a `quality` outside `[0, 1]` or not a number answers 400 with the rule the cli applies to `--min-quality`; it was dropped silently.
+1. MODIFIED `http-server`: the `listening` line names the port actually bound, so `--port 0` lets the os choose one.
+1. ADDED `address::parse_min_quality` (from the cli) and `http::bind`: the quality rule has one owner, and a server is bound before it serves.
 
 ## **2026-09-13** - 0.0.9
 

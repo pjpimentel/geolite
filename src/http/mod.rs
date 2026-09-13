@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,17 +28,39 @@ extern "C" fn on_shutdown_signal(_signum: std::os::raw::c_int) {
   SHUTDOWN.store(true, Ordering::Relaxed);
 }
 
+pub struct bound_server {
+  server: Arc<Server>,
+  addr: SocketAddr,
+}
+
+impl bound_server {
+  pub fn addr(&self) -> SocketAddr {
+    self.addr
+  }
+}
+
+pub fn bind(addr: &str) -> bound_server {
+  let server = Server::http(addr).expect("failed to start http server");
+  let addr = server
+    .server_addr()
+    .to_ip()
+    .expect("the http server listens on a tcp socket");
+  bound_server {
+    server: Arc::new(server),
+    addr,
+  }
+}
+
 pub fn serve(
+  bound: bound_server,
   sqlite_path: &str,
   index_path: &str,
-  host: &str,
-  port: u16,
   threads: u8,
   boosts: crate::domain::admin_level_hierarchy::tantivy_boosts,
   house_numbers: crate::domain::house_number::house_number_policy,
 ) {
-  let addr = format!("{host}:{port}");
-  let server = Arc::new(Server::http(&addr).expect("failed to start http server"));
+  let addr = bound.addr();
+  let server = bound.server;
   let sqlite_path = Arc::new(sqlite_path.to_string());
 
   // degraded boot: a missing index disables text_to_address (reported via /status) instead of
@@ -64,6 +87,7 @@ pub fn serve(
     signal(SIGTERM, on_shutdown_signal);
   }
 
+  // the e2e harness reads this line to learn the port a `--port 0` server took: keep its shape
   println!("\x1b[1;32mlistening\x1b[0m on {addr}  sqlite: {sqlite_path}  index: {index_path}");
 
   let handles: Vec<_> = (0..threads)
@@ -162,9 +186,9 @@ fn handle(
       let friendly_name_format = query_param(&query_string, "friendly_name_format")
         .map(|s| crate::domain::address::validate_friendly_name_format(&s))
         .transpose();
-      let min_quality: Option<f64> = query_param(&query_string, "quality")
-        .and_then(|s| s.parse::<f64>().ok())
-        .filter(|v| (0.0..=1.0).contains(v));
+      let min_quality = query_param(&query_string, "quality")
+        .map(|s| crate::domain::address::parse_min_quality(&s))
+        .transpose();
       let bounding_wkt = query_param(&query_string, "bounding_wkt")
         .map(|s| parse_bounding_wkt(&s))
         .transpose();
@@ -175,17 +199,32 @@ fn handle(
       let include_wkt = query_param(&query_string, "include_wkt")
         .map(|s| s != "false")
         .unwrap_or(true);
-      match (q, friendly_name_format, bounding_wkt, last_admin_levels) {
-        (None, _, _, _) => respond_json(
+      match (
+        q,
+        friendly_name_format,
+        min_quality,
+        bounding_wkt,
+        last_admin_levels,
+      ) {
+        (None, _, _, _, _) => respond_json(
           request,
           StatusCode(400),
           r#"{"error":"missing query param: query"}"#,
         ),
-        (_, Err(msg), _, _) | (_, _, Err(msg), _) | (_, _, _, Err(msg)) => {
+        (_, Err(msg), _, _, _)
+        | (_, _, Err(msg), _, _)
+        | (_, _, _, Err(msg), _)
+        | (_, _, _, _, Err(msg)) => {
           let body = serde_json::json!({ "error": msg }).to_string();
           respond_json(request, StatusCode(400), &body)
         }
-        (Some(raw), Ok(friendly_name_format), Ok(bounding), Ok(last_admin_levels)) => {
+        (
+          Some(raw),
+          Ok(friendly_name_format),
+          Ok(min_quality),
+          Ok(bounding),
+          Ok(last_admin_levels),
+        ) => {
           let input = crate::domain::address::query_input::parse(&raw);
           if index.is_none() && input == crate::domain::address::query_input::text {
             // degraded boot: text search needs the tantivy index; coordinate queries still work.

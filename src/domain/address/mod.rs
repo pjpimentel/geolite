@@ -18,7 +18,7 @@ pub use entity::{
   admin_level, house_number_match, query_house_number, query_match, query_match_attributes,
   query_output, query_service,
 };
-pub use filter::bounding_geometry;
+pub use filter::{bounding_geometry, parse_min_quality};
 pub use input::query_input;
 pub use label::validate_friendly_name_format;
 

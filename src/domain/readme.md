@@ -518,6 +518,10 @@ specific to the least. this renderer and `admin_level_hierarchy::label` are the 
 
 ### the filters — `filter`
 
+`parse_min_quality` reads the threshold at both edges — it is the cli `value_parser` of
+`--min-quality` and the http check of `quality`, like `validate_friendly_name_format` — so the
+filter never sees a value outside `[0, 1]`, which would silently empty or bypass the cut.
+
 `bounding_geometry` is the region of `--bounding-wkt`: the polygon for the exact containment and
 its envelope for the rtree. the last pass of both services runs in one order — quality (the
 similarity, or `1 - distance / 100 m` for a coordinate), the exact containment in the polygon (the

@@ -55,6 +55,17 @@ pub(super) fn apply_filters_and_truncate(matches: &mut Vec<query_match>, opts: &
   matches.truncate(MAX_RESULTS as usize);
 }
 
+pub fn parse_min_quality(text: &str) -> Result<f64, String> {
+  let value: f64 = text
+    .trim()
+    .parse()
+    .map_err(|e| format!("quality: not a number: {e}"))?;
+  if !(0.0..=1.0).contains(&value) {
+    return Err(format!("quality: must be between 0.0 and 1.0, got {value}"));
+  }
+  Ok(value)
+}
+
 pub(super) fn coordinate_quality(distance_in_meters: Option<u32>) -> f64 {
   match distance_in_meters {
     Some(d) => (1.0 - d as f64 / COORDINATE_QUALITY_REFERENCE_M).clamp(0.0, 1.0),

@@ -11,10 +11,8 @@ fn _00_00_serves_status_from_a_background_thread() {
   let index = guard.path.join("idx.tantivy").to_string_lossy().into_owned();
   drop(crate::database::open_write(&db));
 
-  let port = {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("failed to probe a free port");
-    listener.local_addr().expect("probe listener addr").port()
-  };
+  let server = crate::http::bind("127.0.0.1:0");
+  let port = server.addr().port();
 
   // the server blocks on tiny_http forever, so it runs on a detached thread that dies with the
   // test process; llvm-cov still counts its lines because profiles flush on process exit.
@@ -22,8 +20,7 @@ fn _00_00_serves_status_from_a_background_thread() {
     command_handler_http_server(
       &db,
       &index,
-      "127.0.0.1",
-      port,
+      server,
       1,
       DEFAULT.index_user_friendly_name.boosts,
       DEFAULT.house_numbers,
