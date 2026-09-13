@@ -1,4 +1,7 @@
 pub mod decoder;
 pub mod entity;
+pub mod payload;
+pub mod repository;
 
-pub use entity::{osm_member_type, osm_relation};
+pub use entity::{osm_relation, osm_relation_row};
+pub use repository::osm_relations;

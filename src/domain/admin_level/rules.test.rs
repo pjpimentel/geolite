@@ -1,6 +1,6 @@
 use super::super::scale::level;
 use super::{extraction_rules, resolve_rules};
-use crate::database::osm_ways::filters;
+use crate::domain::osm_way::way_filter;
 
 // 00: nivel sem override e sem default retorna listas vazias
 #[test]
@@ -15,8 +15,8 @@ fn _00_level_without_rules_resolves_to_empty_lists() {
 fn _01_level_10_resolves_to_default_include() {
   let (include, exclude) = resolve_rules(level::neighborhood, &[]);
   assert_eq!(include.len(), 2);
-  assert!(matches!(include[0], filters::include_place_neighbourhood));
-  assert!(matches!(include[1], filters::include_place_suburb));
+  assert!(matches!(include[0], way_filter::include_place_neighbourhood));
+  assert!(matches!(include[1], way_filter::include_place_suburb));
   assert!(exclude.is_empty());
 }
 
@@ -26,15 +26,15 @@ fn _02_level_12_resolves_to_default_exclude() {
   let (include, exclude) = resolve_rules(level::street, &[]);
   assert!(include.is_empty());
   assert_eq!(exclude.len(), 5);
-  assert!(matches!(exclude[0], filters::exclude_place_neighbourhood));
-  assert!(matches!(exclude[4], filters::exclude_waterway));
+  assert!(matches!(exclude[0], way_filter::exclude_place_neighbourhood));
+  assert!(matches!(exclude[4], way_filter::exclude_waterway));
 }
 
 // 03: override do mesmo nivel tem precedencia sobre o default
 #[test]
 fn _03_override_takes_precedence_over_default() {
-  const INCLUDE: &[filters] = &[filters::include_highway_primary];
-  const EXCLUDE: &[filters] = &[filters::exclude_building];
+  const INCLUDE: &[way_filter] = &[way_filter::include_highway_primary];
+  const EXCLUDE: &[way_filter] = &[way_filter::exclude_building];
   let overrides = [extraction_rules {
     level: level::street,
     include: INCLUDE,
@@ -43,14 +43,14 @@ fn _03_override_takes_precedence_over_default() {
 
   let (include, exclude) = resolve_rules(level::street, &overrides);
   assert_eq!(include.len(), 1);
-  assert!(matches!(include[0], filters::include_highway_primary));
+  assert!(matches!(include[0], way_filter::include_highway_primary));
   assert_eq!(exclude.len(), 1);
 }
 
 // 04: override de outro nivel nao afeta o nivel consultado
 #[test]
 fn _04_override_for_another_level_is_ignored() {
-  const INCLUDE: &[filters] = &[filters::include_highway_primary];
+  const INCLUDE: &[way_filter] = &[way_filter::include_highway_primary];
   let overrides = [extraction_rules {
     level: level::state,
     include: INCLUDE,

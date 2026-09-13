@@ -3,10 +3,10 @@
 > one folder per concept, each owning everything that concept needs
 
 the domain is organised as vertical slices. a concept's folder holds its model and methods, its
-policy, its services and — one patch release at a time — its own persistence. the technical
-modules that came before (`extract`, `index`, `query`, `optimize`, `database`) are being emptied
-into these folders and disappear as the concepts arrive; `index`, `extract`, `optimize` and `query`
-are gone.
+policy, its services and its own persistence. the technical modules that came before (`extract`,
+`index`, `query`, `optimize`) were emptied into these folders one patch release at a time and are
+gone; `database` is what a driver layer is — the connection lifecycle, the schema version, the
+merge, the shared helpers and the generic jsonb codec — and owns no table.
 
 ```
 admin_level/    a named administrative area — the `admin_levels` table
@@ -57,18 +57,26 @@ osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   osm_data          the pass that walks the data blobs and fills the three element tables
   http_client       the one ureq agent the slice uses
 osm_tag/        the openstreetmap tag vocabulary — shared, and not a table
-  key               the shape of a key: the json path that reads it, and what a valid key looks like
+  key               the keys the code reasons about, their osm literal and their json path; what a valid key looks like
+  value             the keys whose values are a closed set: place, highway, leisure
   policy            which keys survive extraction: an include list, an ignore list, or neither
-  select            the sql that reads a tag out of a stored payload
+  select            the sql that reads a tag out of a stored payload, compares it or normalises it
 osm_node/       an openstreetmap node — the `osm_data.osm_nodes` table
-  entity            the node itself: id, coordinates, tags
+  entity            the node itself: id, coordinates, tags; and the storage row with its encoded payload
   decoder           the pbf wire form, plain and dense, into nodes
+  payload           the jsonb written into the `payload` column
+  repository        the ddl, the index and the bulk insert
 osm_way/        an openstreetmap way — the `osm_data.osm_ways` table
-  entity            the way itself: id, node references, tags
+  entity            the way itself: id, node references, tags; and the storage row with its encoded payload
   decoder           the pbf wire form, with its delta-encoded node references
+  payload           the jsonb written into the `payload` column
+  filter            which ways a level wants, as meaning rather than as sql
+  repository        the ddl, the index, the bulk insert, the candidate query and the coordinates of a way
 osm_relation/   an openstreetmap relation — the `osm_data.osm_relations` table
-  entity            the relation, its members and their types
+  entity            the relation, its members and their types; and the storage row with its encoded payload
   decoder           the pbf wire form, with its delta-encoded member ids
+  payload           the jsonb written into the `payload` column
+  repository        the ddl, the index, the bulk insert, the candidate queries and the coordinates of a relation
 ```
 
 every folder follows the same shape: `entity` is the row, `repository` is its sql, and the value
@@ -81,9 +89,8 @@ whose rule runs on both sides of the database: the same value object normalises 
 extraction writes and recognises what the query reads.
 `osm_pbf_file` is a folder without an `entity`; `osm_tag` and `address` are the two that are not a
 table — the first is shared vocabulary, the second composes what the others read and writes
-nothing — all for reasons given below; `osm_node`, `osm_way` and
-`osm_relation` arrived with their entity and decoder only — their payload encoding and their
-persistence still sit in `src/database` and come with each one's own slice.
+nothing — all for reasons given below; `osm_node`, `osm_way` and `osm_relation` were the last to
+take their persistence out of `src/database`, which owns no table any more.
 
 ## the shape every folder holds to
 
@@ -210,8 +217,8 @@ what the cli keeps is the run, not the level: the `--recreate` wipe before the l
 last level the index and the count on the ledger — the index is created once at the end because
 maintaining it through the upserts is the expensive way round.
 
-each stage reads its candidates through the legacy repositories (`database::osm_relations`,
-`database::osm_ways`) and writes through `repository::batch_upsert`. the relations stage assembles
+each stage reads its candidates through the element repositories (`osm_relation::repository`,
+`osm_way::repository`) and writes through `repository::batch_upsert`. the relations stage assembles
 the member ways of each relation into rings (`geometry::assemble_rings`), closes each ring that
 comes back to its start into a polygon wound clockwise, the way spatialite's `st_buildarea` does,
 and falls back to a multi-line when nothing closes; a place way closes into one polygon by the same
@@ -233,10 +240,9 @@ useful data.
 | 12 | every way | the simplest selection | ways tagged `place=neighbourhood` or `place=suburb` | already captured at level 10 |
 | 12 | | | ways tagged `leisure=park`, `building` or `waterway` | noise in street-level data |
 
-the filter vocabulary (`filters`) still lives in `database::osm_ways`, where each variant is a
-sql clause; it moves to `osm_way::filter` with that slice, and `rules` is its last consumer
-outside `src/database`. this table is the reference for those defaults: a change to `rules.rs`
-changes it too (CLAUDE.md, rule 8).
+the filter vocabulary is `osm_way::way_filter`: `rules` selects with it, and only the way's
+repository knows what each variant means in sql. this table is the reference for those defaults:
+a change to `rules.rs` changes it too (CLAUDE.md, rule 8).
 
 ## admin_level_hierarchy
 
@@ -702,19 +708,23 @@ under `domain` rather than beside the file's format because a tag carries meanin
 
 ### two boundaries, and they matter more than the contents
 
-**it owns the key and the shape of its value** — the json path that reads a key, what a valid key
-looks like, and the sql that coalesces one tag out of several. it does **not** own what a
-*combination* of tags means. "a way with a `highway` tag and no `building` tag is a street" belongs
-to the way; which tags carry a house number belongs to the house number, and is `house_number::policy`
-today. the way's rule still sits in `src/database/osm_ways.rs` and moves into its own folder, not
-here.
+**it owns the key and the shape of its value** — the osm literal and the json path of a key, what
+a valid key looks like, the closed value set where there is one (`value`: `place`, `highway`,
+`leisure`), and the sql that reads, compares, coalesces or normalises a tag (`select`). it does
+**not** own what a *combination* of tags means. "a way with a `highway` tag and no `building` tag
+is a street" is `osm_way::way_filter`; which tags carry a house number is `house_number::policy`.
+blurring that would undo the split those slices were built on.
 
 **it names the interpreted vocabulary, not the stored one.** `policy` is the filter the pipeline
 runs while decoding — an absent include list means "every tag" — and stays stringly-typed, because
-the pipeline stores keys nobody here has heard of. the closed, typed set of the keys the code
-reasons about (`name`, `admin_level`, `place`, `highway`, the postcode and country aliases) arrives
-with its first consumer, the way and relation repositories, so that a misspelled key becomes a
-compile error rather than a query that quietly returns nothing.
+the pipeline stores keys nobody here has heard of. `key::osm_tag` is the closed, typed set of the
+keys the code reasons about (`name`, `place`, `highway`, `leisure`, `building`, `waterway`, the
+postcode and country aliases), so that a misspelled key is a compile error rather than a query that
+quietly returns nothing; a tag chosen by a preset (`name_priority`, the house-number tags) stays a
+string and goes through `coalesce_of`. one key is deliberately missing: `admin_level`. the relation
+repository filters on it through an expression index, and sqlite only takes such an index when the
+query spells the expression exactly as the index does — the bare `'$.tags.admin_level'` — so that
+predicate is written once, as a literal, next to the index that serves it.
 
 `policy` sits beside `key` because a policy belongs with the vocabulary it filters. it is **not**
 the pbf file's — the format does not care which tags you keep, `osm_pbf_file` never reads it, and
@@ -738,12 +748,39 @@ wrong — and it is what the name select had been doing since before this folder
 
 ## osm_node, osm_way, osm_relation
 
-the three element tables of the `osm_data` database, one folder each, opened with what the
-`osm_data` pass needs from them: the entity and the decoder. the storage row, the jsonb payload
-and the repository — ddl, index, bulk insert and the candidate queries — still live in
-`src/database/osm_*.rs` and `src/database/jsonb.rs`, and move here with each folder's own slice.
+the three element tables of the `osm_data` database, one folder each: the entity and its decoder,
+the storage row, the jsonb payload and the repository — ddl, index, bulk insert and, for ways and
+relations, the candidate queries the admin-level stages read.
 
 a decoder takes the wire form from `osm_pbf_file::message` — the block's string table and, for
 nodes, its `block_scale` (granularity and offsets) — and a `tag_policy`, and returns entities. the
 dependency runs one way: the file's `osm_data` pass calls the element decoders; no element folder
 knows the pass exists.
+
+### the payload — `payload` and the row
+
+a row is `(id, osm_pbf_chunk_id, payload)`, and `payload` is sqlite's jsonb binary written by hand.
+`database::jsonb` is the generic codec — headers, size classes, objects and arrays, a scratch pool —
+and each folder's `payload::encode` is the shape: `lat`, `lon` and `tags` for a node, `refs` and
+`tags` for a way, `tags` and `members` (`type` as `n`/`w`/`r`, `id`, `role`) for a relation. the
+codec knows no entity, and the paths every reader uses (`$.tags.…`, `$.refs`, `$.members`) are
+fixed by the writer in the same folder. the row is encoded in the decoder threads
+(`osm_node_row::encode` and its siblings), not at insert time: the single writer thread only binds
+blobs, which is what keeps the pipeline parallel. the three inserts share
+`database::insert_in_chunks`, one multi-row statement per ten thousand rows, sized under sqlite's
+variable limit.
+
+### the filters — `osm_way::filter` and `repository`
+
+`way_filter` is the meaning — which ways a level wants (`include_place_neighbourhood`,
+`exclude_building`, …); `admin_level::rules` selects with it and a preset may override it. the sql
+of each variant lives in the way's repository alone, built from `osm_tag::select` over typed keys
+and values, so the vocabulary and its translation are separate and the translation has one owner.
+
+### the candidate queries and the expression index
+
+`osm_relation::repository` answers which relations of a level are still to index and
+`osm_way::repository` which ways; both anti-join `main.admin_levels`. the relation queries filter
+on the `admin_level` tag through the expression index `osm_relations_search_by_admin_level` and
+keep that expression as a bare literal, for the reason given under `osm_tag`; a unit test reads the
+query plan so a rewrite cannot lose the index quietly.

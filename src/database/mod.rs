@@ -2,20 +2,6 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::domain::table;
 
-#[macro_export]
-macro_rules! impl_table_ops {
-  ($vis:vis, $create:expr, $drop:expr) => {
-    $vis fn create_table(conn: &rusqlite::Connection) {
-      conn.execute_batch($create).expect("failed to create table");
-    }
-    #[allow(dead_code)]
-    $vis fn drop_table(conn: &rusqlite::Connection) {
-      conn.execute_batch($drop).expect("failed to drop table");
-    }
-    // TODO: create indexes
-  };
-}
-
 // bumped whenever the on-disk schema changes in a way that makes builds incompatible;
 // stamped into every writable database via PRAGMA user_version. open_write_main refuses a
 // database stamped with another version, and `geolite merge` refuses to combine one.
@@ -27,9 +13,9 @@ pub mod merge;
 #[cfg(test)]
 #[path = "merge_fixtures.test.rs"]
 pub(crate) mod merge_fixtures;
-pub mod osm_nodes;
-pub mod osm_relations;
-pub mod osm_ways;
+#[cfg(test)]
+#[path = "jsonb_fixtures.test.rs"]
+pub(crate) mod jsonb_fixtures;
 
 pub(crate) fn placeholders_for(count: usize) -> String {
   vec!["?"; count].join(",")
@@ -53,6 +39,46 @@ pub(crate) fn query_by_ids<T>(
     .expect("failed to query by ids")
     .map(|r| r.expect("failed to read row"))
     .collect()
+}
+
+const INSERT_CHUNK_SIZE: usize = 10_000;
+
+pub(crate) fn insert_in_chunks<const N: usize>(
+  conn: &Connection,
+  sql_head: &str,
+  rows: &[[&dyn rusqlite::ToSql; N]],
+) {
+  // SQLITE_MAX_VARIABLE_NUMBER is 32766 on the bundled build: a wider row would overflow it
+  const { assert!(N * INSERT_CHUNK_SIZE <= 32_766) };
+  for chunk in rows.chunks(INSERT_CHUNK_SIZE) {
+    let sql = multi_insert_sql(sql_head, N, chunk.len());
+    let mut stmt = conn
+      .prepare_cached(&sql)
+      .expect("failed to prepare chunked insert");
+    stmt
+      .execute(rusqlite::params_from_iter(chunk.iter().flatten()))
+      .expect("failed to insert chunk");
+  }
+}
+
+fn multi_insert_sql(sql_head: &str, columns: usize, rows: usize) -> String {
+  use std::fmt::Write;
+  let mut sql = String::with_capacity(sql_head.len() + rows * (columns * 8 + 4));
+  sql.push_str(sql_head);
+  for row in 0..rows {
+    if row > 0 {
+      sql.push_str(",\n");
+    }
+    sql.push_str("  (");
+    for column in 0..columns {
+      if column > 0 {
+        sql.push_str(", ");
+      }
+      write!(sql, "?{}", row * columns + column + 1).unwrap();
+    }
+    sql.push(')');
+  }
+  sql
 }
 
 pub fn osm_data_path(main_path: &str) -> String {
@@ -121,9 +147,9 @@ pub fn destroy_data(
   }
   let conn = if osm_data && !osm_pbf_blob_chunks {
     let conn = open_write(path);
-    osm_nodes::drop_table(&conn);
-    osm_ways::drop_table(&conn);
-    osm_relations::drop_table(&conn);
+    crate::domain::osm_node::repository::drop_table(&conn);
+    crate::domain::osm_way::repository::drop_table(&conn);
+    crate::domain::osm_relation::repository::drop_table(&conn);
     conn
   } else {
     open_write_main(path)
@@ -209,9 +235,9 @@ pub fn open_write(path: &str) -> Connection {
     )
     .expect("failed to set osm_data pragmas");
   crate::domain::osm_pbf_file::osm_pbf_blob_chunks::create_table(&conn);
-  osm_nodes::create_table(&conn);
-  osm_ways::create_table(&conn);
-  osm_relations::create_table(&conn);
+  crate::domain::osm_node::osm_nodes::create_table(&conn);
+  crate::domain::osm_way::osm_ways::create_table(&conn);
+  crate::domain::osm_relation::osm_relations::create_table(&conn);
   conn
 }
 
@@ -251,3 +277,7 @@ pub fn read_user_version(path: &str) -> u32 {
     .map(|v| v as u32)
     .unwrap_or(0)
 }
+
+#[cfg(test)]
+#[path = "mod.test.rs"]
+mod tests;

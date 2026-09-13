@@ -25,12 +25,14 @@ pub(super) fn run(
   name_priority: &[&str],
   mut progress: impl FnMut(progress_report),
 ) {
-  let neighborhood = level::neighborhood.value();
   let (include, _) = resolve_rules(level::neighborhood, rules);
   let mut candidate_ids: Vec<u64> = Vec::new();
   for filter in include {
-    let ids =
-      crate::database::osm_ways::remaining_ids_by_tags(conn, neighborhood, std::slice::from_ref(filter));
+    let ids = crate::domain::osm_way::repository::remaining_ids_by_tags(
+      conn,
+      level::neighborhood,
+      std::slice::from_ref(filter),
+    );
     candidate_ids.extend(ids);
   }
   candidate_ids.sort_unstable();
@@ -72,7 +74,7 @@ fn load_chunk(
   level: level,
   name_priority: &[&str],
 ) -> Vec<way_work> {
-  let raw_rows = crate::database::osm_ways::way_coords_chunk(conn, chunk, name_priority);
+  let raw_rows = crate::domain::osm_way::repository::way_coords_chunk(conn, chunk, name_priority);
 
   let mut way_order: Vec<u64> = Vec::new();
   let mut way_metas: std::collections::HashMap<u64, way_meta> = std::collections::HashMap::new();

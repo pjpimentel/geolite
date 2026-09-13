@@ -76,9 +76,9 @@ impl admin_level {
       match stage.source {
         source::relations => {
           let found =
-            crate::database::osm_relations::all_ids_by_admin_level(conn, level.value()).len() as u64;
+            crate::domain::osm_relation::repository::all_ids_by_admin_level(conn, level).len() as u64;
           let pending =
-            crate::database::osm_relations::remaining_ids_by_admin_level(conn, level.value());
+            crate::domain::osm_relation::repository::remaining_ids_by_admin_level(conn, level);
           emit(extract_step::candidates {
             found,
             pending: pending.len() as u64,

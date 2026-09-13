@@ -7,9 +7,9 @@ use std::{
 };
 
 use crate::database::jsonb;
-use crate::database::osm_nodes::osm_node_row;
-use crate::database::osm_relations::osm_relation_row;
-use crate::database::osm_ways::osm_way_row;
+use crate::domain::osm_node::osm_node_row;
+use crate::domain::osm_relation::osm_relation_row;
+use crate::domain::osm_way::osm_way_row;
 use crate::domain::osm_node::decoder::{
   block_scale, decode as decode_nodes, decode_dense as decode_dense_nodes,
 };
@@ -298,31 +298,13 @@ fn decode_raw_blob(
     chunk_type::data => {
       let output = decode_blob(&raw.data, opts);
       for n in output.nodes {
-        let mut payload = Vec::with_capacity(128);
-        encoder.encode_osm_node(&mut payload, &n);
-        nodes.push(osm_node_row {
-          id: n.id as u64,
-          osm_pbf_chunk_id: raw.chunk.id,
-          payload,
-        });
+        nodes.push(osm_node_row::encode(&n, raw.chunk.id, encoder));
       }
       for w in output.ways {
-        let mut payload = Vec::with_capacity(128 + w.refs.len() * 4);
-        encoder.encode_osm_way(&mut payload, &w);
-        ways.push(osm_way_row {
-          id: w.id as u64,
-          osm_pbf_chunk_id: raw.chunk.id,
-          payload,
-        });
+        ways.push(osm_way_row::encode(&w, raw.chunk.id, encoder));
       }
       for r in output.relations {
-        let mut payload = Vec::with_capacity(128 + r.members.len() * 32);
-        encoder.encode_osm_relation(&mut payload, &r);
-        relations.push(osm_relation_row {
-          id: r.id as u64,
-          osm_pbf_chunk_id: raw.chunk.id,
-          payload,
-        });
+        relations.push(osm_relation_row::encode(&r, raw.chunk.id, encoder));
       }
     }
     chunk_type::header => {}
@@ -558,9 +540,9 @@ fn writer_thread(
       let tx = conn
         .unchecked_transaction()
         .expect("failed to begin transaction");
-      crate::database::osm_nodes::insert_rows(&tx, &batch.nodes);
-      crate::database::osm_ways::insert_rows(&tx, &batch.ways);
-      crate::database::osm_relations::insert_rows(&tx, &batch.relations);
+      crate::domain::osm_node::repository::insert_rows(&tx, &batch.nodes);
+      crate::domain::osm_way::repository::insert_rows(&tx, &batch.ways);
+      crate::domain::osm_relation::repository::insert_rows(&tx, &batch.relations);
       tx.commit().expect("failed to commit");
 
       prog_tx

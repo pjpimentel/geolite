@@ -2,8 +2,12 @@
 
 ## **2026-XX-XX** - 0.0.10
 
-1. MODIFIED database mod
-1. REMOVED unit tests
+1. REMOVED `database/osm_nodes`, `database/osm_ways` and `database/osm_relations` mods, and the `impl_table_ops!` macro: `database` owns no table any more.
+1. ADDED `osm_node`, `osm_way` and `osm_relation` `payload` and `repository`, and `osm_way::filter`: each element table owns its jsonb shape and its persistence; `database` keeps the connection lifecycle, `merge`, the shared helpers and the generic jsonb codec.
+1. ADDED `osm_tag::osm_tag`, `osm_tag::value` and `select::{equals, not_in, is_null, is_not_null, normalized_coalesce}`: the way filters and the post-code and country aliases are typed instead of sql literals; the stored data does not change.
+1. ADDED `database::insert_in_chunks`: the one chunked multi-row insert behind the three element repositories.
+1. MODIFIED `admin_level::extraction_rules`: `include` and `exclude` are `osm_way::way_filter`.
+1. REMOVED the `ToSql`/`FromSql` impls and the serde derives of `osm_node`, `osm_way` and `osm_relation`: nothing read an element back through rusqlite.
 
 ## **2026-09-13** - 0.0.9
 

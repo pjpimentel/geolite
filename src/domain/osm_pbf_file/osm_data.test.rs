@@ -663,7 +663,7 @@ fn _01_03_writer_notifies_decoders_after_draining_a_full_buffer() {
   let buffer = test_write_buffer(1, 1);
   {
     let mut state = buffer.inner.lock().expect("buffer mutex");
-    state.current.nodes.push_back(crate::database::osm_nodes::osm_node_row {
+    state.current.nodes.push_back(crate::domain::osm_node::osm_node_row {
       id: 1,
       osm_pbf_chunk_id: 1,
       payload: vec![0x0c],
@@ -754,7 +754,7 @@ fn _02_00_decoded_blob_bytes_sums_stack_and_heap() {
   assert_eq!(decoded_blob_bytes(&empty), 0);
 
   let filled = decoded_blob {
-    nodes: vec![crate::database::osm_nodes::osm_node_row {
+    nodes: vec![crate::domain::osm_node::osm_node_row {
       id: 1,
       osm_pbf_chunk_id: 1,
       payload: vec![0u8; 64],
@@ -774,19 +774,19 @@ fn _02_01_buffer_row_count_sums_every_queue() {
   let mut data = buffer_data::default();
   assert_eq!(data.row_count(), 0);
 
-  data.nodes.push_back(crate::database::osm_nodes::osm_node_row {
+  data.nodes.push_back(crate::domain::osm_node::osm_node_row {
     id: 1,
     osm_pbf_chunk_id: 1,
     payload: Vec::new(),
   });
-  data.ways.push_back(crate::database::osm_ways::osm_way_row {
+  data.ways.push_back(crate::domain::osm_way::osm_way_row {
     id: 2,
     osm_pbf_chunk_id: 1,
     payload: Vec::new(),
   });
   data
     .relations
-    .push_back(crate::database::osm_relations::osm_relation_row {
+    .push_back(crate::domain::osm_relation::osm_relation_row {
       id: 3,
       osm_pbf_chunk_id: 1,
       payload: Vec::new(),

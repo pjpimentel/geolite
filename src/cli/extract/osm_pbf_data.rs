@@ -1,6 +1,7 @@
 use super::resolved_input;
 use crate::domain::osm_pbf_file::data_opts;
 use crate::domain::osm_tag::tag_policy;
+use crate::domain::table;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::time::Instant;
@@ -202,7 +203,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_nodes");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::database::osm_nodes::create_indexes(&conn);
+  crate::domain::osm_node::osm_nodes::create_indexes(&conn);
   bar.disable_steady_tick();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_nodes in {:.1}s",
@@ -212,7 +213,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_ways");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::database::osm_ways::create_indexes(&conn);
+  crate::domain::osm_way::osm_ways::create_indexes(&conn);
   bar.disable_steady_tick();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_ways in {:.1}s",
@@ -222,7 +223,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_relations");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::database::osm_relations::create_indexes(&conn);
+  crate::domain::osm_relation::osm_relations::create_indexes(&conn);
   bar.finish_and_clear();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_relations in {:.1}s",
