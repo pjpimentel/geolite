@@ -1,6 +1,11 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.9
+## **2026-XX-XX** - 0.0.10
+
+1. MODIFIED database mod
+1. REMOVED unit tests
+
+## **2026-09-12** - 0.0.9
 
 1. REMOVED `database/house_numbers` mod.
 1. REMOVED `extract` mod.
@@ -12,6 +17,7 @@
 1. MODIFIED `query` and `http-server` under the `colombia` preset: a compound number (`82-52`, `25B-48`, `16i56`) and the `#` prefix are read from the input, match their stored value exactly and are never interpolated; no rebuild required.
 1. ADDED `house_number` domain (`entity`, `value`, `policy`, `strategy`, `token`, `resolution`, `repository`, `extract`, `linker`).
 1. ADDED `house_number_link::extract`: the house-number stage as one use case of the domain.
+1. ADDED `database::compact` and `database::remove_osm_data_files`: the two steps of `optimize` as functions of the database module; the cli only renders them.
 1. ADDED `osm_pbf_file::delete`: the file, its blob chunks and its download columns (`path`, `size_bytes`, `md5`, `downloaded_at`) go together.
 1. MODIFIED `optimize delete-intermediary-data`: the ledger row of every deleted file forgets its path, so nothing resolves to a file that is gone; the pbf files are reported before the `osm_data` sibling.
 1. MODIFIED `build` and `download`: one rule (`input_kind`) tells a url, a local path and a geofabrik id apart; `download` refuses a path without asking the catalogue.
