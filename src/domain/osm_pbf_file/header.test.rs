@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::extract::pbf_fixtures::{self, blob_compression, header_blob, header_spec};
+use crate::domain::pbf_fixtures::{self, blob_compression, header_blob, header_spec};
 
 struct scene {
   temp: pbf_fixtures::temp_scene,

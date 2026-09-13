@@ -479,3 +479,40 @@ fn probe_free_port() -> u16 {
     .expect("failed to read the probe address")
     .port()
 }
+
+// the stages colour their verbs with ansi escapes; the words are asserted without them
+pub fn plain(text: &str) -> String {
+  let mut out = String::with_capacity(text.len());
+  let mut rest = text;
+  while let Some(start) = rest.find('\x1b') {
+    out.push_str(&rest[..start]);
+    rest = match rest[start..].find('m') {
+      Some(end) => &rest[start + end + 1..],
+      None => "",
+    };
+  }
+  out.push_str(rest);
+  out
+}
+
+// a text query under a preset, against the database of a scratch or of the world
+pub fn query_at(w: &world, data_path: &Path, preset: &str, text: &str) -> serde_json::Value {
+  let out = w.geolite_in(
+    data_path,
+    &["--preset", preset, "query", text, "--include-wkt", "false"],
+  );
+  assert_eq!(
+    out.status, 0,
+    "query {text:?} exited {}:\n{}",
+    out.status, out.stderr
+  );
+  serde_json::from_str(&out.stdout).expect("the query must print json")
+}
+
+// the wkb column as it is stored: spatialite's blob layout
+pub fn decode_wkb(blob: &[u8]) -> geo::Geometry<f64> {
+  use geozero::ToGeo;
+  geozero::wkb::SpatiaLiteWkb(blob)
+    .to_geo()
+    .unwrap_or_else(|e| panic!("undecodable geometry: {e}"))
+}

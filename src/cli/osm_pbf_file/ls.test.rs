@@ -1,6 +1,6 @@
 use super::command_handler_osm_pbf_file_ls;
 use crate::cli::osm_pbf_file::osm_pbf_file_ls_source;
-use crate::extract::pbf_fixtures::tempdir_guard;
+use crate::domain::pbf_fixtures::tempdir_guard;
 use crate::domain::osm_pbf_file::http_stubs::start_json_server;
 
 const TWO_FEATURES: &str = r#"{"features":[

@@ -1,6 +1,9 @@
 use crate::common::ask::ask;
 use crate::common::harness::{encode, get, scenario, world, world_cell};
-use crate::common::query::{first, levels_of, matches, way_ids};
+use crate::common::query::{
+  distances, first, leaves, level_at, levels_of, matches, name_at, names_at, point_of, way_ids,
+  wkt_at,
+};
 use geo::Geometry;
 use geozero::{ToGeo, wkb::SpatiaLiteWkb};
 use serde_json::{Value, json};
@@ -25,6 +28,20 @@ const INSIDE_POLYGON: &str =
   "POLYGON((-46.33 -23.98,-46.31 -23.98,-46.31 -23.96,-46.33 -23.96,-46.33 -23.98))";
 const OUTSIDE_POLYGON: &str =
   "POLYGON((-45.0 -25.5,-44.9 -25.5,-44.9 -25.4,-45.0 -25.4,-45.0 -25.5))";
+
+// the point of house number 197 on a single-segment street carrying the numbers 70, 197, 232, 235
+const NUMBERED_POINT: &str = "-23.98202,-46.31005";
+const NUMBERED_STREET_NAME: &str = "Rua Januário dos Santos";
+const APARECIDA_POLYGON: &str = "POLYGON((-46.3110 -23.9830,-46.3090 -23.9830,-46.3090 -23.9810,-46.3110 -23.9810,-46.3110 -23.9830))";
+// ~700 m east of the numbered point: it holds one street, and that street is not among the ten
+// nearest to the point
+const FAR_POLYGON: &str = "POLYGON((-46.3040 -23.9830,-46.3020 -23.9830,-46.3020 -23.9810,-46.3040 -23.9810,-46.3040 -23.9830))";
+const POST_CODED_STREET: &str = "Ateneu São Vicente";
+const POST_CODED_POINT: &str = "-23.96675,-46.37675";
+// rua aureliano coutinho lies inside conjunto habitacional jaú, which lies inside aparecida: two
+// ancestors of level 10
+const NESTED_POINT: &str = "-23.973439,-46.309747";
+const NESTED_QUERY: &str = "rua aureliano coutinho, conjunto habitacional jau, santos";
 
 const SQL_SELECT_BOUNDARY: &str = "
   SELECT admin_level, name, wkb
@@ -297,6 +314,51 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
   );
 }
 
+// 00.06. result quality: the number appended on the coordinate path is the nearest stored point
+// within 50 m of the query, measured to the number and not to the street
+#[test]
+#[ignore]
+fn _00_06_a_house_number_within_50_m_of_the_point_is_appended_on_the_coordinate_path() {
+  for (point, number) in [
+    (NUMBERED_POINT, Some("197")),
+    // 33 m from the street, 47 m from number 197
+    ("-23.98160,-46.31005", Some("197")),
+    // on the street, but 59 m from number 70 and 69 m from number 197
+    ("-23.98158,-46.30958", None),
+    // 1.8 m from 232, 6.7 m from 235, 25 m from 197
+    ("-23.98226,-46.31031", Some("232")),
+  ] {
+    let result = world().run(&[point]);
+    let top = first(&result);
+    assert_eq!(
+      name_at(top, 12).as_deref(),
+      Some(NUMBERED_STREET_NAME),
+      "point {point}"
+    );
+    assert_eq!(name_at(top, 30).as_deref(), number, "point {point}");
+    if number.is_none() {
+      assert_eq!(levels_of(top), [2, 4, 8, 10, 12], "point {point}");
+    }
+  }
+}
+
+// 00.07. result quality: the alias renders on the coordinate path, and a match without a number
+// loses the literal that followed the placeholder
+#[test]
+#[ignore]
+fn _00_07_the_house_number_alias_renders_on_the_coordinate_path() {
+  world().assert_cli(
+    &ask(NUMBERED_POINT)
+      .friendly_name_format("{admin_level_12_name} {house_number}, {admin_level_8_name}"),
+    &json!({
+      "matches": [
+        { "friendly_name": "Rua Januário dos Santos 197, Santos" },
+        { "friendly_name": "Avenida Bartholomeu de Gusmão Santos" },
+      ]
+    }),
+  );
+}
+
 // 01.00. precision guarantee
 #[test]
 #[ignore]
@@ -352,6 +414,65 @@ fn _01_03_last_admin_levels_keeps_only_the_requested_leaf() {
       levels_of(m).last().copied(),
       Some(8),
       "every match must end at the requested level"
+    );
+  }
+}
+
+// 01.04. precision guarantee: the region restricts the candidates before the cut at ten, so the
+// one street inside the polygon is answered even though it is not among the ten nearest
+#[test]
+#[ignore]
+fn _01_04_bounding_wkt_keeps_a_coordinate_match_ranked_beyond_the_ten_nearest() {
+  let w = world();
+  let unbounded = w.run(&[NUMBERED_POINT]);
+  let farthest = *distances(&unbounded)
+    .last()
+    .expect("the unbounded query answers ten streets");
+
+  let far = w.run(&[NUMBERED_POINT, "--bounding-wkt", FAR_POLYGON]);
+  assert!(
+    !matches(&far).is_empty(),
+    "the polygon holds at least one street"
+  );
+  for m in matches(&far) {
+    let (lat, lon) = point_of(m);
+    assert!(
+      (-23.9830..=-23.9810).contains(&lat) && (-46.3040..=-46.3020).contains(&lon),
+      "every match must lie inside the polygon: {}",
+      m["friendly_name"]
+    );
+  }
+  for distance in distances(&far) {
+    assert!(
+      distance > farthest,
+      "the street inside the polygon is farther than the ten nearest"
+    );
+  }
+
+  let nothing = w.run(&[NUMBERED_POINT, "--bounding-wkt", OUTSIDE_POLYGON]);
+  assert!(
+    matches(&nothing).is_empty(),
+    "a polygon over open water holds no street"
+  );
+}
+
+// 01.05. precision guarantee: a coordinate match's quality is 1 - distance / 100 m, and the
+// matches come sorted by distance
+#[test]
+#[ignore]
+fn _01_05_min_quality_on_coordinates_is_one_minus_the_distance_over_100_m() {
+  let w = world();
+  let unfiltered = distances(&w.run(&[NUMBERED_POINT]));
+  assert!(
+    unfiltered.windows(2).all(|pair| pair[0] <= pair[1]),
+    "matches are sorted by distance: {unfiltered:?}"
+  );
+  // the second match sits at 64 m, a quality of 0.36
+  for (min_quality, expected) in [("1", vec![0]), ("0.3", vec![0, 64]), ("0.4", vec![0])] {
+    assert_eq!(
+      distances(&w.run(&[NUMBERED_POINT, "--min-quality", min_quality])),
+      expected,
+      "--min-quality {min_quality}"
     );
   }
 }
@@ -501,6 +622,100 @@ fn _03_04_a_response_past_the_chunked_threshold_stays_identity_encoded() {
   );
 }
 
+// 03.05. regression guard: on the coordinate path the leaf filter reads the level after the
+// house-number step, so every candidate is kept until the end instead of being cut at ten early
+#[test]
+#[ignore]
+fn _03_05_last_admin_levels_on_coordinates_reads_the_leaf_after_the_house_number() {
+  let w = world();
+  let ask_levels = |levels: &str| w.run(&[NUMBERED_POINT, "--last-admin-levels", levels]);
+
+  let numbered = ask_levels("30");
+  assert_eq!(leaves(&numbered), [30]);
+  assert_eq!(name_at(first(&numbered), 30).as_deref(), Some("197"));
+
+  let streets = ask_levels("12");
+  assert_eq!(leaves(&streets), vec![12; 10]);
+  assert_eq!(
+    distances(&streets)[0],
+    64,
+    "the enriched street is dropped: its leaf is 30"
+  );
+  assert!(
+    matches(&streets)
+      .iter()
+      .all(|m| name_at(m, 12).as_deref() != Some(NUMBERED_STREET_NAME)),
+    "the numbered street has one segment and it ends at level 30"
+  );
+
+  assert_eq!(leaves(&ask_levels("12,30"))[0], 30);
+  assert!(
+    matches(&ask_levels("10")).is_empty(),
+    "the coordinate service only answers streets"
+  );
+
+  let both = w.run(&[
+    NUMBERED_POINT,
+    "--bounding-wkt",
+    APARECIDA_POLYGON,
+    "--last-admin-levels",
+    "30",
+  ]);
+  assert_eq!(leaves(&both), [30], "the filters apply as an and");
+}
+
+// 03.06. regression guard: the two services disagree on the street's own post code; the readme
+// documents the divergence and the backlog item that unifies the rule flips this pin
+#[test]
+#[ignore]
+fn _03_06_the_two_services_disagree_on_the_street_post_code() {
+  for (input, post_code) in [
+    (POST_CODED_STREET, Value::Null),
+    (POST_CODED_POINT, json!("11320-060")),
+  ] {
+    world().assert_cli(
+      &ask(input),
+      &json!({
+        "matches": [{
+          "id": 1513188090,
+          "friendly_name": "Ateneu São Vicente, São Paulo, Brasil, 11320-060",
+          "attributes": { "post_code": post_code },
+        }]
+      }),
+    );
+  }
+}
+
+// 03.07. regression guard: within one level the coordinate path lists the ancestors from the
+// general to the specific and the text path the other way round; the readme documents it
+#[test]
+#[ignore]
+fn _03_07_the_two_services_order_same_level_ancestors_differently() {
+  let w = world();
+  for (input, level_10_names, rendered) in [
+    (
+      NESTED_POINT,
+      ["Aparecida", "Conjunto Habitacional Jaú"],
+      "Aparecida",
+    ),
+    (
+      NESTED_QUERY,
+      ["Conjunto Habitacional Jaú", "Aparecida"],
+      "Conjunto Habitacional Jaú",
+    ),
+  ] {
+    let result = w.assert_cli(&ask(input), &json!({ "matches": [{ "id": 371704170 }] }));
+    let top = first(&result);
+    assert_eq!(levels_of(top), [2, 4, 8, 10, 10, 12], "input {input:?}");
+    assert_eq!(names_at(top, 10), level_10_names, "input {input:?}");
+
+    w.assert_cli(
+      &ask(input).friendly_name_format("{admin_level_10_name}"),
+      &json!({ "matches": [{ "friendly_name": rendered }] }),
+    );
+  }
+}
+
 // 04.00. pipeline integrity: the preset is inferred from the source path, not from a flag
 #[test]
 #[ignore]
@@ -531,20 +746,14 @@ fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
   let w = world();
   let result = w.query_json(&[TEXT_QUERY]);
   let top = first(&result);
-  let wkt_at = |level: u64| -> String {
-    top["admin_levels"]
-      .as_array()
-      .and_then(|a| a.iter().find(|l| l["level"].as_u64() == Some(level)))
-      .and_then(|l| l["wkt"].as_str())
-      .unwrap_or_else(|| panic!("level {level} must carry geometry"))
-      .to_string()
-  };
+  let wkt_of =
+    |level: u64| wkt_at(top, level).unwrap_or_else(|| panic!("level {level} must carry geometry"));
   assert!(
-    wkt_at(12).starts_with("LINESTRING"),
+    wkt_of(12).starts_with("LINESTRING"),
     "streets are always lines"
   );
 
-  let country = wkt_at(2);
+  let country = wkt_of(2);
   assert!(
     country.starts_with("MULTIPOLYGON"),
     "a closed country ring is a multipolygon"
@@ -552,6 +761,32 @@ fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
   assert!(
     country.len() > 1024 * 1024,
     "the brazil ring is megabytes; it is what makes the content-length contract testable"
+  );
+}
+
+// 05.01. contract: the coordinate path loads the same geometry per level, and the level appended
+// by the house-number step has none
+#[test]
+#[ignore]
+fn _05_01_include_wkt_attaches_geometry_to_every_level_but_the_house_number_on_the_coordinate_path()
+{
+  // the quality cut leaves the one match at 0 m: every match would carry the country ring
+  let result = world().query_json(&[NUMBERED_POINT, "--min-quality", "1"]);
+  let top = first(&result);
+  assert_eq!(levels_of(top), [2, 4, 8, 10, 12, 30]);
+  assert!(
+    wkt_at(top, 12).is_some_and(|wkt| wkt.starts_with("LINESTRING")),
+    "streets are always lines"
+  );
+  for level in [10, 8, 4, 2] {
+    assert!(
+      wkt_at(top, level).is_some_and(|wkt| wkt.starts_with("MULTIPOLYGON")),
+      "level {level} is an area"
+    );
+  }
+  assert!(
+    level_at(top, 30).is_some_and(|l| l.get("wkt").is_none()),
+    "the house number is a point the service never loads"
   );
 }
 

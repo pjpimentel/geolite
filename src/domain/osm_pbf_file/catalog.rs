@@ -48,6 +48,25 @@ impl source {
   }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum input_kind {
+  url,
+  local_path,
+  geofabrik_id,
+}
+
+impl input_kind {
+  pub fn of(input: &str) -> Self {
+    if input.starts_with("http://") || input.starts_with("https://") {
+      return input_kind::url;
+    }
+    if input.ends_with(".pbf") || input.contains('/') || input.contains('\\') {
+      return input_kind::local_path;
+    }
+    input_kind::geofabrik_id
+  }
+}
+
 pub struct geofabrik_entry {
   pub id: String,
   pub name: String,

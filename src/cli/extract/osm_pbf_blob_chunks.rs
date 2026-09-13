@@ -21,7 +21,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
       path: osm_pbf_file_path,
       name: fname,
       id: _,
-    }) = super::resolve_input(&conn, data_path, sqlite_path, i, input)
+    }) = super::resolve_input(&conn, data_path, i, input)
     else {
       continue;
     };

@@ -1,7 +1,9 @@
 use std::path::Path;
 
-use crate::common::harness::{open_sqlite_at, output, world};
+use crate::common::harness::{open_sqlite_at, output, plain, query_at, world};
+use crate::common::query::first;
 use crate::common::stub;
+use crate::extract::{NODES, REGENERATE, extracted, stage};
 use crate::general::world;
 
 const INDEX: &str = r#"{"features":[
@@ -93,7 +95,7 @@ fn ls(w: &world, dir: &Path, endpoint: &str) -> output {
   out
 }
 
-fn download(w: &world, dir: &Path, endpoint: &str, input: &str) {
+fn download(w: &world, dir: &Path, endpoint: &str, input: &str) -> output {
   let out = w.geolite_in(
     dir,
     &[
@@ -107,6 +109,28 @@ fn download(w: &world, dir: &Path, endpoint: &str, input: &str) {
     ],
   );
   assert_eq!(out.status, 0, "download {input} failed:\n{}", out.stderr);
+  out
+}
+
+fn download_columns(conn: &rusqlite::Connection, filter: &str) -> (i64, String) {
+  conn
+    .query_row(
+      &format!("SELECT size_bytes, md5 FROM osm_pbf_files WHERE {filter}"),
+      [],
+      |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .expect("failed to read the download columns")
+}
+
+// what a deleted download leaves behind: nothing in its three columns
+fn download_state(conn: &rusqlite::Connection) -> (Option<i64>, Option<String>, Option<i64>) {
+  conn
+    .query_row(
+      "SELECT size_bytes, md5, downloaded_at FROM osm_pbf_files",
+      [],
+      |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )
+    .expect("failed to read the download columns")
 }
 
 // 00. the ledger of the shared build
@@ -397,13 +421,7 @@ fn _06_download_by_geofabrik_id_records_a_geofabrik_origin_with_its_path() {
     alpha.path.as_deref(),
     Some(joined(&dir, "alpha.osm.pbf").as_str())
   );
-  let (size, md5): (i64, String) = conn
-    .query_row(
-      "SELECT size_bytes, md5 FROM osm_pbf_files WHERE origin_id = 'alpha'",
-      [],
-      |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-    .expect("failed to read the download columns");
+  let (size, md5) = download_columns(&conn, "origin_id = 'alpha'");
   assert_eq!(size as usize, bytes.len());
   assert_eq!(md5, format!("{:x}", md5::compute(&bytes)));
   assert!(index_exists(&conn, "osm_pbf_files_search_by_url"));
@@ -565,9 +583,10 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
   assert_eq!(rows[0].origin, 2);
   assert_eq!(rows[0].url.as_deref(), Some(url.as_str()));
   assert_eq!(
-    rows[0].path.as_deref(),
-    Some(joined(&dir, "alpha.osm.pbf").as_str())
+    rows[0].path, None,
+    "optimize deleted the download, so the ledger must forget its path"
   );
+  assert_eq!(download_state(&conn), (None, None, None));
   for column in [
     "node_count",
     "way_count",
@@ -772,4 +791,157 @@ fn _15_a_database_without_origin_wkt_gains_it_on_the_next_write_command() {
     "the migration keeps every value of the old rows"
   );
   assert!(coverage(&conn, "alpha").is_some());
+}
+
+// 16. download twice
+#[test]
+#[ignore]
+fn _16_downloading_the_same_url_twice_reuses_the_file_and_keeps_one_row() {
+  let w = world();
+  let dir = w.scratch("download_twice");
+  let bytes = fixture_bytes(w);
+  let s = stub::start(INDEX, vec![("alpha.osm.pbf", bytes.clone())]);
+  let url = s.url("/alpha.osm.pbf");
+  download(w, &dir, &s.url("/index.json"), &url);
+
+  let again = plain(&download(w, &dir, &s.url("/index.json"), &url).stdout);
+  for line in ["file already exists", "reused alpha.osm.pbf"] {
+    assert!(again.contains(line), "missing {line:?} in:\n{again}");
+  }
+  assert!(
+    !again.contains("saved"),
+    "the second run must not download again:\n{again}"
+  );
+  let conn = database(&dir);
+  let rows = ledger(&conn);
+  assert_eq!(rows.len(), 1, "one file, one row");
+  assert_eq!(
+    rows[0].path.as_deref(),
+    Some(joined(&dir, "alpha.osm.pbf").as_str())
+  );
+  let (size, md5) = download_columns(&conn, "path IS NOT NULL");
+  assert_eq!(size as usize, bytes.len());
+  assert_eq!(md5, format!("{:x}", md5::compute(&bytes)));
+}
+
+// 17. a path-like input never reaches the catalogue
+#[test]
+#[ignore]
+fn _17_a_path_like_input_is_refused_without_asking_the_catalogue() {
+  let w = world();
+  let dir = w.scratch("download_path_like");
+  let out = w.geolite_in(
+    &dir,
+    &[
+      "osm-pbf-file",
+      "--ls-endpoint",
+      "http://127.0.0.1:1/index.json",
+      "download",
+      "./missing.osm.pbf",
+    ],
+  );
+  assert_eq!(out.status, 0, "stderr: {}", out.stderr);
+  assert!(
+    plain(&out.stderr).contains("is not a valid url nor a known geofabrik id"),
+    "stderr: {}",
+    out.stderr
+  );
+  assert!(
+    !out.stdout.contains("resolving"),
+    "a path never reaches the catalogue:\n{}",
+    out.stdout
+  );
+}
+
+// 18. resolve by ledger id
+#[test]
+#[ignore]
+fn _18_extract_resolves_a_ledger_id_and_names_an_unknown_one() {
+  let w = world();
+  let s = extracted(w, "resolve_by_ledger_id", "2", &[]);
+  let out = plain(&stage(w, &s.dir, &["extract", "osm-pbf-header", "1"]).stdout);
+  for line in [
+    "resolving '1'... done",
+    "extracting header from santos.osm.pbf... done",
+  ] {
+    assert!(out.contains(line), "missing {line:?} in:\n{out}");
+  }
+
+  let unknown = w.geolite_in(&s.dir, &["extract", "osm-pbf-header", "999"]);
+  assert_eq!(unknown.status, 0, "stderr: {}", unknown.stderr);
+  assert!(
+    plain(&unknown.stderr).contains("could not resolve '999'"),
+    "stderr: {}",
+    unknown.stderr
+  );
+}
+
+// 19. a build from a file inside data_path
+#[test]
+#[ignore]
+fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it() {
+  let w = world();
+  let dir = w.scratch("build_inside_data_path");
+  std::fs::copy(&w.pbf, dir.join("santos.osm.pbf")).expect("failed to copy the fixture");
+  let out = w.geolite_in(
+    &dir,
+    &[
+      "--threads",
+      "2",
+      "--preset",
+      "brazil",
+      "build",
+      "santos.osm.pbf",
+    ],
+  );
+  assert_eq!(
+    out.status, 0,
+    "build failed:\n{}\n{}",
+    out.stdout, out.stderr
+  );
+  let stdout = plain(&out.stdout);
+  assert!(stdout.contains("skipping download"), "{stdout}");
+  let pbf = stdout
+    .find("deleted santos.osm.pbf")
+    .unwrap_or_else(|| panic!("the pbf inside data_path must be deleted:\n{stdout}"));
+  let sibling = stdout
+    .find("deleted osm_data.sqlite3")
+    .unwrap_or_else(|| panic!("the osm_data sibling must be deleted:\n{stdout}"));
+  assert!(pbf < sibling, "the pbf is reported before the sibling");
+  assert!(stdout.contains("deleted 2 tables"), "{stdout}");
+  assert!(!dir.join("santos.osm.pbf").exists());
+  assert!(!dir.join("database.osm_data.sqlite3").exists());
+  let listing = plain(&w.geolite_in(&dir, &["osm-pbf-file", "ls", "local"]).stdout);
+  assert!(listing.contains("no pbf files found"), "{listing}");
+
+  let conn = database(&dir);
+  let rows = ledger(&conn);
+  assert_eq!(rows.len(), 1);
+  assert_eq!(rows[0].origin, 0);
+  assert_eq!(rows[0].origin_name.as_deref(), Some("santos.osm.pbf"));
+  assert_eq!(rows[0].path, None, "the ledger forgets a file that is gone");
+  assert_eq!(download_state(&conn), (None, None, None));
+  let (nodes, admins, houses): (i64, i64, i64) = conn
+    .query_row(
+      "SELECT node_count, admin_levels_count, house_numbers_count FROM osm_pbf_files",
+      [],
+      |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )
+    .expect("failed to read the counts");
+  assert_eq!(nodes, NODES, "{REGENERATE}");
+  assert_eq!(admins, count(&conn, "SELECT COUNT(*) FROM admin_levels"));
+  assert_eq!(houses, count(&conn, "SELECT COUNT(*) FROM house_numbers"));
+
+  let unresolved = w.geolite_in(&dir, &["extract", "osm-pbf-header", "1"]);
+  assert!(
+    plain(&unresolved.stderr).contains("could not resolve '1'"),
+    "the deleted file resolves to nothing:\n{}",
+    unresolved.stderr
+  );
+  let result = query_at(w, &dir, "brazil", "rua januario dos santos, santos 197");
+  assert_eq!(
+    first(&result)["house_number"]["kind"],
+    "exact",
+    "the built database is whole"
+  );
 }

@@ -74,49 +74,20 @@ pub fn command_handler_optimize(
   println!();
   match command {
     None => {
-      use std::cell::Cell;
-      crate::cli::require_sqlite(sqlite_path);
-      {
-        let conn = crate::database::open_write(sqlite_path);
-        if crate::domain::admin_level::repository::count_with_geometry(&conn) == 0 {
-          eprintln!("\x1b[1;31merror\x1b[0m: admin_levels is empty — run extract first");
-          return;
-        }
-        if crate::domain::admin_level_hierarchy::repository::count(&conn) == 0 {
-          eprintln!("\x1b[1;31merror\x1b[0m: admin_levels_hierarchy is empty — run index first");
-          return;
-        }
+      if !delete_intermediary_data::command_handler_optimize_delete_intermediary_data(
+        data_path,
+        sqlite_path,
+      ) {
+        return;
       }
-      let delete_start = std::time::Instant::now();
-      let table_count = Cell::new(0u32);
-      crate::optimize::delete_intermediary_data::run(data_path, sqlite_path, |name, bytes| {
-        table_count.set(table_count.get() + 1);
-        println!("\x1b[1;32mdeleted\x1b[0m {name}  {}", fmt_size(bytes));
-      });
-      let delete_total = delete_start.elapsed().as_secs_f64();
-      let n = table_count.get();
-      println!("\x1b[1;32mdeleted\x1b[0m {n} tables in {delete_total:.1}s");
       println!();
-      {
-        use std::io::Write;
-        print!("\x1b[1;32moptimizing\x1b[0m sqlite file...");
-        let _ = std::io::stdout().flush();
-        let start = std::time::Instant::now();
-        let conn = crate::database::open_write_main(sqlite_path);
-        let (bytes_before, bytes_after) = crate::optimize::sqlite_file::run(&conn);
-        println!(
-          "\n\x1b[1;32moptimized\x1b[0m sqlite in {:.1}s  {} → {}",
-          start.elapsed().as_secs_f64(),
-          fmt_size(bytes_before),
-          fmt_size(bytes_after),
-        );
-      }
+      sqlite_file::command_handler_optimize_sqlite_file(sqlite_path);
     }
     Some(optimize_commands::delete_intermediary_data) => {
       delete_intermediary_data::command_handler_optimize_delete_intermediary_data(
         data_path,
         sqlite_path,
-      )
+      );
     }
     Some(optimize_commands::sqlite_file { .. }) => {
       sqlite_file::command_handler_optimize_sqlite_file(sqlite_path)

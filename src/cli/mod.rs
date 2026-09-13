@@ -116,12 +116,12 @@ enum commands {
   query {
     #[arg(allow_hyphen_values = true)]
     input: String,
-    #[arg(long, value_parser = crate::query::validate_friendly_name_format)]
+    #[arg(long, value_parser = crate::domain::address::validate_friendly_name_format)]
     friendly_name_format: Option<String>,
     #[arg(long, value_parser = parse_min_quality)]
     min_quality: Option<f64>,
     #[arg(long, allow_hyphen_values = true, value_parser = crate::http::parse_bounding_wkt)]
-    bounding_wkt: Option<crate::query::bounding_geometry>,
+    bounding_wkt: Option<crate::domain::address::bounding_geometry>,
     #[arg(long, value_delimiter = ',', value_parser = crate::domain::admin_level::level::parse)]
     last_admin_levels: Option<Vec<crate::domain::admin_level::level>>,
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
@@ -264,12 +264,15 @@ pub fn run() {
       &sqlite_path,
       &index_path,
       &input,
-      friendly_name_format.as_deref(),
-      min_quality,
-      bounding_wkt,
-      last_admin_levels,
-      include_wkt,
+      crate::domain::address::query_opts {
+        friendly_name_format: friendly_name_format.as_deref(),
+        min_quality,
+        bounding: bounding_wkt,
+        last_admin_levels,
+        include_wkt,
+      },
       preset.index_user_friendly_name.boosts,
+      preset.house_numbers,
     ),
     commands::http_server { host, port } => http_server::command_handler_http_server(
       &sqlite_path,
@@ -278,6 +281,7 @@ pub fn run() {
       port,
       args.threads,
       preset.index_user_friendly_name.boosts,
+      preset.house_numbers,
     ),
     commands::build { source } => {
       let preset = crate::presets::resolve(args.preset.or(Some(source.clone())));

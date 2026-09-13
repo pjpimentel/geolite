@@ -3,7 +3,7 @@ use std::path::Path;
 use crate::domain::osm_pbf_file::http_stubs::{start_json_server, start_recording_json_server};
 use crate::domain::osm_pbf_file::osm_pbf_file;
 
-use super::{GEOFABRIK_ENDPOINT, geofabrik_entry, listing, local_pbf, source};
+use super::{GEOFABRIK_ENDPOINT, geofabrik_entry, input_kind, listing, local_pbf, source};
 
 fn tmp(name: &str) -> std::path::PathBuf {
   let p = std::env::temp_dir().join(name);
@@ -291,4 +291,17 @@ fn _19_recreating_the_cache_refreshes_the_coverage() {
   let second = start_json_server(index_of(&[feature("europe/andorra", Some(TINY_SQUARE))]));
   list_geofabrik(&db, &second, true);
   assert!(coverage_of(&db, "europe/andorra").is_some());
+}
+
+#[test]
+fn _20_input_kind_tells_a_url_a_local_path_and_a_geofabrik_id_apart() {
+  for input in ["http://example.com/x.osm.pbf", "https://example.com/x"] {
+    assert_eq!(input_kind::of(input), input_kind::url, "{input}");
+  }
+  for input in ["santos.osm.pbf", "./santos", "data/santos", "c:\\data\\santos"] {
+    assert_eq!(input_kind::of(input), input_kind::local_path, "{input}");
+  }
+  for input in ["maldives", "santos", "nope"] {
+    assert_eq!(input_kind::of(input), input_kind::geofabrik_id, "{input}");
+  }
 }

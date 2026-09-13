@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use super::super::entity::admin_level;
 use super::super::scale::level;
 use super::{extract_event, extract_opts, extract_step, source, stage};
-use crate::extract::pbf_fixtures::{
+use crate::domain::pbf_fixtures::{
   NAME_PRIORITY, insert_closed_way, insert_relation, insert_way_at, memory_db,
 };
 

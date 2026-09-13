@@ -1,6 +1,8 @@
 use crate::common::ask::ask;
-use crate::common::harness::{encode, get, request, scenario, world, world_cell};
+use crate::common::harness::{encode, get, plain, request, scenario, world, world_cell};
 use crate::common::query::{first, matches};
+use crate::extract::REGENERATE;
+use crate::house_number::HOUSE_NUMBERS;
 use serde_json::{Value, json};
 
 pub static SCENARIO: scenario = scenario {
@@ -222,6 +224,30 @@ fn _00_09_fixture_counts_stay_within_expected_bounds() {
     (lo..hi).contains(&house_numbers),
     "house number count {house_numbers} left its expected band {lo}..{hi}"
   );
+}
+
+// 00.10. pipeline integrity: the house-number count and the optimize steps, in order
+#[test]
+#[ignore]
+fn _00_10_the_build_reports_the_house_numbers_it_linked_and_the_optimize_steps() {
+  let w = world();
+  let stdout = plain(&w.build_stdout);
+  let house_numbers = format!("extracted {HOUSE_NUMBERS} house numbers in");
+  let mut at = 0;
+  for line in [
+    house_numbers.as_str(),
+    "── optimize",
+    "deleted osm_data.sqlite3",
+    "deleted 1 tables in",
+    "optimizing sqlite file...",
+    "optimized sqlite in",
+    "after   main:",
+  ] {
+    let found = stdout[at..]
+      .find(line)
+      .unwrap_or_else(|| panic!("missing {line:?} after offset {at}; {REGENERATE}:\n{stdout}"));
+    at += found + line.len();
+  }
 }
 
 // 01.00. contract
@@ -668,6 +694,23 @@ fn _01_21_the_error_bodies_are_exactly_these() {
   );
 }
 
+// 01.22. contract: the cli and the http api read a coordinate with one rule; everything else is text
+#[test]
+#[ignore]
+fn _01_22_the_input_is_a_coordinate_only_when_it_parses_as_lat_lon() {
+  let w = world();
+  let s = w.start_server();
+  for (input, service) in [
+    (" -23.970949 , -46.318730 ", "coordinates_to_address"),
+    ("0,0", "coordinates_to_address"),
+    ("91.0,0.0", "text_to_address"),
+    ("-23.970949", "text_to_address"),
+    ("1,2,3", "text_to_address"),
+  ] {
+    w.assert_both(&s, &ask(input), &json!({ "service": service }));
+  }
+}
+
 // 02.00. dead case
 #[test]
 #[ignore]
@@ -708,24 +751,22 @@ fn _02_02_query_without_a_sqlite_exits_one() {
   );
 }
 
-// 02.03. dead case
+// 02.03. dead case: the cli loads the index before it reads the input, so a coordinate is refused
+// too, where the http api keeps answering coordinates (03.02)
 #[test]
 #[ignore]
-fn _02_03_query_without_a_tantivy_index_exits_one() {
+fn _02_03_query_without_a_tantivy_index_exits_one_for_text_and_for_coordinates() {
   let w = world();
   let missing = w.root.join("absent.tantivy");
-  let out = w.geolite(&[
-    "--index-path",
-    &missing.to_string_lossy(),
-    "query",
-    ANY_TEXT,
-  ]);
-  assert_eq!(out.status, 1);
-  assert!(
-    out.stderr.contains("tantivy index not found"),
-    "stderr: {}",
-    out.stderr
-  );
+  for input in [ANY_TEXT, ANY_POINT] {
+    let out = w.geolite(&["--index-path", &missing.to_string_lossy(), "query", input]);
+    assert_eq!(out.status, 1, "input {input:?}");
+    assert!(
+      out.stderr.contains("tantivy index not found"),
+      "input {input:?}, stderr: {}",
+      out.stderr
+    );
+  }
 }
 
 // 02.04. dead case
@@ -921,6 +962,21 @@ fn _03_04_a_degraded_boot_warns_on_stderr() {
     "expected a warning, got: {}",
     s.stderr()
   );
+}
+
+// 03.05. degraded mode: the 503 follows the same reading of the input as the dispatch
+#[test]
+#[ignore]
+fn _03_05_an_out_of_range_coordinate_is_a_text_query_and_is_unavailable_without_an_index() {
+  let w = world();
+  let s = w.start_degraded_server();
+  for (input, status) in [("91.0,0.0", 503), (" -23.970949 , -46.318730 ", 200)] {
+    assert_eq!(
+      get(s.port, &ask(input).http_path()).status,
+      status,
+      "input {input:?}"
+    );
+  }
 }
 
 // 04.00. precision guarantee: streets have no distance cap; only --min-quality removes a far match

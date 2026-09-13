@@ -1,7 +1,7 @@
 use geo::Geometry;
-use geozero::{ToGeo, wkb::SpatiaLiteWkb};
 use rusqlite::Connection;
 
+use crate::common::harness::decode_wkb;
 use crate::common::query::{first, level_at, name_at};
 use crate::santos::world;
 
@@ -45,9 +45,7 @@ fn geometry_of(conn: &Connection, id: i64) -> Geometry<f64> {
       r.get(0)
     })
     .unwrap_or_else(|e| panic!("no admin_levels row {id}: {e}"));
-  SpatiaLiteWkb(wkb.as_slice())
-    .to_geo()
-    .unwrap_or_else(|e| panic!("row {id} has an undecodable geometry: {e}"))
+  decode_wkb(&wkb)
 }
 
 fn ids_where(conn: &Connection, sql: &str) -> Vec<i64> {

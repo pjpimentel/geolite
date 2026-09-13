@@ -4,7 +4,7 @@ use rusqlite::Connection;
 use super::super::geometry::approx_eq;
 use super::super::scale::level;
 use super::{load_chunk, process_one_way, run};
-use crate::extract::pbf_fixtures::{self, NAME_PRIORITY, coords, stored_admin_levels, stored_geometry};
+use crate::domain::pbf_fixtures::{self, NAME_PRIORITY, coords, stored_admin_levels, stored_geometry};
 
 // 00.00: way sem coordenada nenhuma e descartado
 #[test]

@@ -2,7 +2,7 @@ use super::*;
 use crate::cli::tests::street_row;
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::{open_write, osm_data_path};
-use crate::extract::pbf_fixtures::tempdir_guard;
+use crate::domain::pbf_fixtures::tempdir_guard;
 
 fn scene(tag: &str, with_streets: bool, with_hierarchy: bool) -> (tempdir_guard, String, String) {
   let guard = tempdir_guard::new(tag);

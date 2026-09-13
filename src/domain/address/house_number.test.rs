@@ -1,8 +1,10 @@
 use super::enrich_house_numbers;
+use crate::domain::address::fixtures::{admin_level_at, match_at};
+use crate::domain::address::{admin_level, query_match};
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::domain::admin_level::{admin_level as admin_levels_row, level};
-use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
-use crate::query::{admin_level, query_match, query_match_attributes};
+use crate::domain::house_number::fixtures::link;
+use crate::domain::house_number::repository::batch_insert_links;
 use geo::{Coord, Geometry, LineString, Point};
 use rusqlite::Connection;
 
@@ -27,43 +29,15 @@ fn setup() -> (Connection, i64) {
 }
 
 fn insert_hn(conn: &Connection, admin_level_id: i64, node_id: u64, number: &str, lon: f64, lat: f64) {
-  let row = house_numbers_row {
-    node_id,
-    admin_level_id,
-    number: number.to_string(),
-    wkb: Geometry::Point(Point::new(lon, lat)).into(),
-    strategy: 0,
-  };
-  batch_insert(conn, &[row]);
-}
-
-fn al(level: u8, name: &str) -> admin_level {
-  admin_level {
-    level,
-    name: name.to_string(),
-    osm_relation_id: None,
-    osm_way_id: None,
-    wkt: None,
-  }
+  batch_insert_links(conn, &[link(node_id, admin_level_id, number, lon, lat)]);
 }
 
 fn make_match(admin_level_id: i64, admin_levels: Vec<admin_level>, friendly_name: &str) -> query_match {
-  query_match {
-    admin_levels,
-    latitude: 0.0,
-    longitude: 0.0,
-    coordinates_distance_in_meters: Some(0),
-    similarity: None,
-    score: None,
-    friendly_name: friendly_name.to_string(),
-    attributes: query_match_attributes {
-      country_iso_3166_1_alpha_2_code: None,
-      post_code: None,
-    },
-    house_number: None,
-    id: 2,
-    admin_level_id: Some(admin_level_id),
-  }
+  let mut m = match_at(2, 0.0, 0.0, admin_levels);
+  m.coordinates_distance_in_meters = Some(0);
+  m.friendly_name = friendly_name.to_string();
+  m.admin_level_id = Some(admin_level_id);
+  m
 }
 
 fn level_30_name(m: &query_match) -> Option<&str> {
@@ -76,7 +50,7 @@ fn level_30_name(m: &query_match) -> Option<&str> {
 #[test]
 fn _00_no_house_numbers_leaves_matches_unchanged() {
   let (conn, street_id) = setup();
-  let mut matches = vec![make_match(street_id, vec![al(12, "rua x")], "rua x")];
+  let mut matches = vec![make_match(street_id, vec![admin_level_at(12, "rua x")], "rua x")];
 
   enrich_house_numbers(&conn, Point::new(0.0, 0.0), &mut matches, None);
 
@@ -89,7 +63,7 @@ fn _00_no_house_numbers_leaves_matches_unchanged() {
 fn _01_house_number_within_50m_updates_admin_levels_and_friendly_name() {
   let (conn, street_id) = setup();
   insert_hn(&conn, street_id, 1, "123", 0.0, 0.0001); // ~11 m
-  let mut matches = vec![make_match(street_id, vec![al(12, "rua x")], "rua x")];
+  let mut matches = vec![make_match(street_id, vec![admin_level_at(12, "rua x")], "rua x")];
 
   enrich_house_numbers(&conn, Point::new(0.0, 0.0), &mut matches, None);
 
@@ -101,7 +75,7 @@ fn _01_house_number_within_50m_updates_admin_levels_and_friendly_name() {
 fn _02_house_number_beyond_50m_is_ignored() {
   let (conn, street_id) = setup();
   insert_hn(&conn, street_id, 1, "123", 0.0, 0.001); // ~111 m
-  let mut matches = vec![make_match(street_id, vec![al(12, "rua x")], "rua x")];
+  let mut matches = vec![make_match(street_id, vec![admin_level_at(12, "rua x")], "rua x")];
 
   enrich_house_numbers(&conn, Point::new(0.0, 0.0), &mut matches, None);
 
@@ -115,7 +89,7 @@ fn _03_multiple_house_numbers_picks_the_closest() {
   let (conn, street_id) = setup();
   insert_hn(&conn, street_id, 1, "100", 0.0, 0.0003); // ~33 m
   insert_hn(&conn, street_id, 2, "200", 0.0, 0.00005); // ~5.5 m
-  let mut matches = vec![make_match(street_id, vec![al(12, "rua x")], "rua x")];
+  let mut matches = vec![make_match(street_id, vec![admin_level_at(12, "rua x")], "rua x")];
 
   enrich_house_numbers(&conn, Point::new(0.0, 0.0), &mut matches, None);
 
@@ -126,7 +100,7 @@ fn _03_multiple_house_numbers_picks_the_closest() {
 fn _04_template_format_renders_over_enriched_admin_levels() {
   let (conn, street_id) = setup();
   insert_hn(&conn, street_id, 1, "123", 0.0, 0.0001); // ~11 m
-  let mut matches = vec![make_match(street_id, vec![al(12, "rua x")], "rua x")];
+  let mut matches = vec![make_match(street_id, vec![admin_level_at(12, "rua x")], "rua x")];
 
   enrich_house_numbers(
     &conn,
@@ -143,7 +117,11 @@ fn _04_template_format_renders_over_enriched_admin_levels() {
 fn _05_no_format_applies_default_friendly_name_after_level_30_push() {
   let (conn, street_id) = setup();
   insert_hn(&conn, street_id, 1, "123", 0.0, 0.0001); // ~11 m
-  let mut matches = vec![make_match(street_id, vec![al(12, "rua x"), al(2, "brasil")], "rua x")];
+  let mut matches = vec![make_match(
+    street_id,
+    vec![admin_level_at(12, "rua x"), admin_level_at(2, "brasil")],
+    "rua x",
+  )];
 
   enrich_house_numbers(&conn, Point::new(0.0, 0.0), &mut matches, None);
 

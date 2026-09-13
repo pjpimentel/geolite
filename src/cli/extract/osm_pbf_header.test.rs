@@ -1,5 +1,5 @@
 use super::command_handler_extract_osm_pbf_header;
-use crate::extract::pbf_fixtures::{
+use crate::domain::pbf_fixtures::{
   blob_compression, header_blob, header_chunk, header_spec, indexed_scene, make_chunk,
 };
 

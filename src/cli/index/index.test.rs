@@ -2,7 +2,7 @@ use super::*;
 use crate::cli::tests::street_row;
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::open_write;
-use crate::extract::pbf_fixtures::tempdir_guard;
+use crate::domain::pbf_fixtures::tempdir_guard;
 use crate::presets::DEFAULT;
 
 // a scene with two streets in admin_levels — enough for every index stage to have work.

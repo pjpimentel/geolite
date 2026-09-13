@@ -1,5 +1,5 @@
 use super::*;
-use crate::extract::pbf_fixtures::{
+use crate::domain::pbf_fixtures::{
   blob_compression, block_spec, data_chunk, header_chunk, node, stored_admin_levels, temp_scene,
   way, write_pbf,
 };

@@ -5,7 +5,7 @@ use crate::common::harness::{open_sqlite_at, output, world};
 use crate::general::world;
 use serde_json::{Value, json};
 
-const NODES: i64 = 683_313;
+pub(crate) const NODES: i64 = 683_313;
 const WAYS: i64 = 41_335;
 const RELATIONS: i64 = 1_274;
 const DATA_CHUNKS: i64 = 93;

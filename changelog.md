@@ -1,8 +1,30 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.9
+## **2026-XX-XX** - 0.0.10
 
-1. ADDED house_number domain.
+1. MODIFIED database mod
+1. REMOVED unit tests
+
+## **2026-09-12** - 0.0.9
+
+1. REMOVED `database/house_numbers` mod.
+1. REMOVED `extract` mod.
+1. REMOVED `optimize` mod.
+1. REMOVED `query` mod.
+1. MODIFIED presets: `extract_house_numbers` became `house_numbers`, a `house_number_policy` (`number_tags`, `street_tags`, `drop_values`, `max_digits`, `shapes`, `allow_hash_prefix`).
+1. MODIFIED `extract osm-house-numbers`: the tag value is normalised in the domain (`house_number::normalize`) instead of in sql; the stored forms do not change.
+1. MODIFIED `extract osm-house-numbers`: the count it prints is the number of rows inserted; it was the number of candidates, so a rerun reported every candidate again instead of 0.
+1. MODIFIED `query` and `http-server` under the `colombia` preset: a compound number (`82-52`, `25B-48`, `16i56`) and the `#` prefix are read from the input, match their stored value exactly and are never interpolated; no rebuild required.
+1. ADDED `house_number` domain (`entity`, `value`, `policy`, `strategy`, `token`, `resolution`, `repository`, `extract`, `linker`).
+1. ADDED `house_number_link::extract`: the house-number stage as one use case of the domain.
+1. ADDED `database::compact` and `database::remove_osm_data_files`: the two steps of `optimize` as functions of the database module; the cli only renders them.
+1. ADDED `osm_pbf_file::delete`: the file, its blob chunks and its download columns (`path`, `size_bytes`, `md5`, `downloaded_at`) go together.
+1. MODIFIED `optimize delete-intermediary-data`: the ledger row of every deleted file forgets its path, so nothing resolves to a file that is gone; the pbf files are reported before the `osm_data` sibling.
+1. MODIFIED `build` and `download`: one rule (`input_kind`) tells a url, a local path and a geofabrik id apart; `download` refuses a path without asking the catalogue.
+1. ADDED `osm_pbf_file::resolve`: the path as given, the name under `data_path` or the file the ledger holds for an id or a url, moved out of `main.rs`.
+1. ADDED `osm_pbf_file::download`: the transfer, the md5 verdict and the ledger row in one use case; the cli only renders it.
+1. ADDED `address` domain (`entity`, `input`, `label`, `filter`, `text`, `coordinates`, `house_number`).
+1. ADDED `address::query_by_text` and `address::query_by_coordinates`: the two services as use cases of the domain; the cli and the http server tell a coordinate from a text themselves (`address::query_input`).
 
 ## **2026-09-12** - 0.0.8
 
