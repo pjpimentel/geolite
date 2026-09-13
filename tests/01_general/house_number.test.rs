@@ -278,6 +278,24 @@ fn _00_05_a_link_by_name_names_the_street_the_node_names() {
   );
 }
 
+// 00.06. the rows land in node id order, whatever the machine's thread count
+#[test]
+#[ignore]
+fn _00_06_the_rows_are_inserted_in_node_id_order() {
+  let w = world();
+  let (s, _) = linked(w, "house_number_order");
+  let conn = s.ledger();
+  let by_rowid: String = conn
+    .query_row(
+      "SELECT COALESCE(GROUP_CONCAT(node_id, ','), '') \
+       FROM (SELECT node_id FROM house_numbers ORDER BY id)",
+      [],
+      |r| r.get(0),
+    )
+    .expect("failed to list the node ids by rowid");
+  assert_eq!(by_rowid, node_ids(&conn), "{REGENERATE}");
+}
+
 // 01.00. the `#` prefix is a number only where the preset allows it
 #[test]
 #[ignore]

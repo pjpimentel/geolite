@@ -61,6 +61,7 @@ pub fn streets_with_centroid(conn: &Connection) -> Vec<street_meta_row> {
     FROM admin_levels
     WHERE admin_level = ?1
       AND wkb IS NOT NULL
+    ORDER BY id
   ";
 
   let mut stmt = conn
@@ -185,7 +186,7 @@ pub fn by_admin_level_ids(conn: &Connection, ids: &[i64]) -> Vec<hn_for_street> 
     return vec![];
   }
   let sql = format!(
-    "{} ({})",
+    "{} ({})\n    ORDER BY node_id",
     SQL_BY_ADMIN_LEVEL_IDS.trim(),
     crate::database::placeholders_for(ids.len())
   );

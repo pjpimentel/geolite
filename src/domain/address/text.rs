@@ -77,7 +77,8 @@ pub(super) fn run(
   );
 
   // bm25 first; among the segments of one street, which share a score, the one that placed the
-  // number wins the tie through the similarity nudge
+  // number wins the tie through the similarity nudge, and the rest keep the collector's order,
+  // which is by area id
   matches.sort_by(|a, b| {
     b.score
       .partial_cmp(&a.score)

@@ -37,7 +37,8 @@ impl house_number_link {
     let meta = repository::streets_with_centroid(conn);
     let by_tile = tiles_of(candidates);
     let streets = load_streets(conn, &meta, &by_tile);
-    let links = link_in_parallel(tiles_with_streets(by_tile, &meta, &streets));
+    let mut links = link_in_parallel(tiles_with_streets(by_tile, &meta, &streets));
+  links.sort_unstable_by_key(|link| link.node_id);
 
     let mut processed: u64 = 0;
     for chunk in links.chunks(CHUNK_SIZE) {
@@ -104,7 +105,9 @@ fn tiles_with_streets(
   meta: &[street_meta_row],
   streets: &HashMap<i64, Arc<street>>,
 ) -> Vec<tile_data> {
-  by_tile
+  let mut tiles: Vec<(tile, Vec<candidate_row>)> = by_tile.into_iter().collect();
+  tiles.sort_unstable_by_key(|(tile, _)| *tile);
+  tiles
     .into_iter()
     .map(|(tile, candidates)| tile_data {
       streets: meta

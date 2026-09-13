@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use tantivy::{
-  Index, IndexReader, Searcher, TantivyDocument, Term,
+  DocId, Index, IndexReader, Score, Searcher, SegmentReader, TantivyDocument, Term,
   collector::TopDocs,
   query::{
     BooleanQuery, BoostQuery, FuzzyTermQuery, Occur, PhraseQuery, Query, TermQuery, TermSetQuery,
   },
   schema::{
-    Field, INDEXED, IndexRecordOption, STORED, Schema, TextFieldIndexing, TextOptions, Value,
+    FAST, Field, INDEXED, IndexRecordOption, Schema, TextFieldIndexing, TextOptions,
   },
   tokenizer::{AsciiFoldingFilter, LowerCaser, SimpleTokenizer, TextAnalyzer},
 };
@@ -55,8 +55,9 @@ const WRITER_MEMORY_BUDGET: usize = 50_000_000;
 #[allow(clippy::type_complexity)]
 fn schema() -> (Schema, Field, Field, Field, Field, Field, Field, Field, Field) {
   let mut builder = Schema::builder();
-  // STORED to hand the id back, INDEXED to restrict a search to a set of ids (the region filter)
-  let admin_level_id = builder.add_u64_field("admin_level_id", STORED | INDEXED);
+  // FAST to hand the id back and to break score ties, INDEXED to restrict a search to a set of
+  // ids (the region filter)
+  let admin_level_id = builder.add_u64_field("admin_level_id", INDEXED | FAST);
   let admin_level = builder.add_u64_field("admin_level", INDEXED);
   let folded_indexing = TextFieldIndexing::default()
     .set_tokenizer(TOKENIZER_NAME)
@@ -313,6 +314,11 @@ pub fn load(index_path: &Path, boosts: tantivy_boosts) -> Option<tantivy_index> 
   let reader = index.reader().ok()?;
   let schema = index.schema();
   let id_field = schema.get_field("admin_level_id").ok()?;
+  // an index written before the id became a fast field cannot break ties: refused, so the caller
+  // asks for a rebuild instead of answering an empty result set
+  if !schema.get_field_entry(id_field).is_fast() {
+    return None;
+  }
   let admin_level_field = schema.get_field("admin_level").ok()?;
   let name_field = schema.get_field("name").ok()?;
   let hier_field = schema.get_field("hier").ok()?;
@@ -392,21 +398,25 @@ fn bonus_clauses(tokens: &[String], fields: [(Field, f32); 2]) -> Vec<clause> {
   clauses
 }
 
-fn run_query(
-  searcher: &Searcher,
-  query: BooleanQuery,
-  id_field: Field,
-  limit: usize,
-) -> Vec<(i64, f32)> {
+fn run_query(searcher: &Searcher, query: BooleanQuery, limit: usize) -> Vec<(i64, f32)> {
+  // the tie-break has to be the collector's own key: `order_by_score` prunes with block-wand and
+  // drops a document that merely ties the current threshold, so a sort afterwards would still see
+  // a different set of hits per segment layout
+  let by_score_then_id =
+    TopDocs::with_limit(limit).tweak_score(|segment_reader: &SegmentReader| {
+      let ids = segment_reader
+        .fast_fields()
+        .u64("admin_level_id")
+        .expect("admin_level_id is a fast field");
+      move |doc: DocId, score: Score| {
+        (score, std::cmp::Reverse(ids.first(doc).unwrap_or(u64::MAX)))
+      }
+    });
   searcher
-    .search(&query, &TopDocs::with_limit(limit).order_by_score())
+    .search(&query, &by_score_then_id)
     .unwrap_or_default()
     .into_iter()
-    .filter_map(|(score, addr)| {
-      let doc: TantivyDocument = searcher.doc(addr).ok()?;
-      let id = doc.get_first(id_field).and_then(|v| v.as_u64())? as i64;
-      Some((id, score))
-    })
+    .map(|((score, std::cmp::Reverse(id)), _)| (id as i64, score))
     .collect()
 }
 
@@ -431,14 +441,14 @@ impl tantivy_index {
 
     let mut strict = self.strict_clauses(query, &tokens);
     strict.extend(self.filter_clauses(last_admin_levels, allowed_ids));
-    let strict_hits = run_query(&searcher, BooleanQuery::new(strict), self.id_field, limit);
+    let strict_hits = run_query(&searcher, BooleanQuery::new(strict), limit);
     if !strict_hits.is_empty() {
       return strict_hits;
     }
 
     let mut loose = self.loose_clauses(&tokens);
     loose.extend(self.filter_clauses(last_admin_levels, allowed_ids));
-    run_query(&searcher, BooleanQuery::new(loose), self.id_field, limit)
+    run_query(&searcher, BooleanQuery::new(loose), limit)
   }
 
   fn strict_clauses(&self, query: &str, tokens: &[String]) -> Vec<clause> {

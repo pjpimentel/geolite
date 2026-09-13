@@ -11,6 +11,8 @@
 1. MODIFIED `/geocode`: a `quality` outside `[0, 1]` or not a number answers 400 with the rule the cli applies to `--min-quality`; it was dropped silently.
 1. MODIFIED `http-server`: the `listening` line names the port actually bound, so `--port 0` lets the os choose one.
 1. ADDED `address::parse_min_quality` (from the cli) and `http::bind`: the quality rule has one owner, and a server is bound before it serves.
+1. MODIFIED `index user-friendly-name` and `query`: two hits with the same score rank by area id, ascending, build after build; an index built by an earlier version is refused as absent — run `geolite index user-friendly-name` again.
+1. MODIFIED `extract osm-house-numbers`: the links are inserted in node id order whatever the thread count, and a street's numbers are read in that order, so a duplicate number resolves to the same point on every build.
 
 ## **2026-09-13** - 0.0.9
 

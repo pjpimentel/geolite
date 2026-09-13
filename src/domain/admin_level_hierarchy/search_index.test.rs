@@ -4,7 +4,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use super::super::entity::hierarchy_row;
-use super::super::fixtures::{area, street};
+use super::super::fixtures::{area, street, way};
 use super::super::repository::batch_insert;
 use super::testing::{build_test_index, tempdir_guard};
 use super::{
@@ -155,4 +155,40 @@ fn _09_run_reports_the_hierarchy_count_around_the_build() {
 
   assert_eq!(seen.into_inner(), vec![(Some(2), 0), (Some(2), 2)]);
   assert_eq!(ids(index.search("augusta", 10, None, None)).len(), 2);
+}
+
+#[test]
+fn _10_hits_with_the_same_score_rank_by_id_ascending() {
+  let conn = indexed(vec![
+    street(50, "Rua Igual", 0.0),
+    street(40, "Rua Igual", 1.0),
+    street(30, "Rua Igual", 2.0),
+    street(20, "Rua Igual", 3.0),
+    street(10, "Rua Igual", 4.0),
+  ]);
+  let (_guard, index) = build_test_index(&conn);
+
+  let hits: Vec<i64> = index
+    .search("rua igual", 10, None, None)
+    .into_iter()
+    .map(|(id, _)| id)
+    .collect();
+
+  assert_eq!(hits, [10, 20, 30, 40, 50].map(way));
+}
+
+#[test]
+fn _11_load_refuses_an_index_whose_id_is_not_a_fast_field() {
+  let guard = tempdir_guard::new();
+  std::fs::create_dir_all(&guard.path).expect("failed to create the index dir");
+  let mut builder = tantivy::schema::Schema::builder();
+  for name in ["admin_level_id", "admin_level"] {
+    builder.add_u64_field(name, tantivy::schema::STORED | tantivy::schema::INDEXED);
+  }
+  for name in ["name", "hier", "name_strict", "hier_strict", "name_lower", "hier_lower"] {
+    builder.add_text_field(name, tantivy::schema::TEXT);
+  }
+  tantivy::Index::create_in_dir(&guard.path, builder.build()).expect("failed to write the old index");
+
+  assert!(load(&guard.path, DEFAULT.index_user_friendly_name.boosts).is_none());
 }

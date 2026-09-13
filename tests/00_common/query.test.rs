@@ -81,8 +81,8 @@ pub fn point_of(m: &Value) -> (f64, f64) {
   )
 }
 
-// the street ids behind a result set, sorted and deduped: segments of the same street tie on score,
-// so their order follows the tantivy segment layout and must never be asserted.
+// the street ids behind a result set, sorted and deduped, for assertions about the set: segments
+// of the same street tie on score and rank by id
 pub fn way_ids(result: &Value) -> Vec<u64> {
   let mut ids: Vec<u64> = matches(result)
     .iter()

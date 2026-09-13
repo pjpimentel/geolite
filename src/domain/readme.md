@@ -320,6 +320,14 @@ region filter are Must clauses with boost 0.0: they restrict the document set wi
 score. why exact and fuzzy carry separate boosts, and why short tokens get one edit of tolerance,
 is written next to the boosts in the source.
 
+two documents with the same score rank by area id, ascending. the tie-break is the collector's own
+sort key, read from the `admin_level_id` fast field inside tantivy: the multi-threaded writer lays
+the documents out differently on every build, and the scored collector prunes with block-wand and
+drops a document that merely ties the threshold, so a sort after the fact would still see a
+different set per layout — the id in the key is what makes the ranking a contract. `load` refuses
+an index whose id is not a fast field: one built by an earlier version reads as absent, and the cli
+asks for `geolite index user-friendly-name`.
+
 `build` still reads `admin_levels` with sql of its own, as `house_number::repository` does for its
 streets — the two places in the domain that read another folder's table directly; they move behind
 `admin_level::repository` when the reads are shared. `run` is what the cli's `index user-friendly-name` calls: the build, with the row count
@@ -416,17 +424,19 @@ a line nor an area is skipped. the links come back in batches of 500 through
 candidates and `processed` the rows inserted, and the count the cli prints is the rows inserted,
 not the candidates: a rerun reports `0`, because `INSERT OR IGNORE` on the node id inserts nothing.
 
-the order of the tiles is the order of a `HashMap`, so the order rows are inserted in — and the
-winner of an exact tie between two streets of the same name — can differ between two runs of the
-same file; the rows themselves do not. sorting the tiles before the fan-out is the open item in
-the backlog. what the cli keeps is the run: the `--recreate` wipe before it, the index and the
-count on the ledger after it.
+the tiles are sorted before the fan-out and the links are sorted by node id before the insert, so
+the rows land in node id order on every machine, whatever the thread count; the streets are read
+in id order too, so the winner of an exact tie between two streets of the same name is the same on
+every run. what the cli keeps is the run: the `--recreate` wipe before it, the index and the count
+on the ledger after it.
 
 ### the repository — `repository`
 
 the ddl, the one index (`house_numbers_search_by_admin_level_id`, the read of every query), the
 candidate scan of `osm_data.osm_nodes` (`load_all_candidates`, where `normalize` runs), the
-numbers of a set of streets (`by_admin_level_ids`, where `from_stored` runs) and the insert.
+numbers of a set of streets (`by_admin_level_ids`, in node id order — the order the first-match
+rules of the resolution see, whatever the insertion order — where `from_stored` runs) and the
+insert.
 `streets_with_centroid` and `streets_wkb_by_ids` read `admin_levels` directly, the way
 `search_index::build` does; they move behind `admin_level::repository` when a second consumer
 appears. `osm_pbf_file::repository::update_house_numbers_count` reads the table the other way
