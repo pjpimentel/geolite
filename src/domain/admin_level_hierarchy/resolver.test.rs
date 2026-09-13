@@ -8,7 +8,7 @@ use super::super::repository::{count, load_by_ids};
 use super::{extract_polygons, point_in_polygons, point_in_ring, polygon_entry, run};
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::domain::admin_level::{admin_level, level};
-use crate::extract::pbf_fixtures::tempdir_guard;
+use crate::domain::pbf_fixtures::tempdir_guard;
 
 const COUNTRY: u64 = 1;
 const CITY: u64 = 2;

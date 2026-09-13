@@ -14,3 +14,6 @@ mod extract;
 
 #[path = "admin_level.test.rs"]
 mod admin_level;
+
+#[path = "house_number.test.rs"]
+mod house_number;

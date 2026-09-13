@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::extract::pbf_fixtures::{
+use crate::domain::pbf_fixtures::{
   self, blob_compression, block_spec, data_chunk, header_chunk, node,
 };
 

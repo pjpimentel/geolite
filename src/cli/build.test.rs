@@ -4,10 +4,10 @@ use crate::cli::tests::street_row;
 use crate::domain::admin_level::admin_level as admin_levels_row;
 use crate::domain::admin_level::repository::batch_upsert;
 use crate::database::{open_write, osm_data_path};
+use crate::domain::address::{address, query_match, query_opts, query_output};
 use crate::domain::admin_level_hierarchy::search_index as tantivy;
 use crate::domain::osm_pbf_file::http_stubs::start_json_server;
 use crate::presets::{BRAZIL, DEFAULT};
-use crate::query;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
@@ -72,16 +72,16 @@ fn synthetic_index(
   (conn, index)
 }
 
-fn query_text(conn: &Connection, index: &tantivy::tantivy_index, q: &str) -> query::query_output {
-  query::run(conn, Some(index), q, None, None, None, None, false)
+fn query_text(conn: &Connection, index: &tantivy::tantivy_index, q: &str) -> query_output {
+  address::open(conn, Some(index), &DEFAULT.house_numbers).query_by_text(q, &query_opts::default())
 }
 
 // the most specific admin_level of a match is the matched street (highest level number).
-fn matched_street_name(m: &query::query_match) -> Option<&str> {
+fn matched_street_name(m: &query_match) -> Option<&str> {
   m.admin_levels.iter().max_by_key(|a| a.level).map(|a| a.name.as_str())
 }
 
-fn top_street(out: &query::query_output) -> Option<&str> {
+fn top_street(out: &query_output) -> Option<&str> {
   out.matches.first().and_then(matched_street_name)
 }
 
@@ -179,7 +179,7 @@ fn _02_build_creates_then_deletes_osm_data_sibling() {
 // smallest input where every build stage (download probe, blob-chunks, header, osm-data,
 // admin-levels, house-numbers, index, optimize) has real work to do.
 fn write_street_fixture(pbf_path: &str) {
-  use crate::extract::pbf_fixtures::{
+  use crate::domain::pbf_fixtures::{
     blob_compression, block_spec, data_chunk, header_chunk, node, way, write_pbf,
   };
   write_pbf(

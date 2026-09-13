@@ -1,5 +1,5 @@
 use super::command_handler_osm_pbf_file_download;
-use crate::extract::pbf_fixtures::tempdir_guard;
+use crate::domain::pbf_fixtures::tempdir_guard;
 use crate::domain::osm_pbf_file::http_stubs::{md5_reply, start_file_server, start_json_server};
 
 fn scene(tag: &str) -> (tempdir_guard, String, String) {

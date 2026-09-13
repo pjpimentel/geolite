@@ -1,7 +1,7 @@
 use prost::Message;
 
 use crate::domain::osm_pbf_file::message::blob_msg;
-use crate::extract::pbf_fixtures::{blob_compression, make_blob};
+use crate::domain::pbf_fixtures::{blob_compression, make_blob};
 
 use super::decompress;
 

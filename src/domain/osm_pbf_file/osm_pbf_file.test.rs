@@ -1,7 +1,7 @@
 use super::{blob_index, data_opts, osm_pbf_file, repository};
 
 use crate::domain::osm_tag::tag_policy;
-use crate::extract::pbf_fixtures::{header_chunk, indexed_scene, temp_scene, tiny_pbf, write_pbf};
+use crate::domain::pbf_fixtures::{header_chunk, indexed_scene, temp_scene, tiny_pbf, write_pbf};
 
 fn data_dir(scene: &temp_scene) -> String {
   scene.guard.path.to_string_lossy().into_owned()
@@ -115,5 +115,91 @@ fn _03_extract_osm_data_returns_none_without_blob_chunks() {
   assert!(
     column::<i64>(&conn, &scene.pbf_path, "osm_data_extracted_at").is_none(),
     "the ledger must not be stamped"
+  );
+}
+
+#[test]
+fn _04_delete_removes_the_file_its_chunks_and_forgets_the_download() {
+  let scene = temp_scene("facade_04");
+  write_pbf(&scene.pbf_path, &tiny_pbf());
+  let data_path = data_dir(&scene);
+  let conn = crate::database::open_write(&scene.db_path);
+  let file = osm_pbf_file::open(Some(&conn), &data_path);
+  file.extract_blob_chunks(&scene.pbf_path, |_| {});
+  let file_id = repository::ensure_by_file_path(&conn, &scene.pbf_path);
+  let size = std::fs::metadata(&scene.pbf_path)
+    .expect("the pbf exists")
+    .len();
+
+  let bytes = file.delete(&scene.pbf_path);
+
+  assert_eq!(bytes, size, "the bytes freed are the file's size");
+  assert!(!std::path::Path::new(&scene.pbf_path).exists());
+  assert_eq!(blob_index::count_by_file_id(&conn, file_id), 0);
+  assert_eq!(
+    repository::get_file_path(&conn, &file_id.to_string()),
+    None,
+    "a deleted file resolves to nothing"
+  );
+  assert_eq!(file.delete(&scene.pbf_path), 0, "deleting twice frees nothing");
+}
+
+#[test]
+fn _05_resolve_answers_a_path_a_name_under_data_path_or_a_ledger_id() {
+  let scene = temp_scene("facade_05");
+  write_pbf(&scene.pbf_path, &tiny_pbf());
+  let data_path = data_dir(&scene);
+  let conn = crate::database::open_write(&scene.db_path);
+  let file = osm_pbf_file::open(Some(&conn), &data_path);
+  let name = std::path::Path::new(&scene.pbf_path)
+    .file_name()
+    .and_then(|n| n.to_str())
+    .expect("the scene names its pbf")
+    .to_string();
+  let file_id = repository::ensure_by_file_path(&conn, &scene.pbf_path);
+
+  assert_eq!(file.resolve(&scene.pbf_path).as_deref(), Some(scene.pbf_path.as_str()));
+  assert_eq!(
+    file.resolve(&name).as_deref(),
+    Some(std::path::Path::new(&data_path).join(&name).to_string_lossy().as_ref()),
+    "a bare name is looked up under data_path"
+  );
+  assert_eq!(
+    file.resolve(&file_id.to_string()).as_deref(),
+    Some(scene.pbf_path.as_str()),
+    "an id is looked up in the ledger"
+  );
+  assert_eq!(file.resolve("missing"), None);
+  assert!(
+    osm_pbf_file::open(None, &data_path).local_file(&name).is_some(),
+    "a local file needs no database"
+  );
+}
+
+#[test]
+fn _06_download_saves_the_file_and_records_it_in_the_ledger() {
+  use crate::domain::osm_pbf_file::http_stubs::{md5_reply, start_file_server};
+
+  let scene = temp_scene("facade_06");
+  let data_path = data_dir(&scene);
+  let conn = crate::database::open_write(&scene.db_path);
+  let file = osm_pbf_file::open(Some(&conn), &data_path);
+  let content = b"fake pbf content".to_vec();
+  let url = start_file_server(content.clone(), md5_reply::not_found);
+  let from = repository::origin::url(url.clone());
+
+  let output = file.download(&from, 1, |_| {});
+
+  let saved = std::path::Path::new(&data_path).join(from.file_name());
+  assert_eq!(output.path, saved);
+  assert_eq!(std::fs::read(&saved).expect("the file was saved"), content);
+  assert_eq!(
+    repository::get_file_path(&conn, &url).as_deref(),
+    Some(saved.to_string_lossy().as_ref()),
+    "the ledger resolves the url to the saved file"
+  );
+  assert_eq!(
+    column::<i64>(&conn, &saved.to_string_lossy(), "size_bytes"),
+    Some(content.len() as i64)
   );
 }

@@ -6,7 +6,7 @@ use super::super::id::admin_level_id;
 use super::super::repository::load_all_below_street;
 use super::super::scale::level;
 use super::{load_and_send, process_one_relation, rel_meta, run_with_ids};
-use crate::extract::pbf_fixtures::{self, NAME_PRIORITY};
+use crate::domain::pbf_fixtures::{self, NAME_PRIORITY};
 
 fn ls(points: &[(f64, f64)]) -> LineString<f64> {
   LineString(points.iter().map(|&(x, y)| Coord { x, y }).collect())

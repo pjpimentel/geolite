@@ -1,5 +1,5 @@
 use super::command_handler_extract_osm_pbf_blob_chunks;
-use crate::extract::pbf_fixtures::{temp_scene, tiny_pbf, write_pbf};
+use crate::domain::pbf_fixtures::{temp_scene, tiny_pbf, write_pbf};
 
 fn chunk_count(db_path: &str, pbf_path: &str) -> i64 {
   let conn = crate::database::open_write(db_path);

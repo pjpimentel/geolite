@@ -49,7 +49,7 @@ pub fn command_handler_merge(
   {
     let conn = crate::database::open_write_main(base);
     crate::domain::admin_level::repository::drop_indexes(&conn);
-    crate::database::house_numbers::drop_indexes(&conn);
+    crate::domain::house_number::repository::drop_indexes(&conn);
 
     for db in databases {
       let (admins, houses) = crate::database::merge::merge_source(&conn, db);
@@ -62,7 +62,7 @@ pub fn command_handler_merge(
     }
 
     crate::domain::admin_level::admin_levels::create_indexes(&conn);
-    crate::database::house_numbers::create_indexes(&conn);
+    crate::domain::house_number::house_numbers::create_indexes(&conn);
   }
 
   // rebuild every derived artifact (hierarchy + rtree + tantivy) from the unified set; each index
@@ -75,7 +75,7 @@ pub fn command_handler_merge(
   println!();
   println!("\x1b[2m── optimize\x1b[0m");
   let conn = crate::database::open_write_main(base);
-  let (bytes_before, bytes_after) = crate::optimize::sqlite_file::run(&conn);
+  let (bytes_before, bytes_after) = crate::database::compact(&conn);
   println!("\x1b[1;32moptimized\x1b[0m {bytes_before} → {bytes_after} bytes");
 }
 

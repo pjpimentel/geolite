@@ -16,7 +16,6 @@ impl admin_level_id {
     Self((osm_id << 1) | 1)
   }
 
-  #[allow(dead_code)]
   pub fn from_raw(raw: u64) -> Self {
     Self(raw)
   }

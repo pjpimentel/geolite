@@ -1,6 +1,8 @@
 use rusqlite::Connection;
 
-use crate::database::house_numbers::{batch_insert, house_numbers as house_numbers_row};
+use crate::domain::house_number::fixtures::link;
+use crate::domain::house_number::house_number_link;
+use crate::domain::house_number::repository::batch_insert_links;
 use crate::database::open_write_main;
 use crate::domain::admin_level::geometry::admin_geometry;
 use crate::domain::admin_level::repository::batch_upsert;
@@ -27,14 +29,8 @@ pub(crate) fn make_way(way_id: u64) -> admin_levels_row {
   }
 }
 
-pub(crate) fn make_house(node_id: u64, admin_level_id: i64, number: &str) -> house_numbers_row {
-  house_numbers_row {
-    node_id,
-    admin_level_id,
-    number: number.to_string(),
-    wkb: make_geometry(),
-    strategy: 0,
-  }
+pub(crate) fn make_house(node_id: u64, admin_level_id: i64, number: &str) -> house_number_link {
+  link(node_id, admin_level_id, number, 0.0, 0.0)
 }
 
 // each test gets its own on-disk database files so they can be ATTACHED by path; sqlite cannot
@@ -55,10 +51,10 @@ pub(crate) fn cleanup(path: &str) {
 }
 
 // builds a source database file and checkpoints the WAL so it can be attached read-only.
-pub(crate) fn build_source(path: &str, admins: &[admin_levels_row], houses: &[house_numbers_row]) {
+pub(crate) fn build_source(path: &str, admins: &[admin_levels_row], houses: &[house_number_link]) {
   let conn = open_write_main(path);
   batch_upsert(&conn, admins);
-  batch_insert(&conn, houses);
+  batch_insert_links(&conn, houses);
   conn
     .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
     .expect("failed to checkpoint source");
