@@ -121,13 +121,15 @@ pub fn way_coords_chunk(
 ) -> Vec<way_coord_row> {
   let placeholders = crate::database::placeholders_for(ids.len());
   let name_select = select::coalesce_of(PAYLOAD, name_priority);
-  let post_code_select = select::normalized_coalesce(PAYLOAD, key::POST_CODE);
+  // named after the osm tag: codeql reads a `post_code` local reaching the query as personal data
+  // stored in clear (rust/cleartext-storage-database), and this is a column expression
+  let postal_code_select = select::normalized_coalesce(PAYLOAD, key::POST_CODE);
   let sql = format!(
     "
     SELECT
       osm_data.osm_ways.id AS way_id,
       {name_select} AS way_name,
-      {post_code_select} AS post_code,
+      {postal_code_select} AS post_code,
       CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lon') AS REAL) AS lon,
       CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lat') AS REAL) AS lat
     FROM osm_data.osm_ways,

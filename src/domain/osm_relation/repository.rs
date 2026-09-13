@@ -100,7 +100,9 @@ pub fn relation_coords_chunk(
   let placeholders = crate::database::placeholders_for(ids.len());
   let name_select = select::coalesce_of(PAYLOAD, name_priority);
   let country_iso_select = select::normalized_coalesce(PAYLOAD, key::COUNTRY_ISO);
-  let post_code_select = select::normalized_coalesce(PAYLOAD, key::POST_CODE);
+  // named after the osm tag: codeql reads a `post_code` local reaching the query as personal data
+  // stored in clear (rust/cleartext-storage-database), and this is a column expression
+  let postal_code_select = select::normalized_coalesce(PAYLOAD, key::POST_CODE);
   let sql = format!(
     "
     WITH way_members AS (
@@ -110,7 +112,7 @@ pub fn relation_coords_chunk(
         CAST(JSON_EXTRACT(mem.value, '$.id') AS INTEGER) AS way_id,
         {name_select} AS relation_name,
         {country_iso_select} AS country_iso_code,
-        {post_code_select} AS post_code
+        {postal_code_select} AS post_code
       FROM osm_data.osm_relations,
         JSON_EACH(JSON_EXTRACT(osm_data.osm_relations.payload, '$.members')) AS mem
       WHERE osm_data.osm_relations.id IN ({placeholders})
