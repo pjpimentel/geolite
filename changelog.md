@@ -5,7 +5,7 @@
 1. MODIFIED database mod
 1. REMOVED unit tests
 
-## **2026-09-12** - 0.0.9
+## **2026-09-13** - 0.0.9
 
 1. REMOVED `database/house_numbers` mod.
 1. REMOVED `extract` mod.
