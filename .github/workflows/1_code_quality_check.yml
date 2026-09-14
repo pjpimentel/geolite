@@ -11,9 +11,6 @@ jobs:
   fast_checks:
     name: fast checks
     runs-on: ubuntu-latest
-    env:
-      # pinned away from target-cpu=native: a cached artifact must not SIGILL on an older runner cpu
-      RUSTFLAGS: -C target-cpu=x86-64-v2
     steps:
       - name: checkout
         uses: actions/checkout@v7.0.1
@@ -27,11 +24,6 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           components: rustfmt, clippy, llvm-tools-preview
-
-      - name: cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: fast-checks-debug
 
       - name: install cargo-audit
         uses: taiki-e/install-action@5626e41434f03ab3022d9685405c0645c879f441
@@ -76,11 +68,6 @@ jobs:
 
       - name: setup rust toolchain
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-
-      - name: cargo cache
-        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: e2e-release
 
       - name: cargo test e2e
         run: cargo test --release --test '*' -- --ignored --nocapture

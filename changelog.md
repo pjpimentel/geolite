@@ -16,7 +16,8 @@
 1. MODIFIED `admin_level::spatial_index`: `nearest` and `ids_in_bounding_box` are the rtree's reads, moved from `address::coordinates` and `admin_level::repository`, so the index that answers a coordinate lives with the table it indexes.
 1. MODIFIED `admin_level::repository`: `streets_with_centroid`, `geometry_by_ids`, `wkt_by_ids` and `load_all_names` replace the sql `house_number`, `address` and `search_index` wrote over `admin_levels`; only the owner reads the table now.
 1. ADDED `tests/02_preset_brazil/readme.md`: the provenance and the licence of the santos fixture.
-1. MODIFIED ci: the fast checks cache cargo builds with a pinned target cpu, and the image check answers a text and a coordinate geocode after `build maldives`.
+1. MODIFIED ci: the image check answers a text and a coordinate geocode after `build maldives`.
+1. REMOVED the cargo cache of the e2e job: the checks build from scratch on every run.
 
 ## **2026-09-13** - 0.0.9
 
