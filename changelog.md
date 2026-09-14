@@ -1,23 +1,29 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.10
+## **2026-XX-XX** - 0.0.11
+
+1. REMOVED unit tests
+1. REMOVED user_friendly_name persistence.
+1. MODIFIED hiearchy table.
+
+## **2026-09-14** - 0.0.10
 
 1. REMOVED `database/osm_nodes`, `database/osm_ways` and `database/osm_relations` mods, and the `impl_table_ops!` macro: `database` owns no table any more.
-1. ADDED `osm_node`, `osm_way` and `osm_relation` `payload` and `repository`, and `osm_way::filter`: each element table owns its jsonb shape and its persistence; `database` keeps the connection lifecycle, `merge`, the shared helpers and the generic jsonb codec.
-1. ADDED `osm_tag::osm_tag`, `osm_tag::value` and `select::{equals, not_in, is_null, is_not_null, normalized_coalesce}`: the way filters and the post-code and country aliases are typed instead of sql literals; the stored data does not change.
-1. ADDED `database::insert_in_chunks`: the one chunked multi-row insert behind the three element repositories.
-1. MODIFIED `admin_level::extraction_rules`: `include` and `exclude` are `osm_way::way_filter`.
 1. REMOVED the `ToSql`/`FromSql` impls and the serde derives of `osm_node`, `osm_way` and `osm_relation`: nothing read an element back through rusqlite.
+1. REMOVED the cargo cache of the e2e job: the checks build from scratch on every run.
+1. MODIFIED `admin_level::extraction_rules`: `include` and `exclude` are `osm_way::way_filter`.
 1. MODIFIED `/geocode`: a `quality` outside `[0, 1]` or not a number answers 400 with the rule the cli applies to `--min-quality`; it was dropped silently.
 1. MODIFIED `http-server`: the `listening` line names the port actually bound, so `--port 0` lets the os choose one.
-1. ADDED `address::parse_min_quality` (from the cli) and `http::bind`: the quality rule has one owner, and a server is bound before it serves.
 1. MODIFIED `index user-friendly-name` and `query`: two hits with the same score rank by area id, ascending, build after build; an index built by an earlier version is refused as absent — run `geolite index user-friendly-name` again.
 1. MODIFIED `extract osm-house-numbers`: the links are inserted in node id order whatever the thread count, and a street's numbers are read in that order, so a duplicate number resolves to the same point on every build.
 1. MODIFIED `admin_level::spatial_index`: `nearest` and `ids_in_bounding_box` are the rtree's reads, moved from `address::coordinates` and `admin_level::repository`, so the index that answers a coordinate lives with the table it indexes.
 1. MODIFIED `admin_level::repository`: `streets_with_centroid`, `geometry_by_ids`, `wkt_by_ids` and `load_all_names` replace the sql `house_number`, `address` and `search_index` wrote over `admin_levels`; only the owner reads the table now.
-1. ADDED `tests/02_preset_brazil/readme.md`: the provenance and the licence of the santos fixture.
 1. MODIFIED ci: the image check answers a text and a coordinate geocode after `build maldives`.
-1. REMOVED the cargo cache of the e2e job: the checks build from scratch on every run.
+1. ADDED `osm_node`, `osm_way` and `osm_relation` `payload` and `repository`, and `osm_way::filter`: each element table owns its jsonb shape and its persistence; `database` keeps the connection lifecycle, `merge`, the shared helpers and the generic jsonb codec.
+1. ADDED `osm_tag::osm_tag`, `osm_tag::value` and `select::{equals, not_in, is_null, is_not_null, normalized_coalesce}`: the way filters and the post-code and country aliases are typed instead of sql literals; the stored data does not change.
+1. ADDED `database::insert_in_chunks`: the one chunked multi-row insert behind the three element repositories.
+1. ADDED `address::parse_min_quality` (from the cli) and `http::bind`: the quality rule has one owner, and a server is bound before it serves.
+1. ADDED `tests/02_preset_brazil/readme.md`: the provenance and the licence of the santos fixture.
 
 ## **2026-09-13** - 0.0.9
 
