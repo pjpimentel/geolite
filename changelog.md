@@ -4,7 +4,7 @@
 
 1. REMOVED unit tests
 1. REMOVED user_friendly_name persistence.
-1. MODIFIED hiearchy table.
+1. MODIFIED hierarchy table.
 
 ## **2026-09-14** - 0.0.10
 
