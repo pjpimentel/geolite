@@ -14,8 +14,8 @@ admin_level/    a named administrative area — the `admin_levels` table
   scale             the closed set of levels, their names and their order
   id                stable identity, packed from the osm way or relation it came from
   geometry          the wkb column codec, its mbr shortcut, the bounding box and the ring assembly
-  repository        the ddl, the index, the nine queries and the upsert
-  spatial_index     the rtree of every level's bounding box, and the pass that fills it
+  repository        the ddl, the index, the reads every consumer of the table goes through, and the upsert
+  spatial_index     the rtree of every level's bounding box, the pass that fills it, and the nearest streets to a point
   rules             which ways each level includes or excludes, and the preset override
   extract           `admin_level::extract(level)`: the stages of a level and the events they emit
   relations         the stage that assembles boundary relations into areas
@@ -194,6 +194,13 @@ inserts one box per row; on a file database up to eight readers scan disjoint id
 parallel while the connection that owns the table writes, and an in-memory database is scanned on
 the calling thread, because `conn.path()` is empty for it and a worker could not reopen it.
 
+the rtree's two reads live here too. `nearest(conn, point, envelope)` is what the coordinate
+service asks: the rtree narrows the streets to a window of 0.1° around the point inside the
+envelope, each candidate's closest point is measured on the ground, and the answer comes most
+specific level first, closest first within a level; a street whose blob is missing, is not a
+line, or is empty is dropped, and the debug output counts why. `ids_in_bounding_box` is the region
+filter of the text search. neither `address` nor `repository` writes sql over the rtree any more.
+
 ### the extraction — `extract`
 
 `admin_level::extract(conn, level, opts, on_event)` is the one way rows get into the table. the
@@ -328,10 +335,9 @@ different set per layout — the id in the key is what makes the ranking a contr
 an index whose id is not a fast field: one built by an earlier version reads as absent, and the cli
 asks for `geolite index user-friendly-name`.
 
-`build` still reads `admin_levels` with sql of its own, as `house_number::repository` does for its
-streets — the two places in the domain that read another folder's table directly; they move behind
-`admin_level::repository` when the reads are shared. `run` is what the cli's `index user-friendly-name` calls: the build, with the row count
-reported around it.
+`build` reads the names, post codes and levels through `admin_level::repository::load_all_names`,
+so the index knows the table only through its owner. `run` is what the cli's
+`index user-friendly-name` calls: the build, with the row count reported around it.
 
 ## house_number
 
@@ -436,11 +442,10 @@ the ddl, the one index (`house_numbers_search_by_admin_level_id`, the read of ev
 candidate scan of `osm_data.osm_nodes` (`load_all_candidates`, where `normalize` runs), the
 numbers of a set of streets (`by_admin_level_ids`, in node id order — the order the first-match
 rules of the resolution see, whatever the insertion order — where `from_stored` runs) and the
-insert.
-`streets_with_centroid` and `streets_wkb_by_ids` read `admin_levels` directly, the way
-`search_index::build` does; they move behind `admin_level::repository` when a second consumer
-appears. `osm_pbf_file::repository::update_house_numbers_count` reads the table the other way
-round, for the ledger.
+insert. the streets come through `admin_level::repository` — `streets_with_centroid` for the
+tiles, `geometry_by_ids` for the linker — so only the owner writes sql over `admin_levels`.
+`osm_pbf_file::repository::update_house_numbers_count` reads the table the other way round, for
+the ledger.
 
 ## address
 
@@ -541,12 +546,12 @@ cut.
 
 ### what still belongs elsewhere
 
-the move was pure, and five pieces sit here until their owners take them, each an item in the
-backlog: the rtree read behind `best_admin_levels` belongs to `admin_level::spatial_index`;
-`bounding_geometry` and the wkt parse the http module still owns belong to `admin_level::geometry`;
-`doc_text` and `token_coverage` replicate the index pipeline and belong to
+the move was pure, and three pieces sit here until their owners take them, each an item in the
+backlog: `bounding_geometry` and the wkt parse the http module still owns belong to
+`admin_level::geometry`; `doc_text` and `token_coverage` replicate the index pipeline and belong to
 `admin_level_hierarchy::search_index`; the 50 m rule and `numbers_by_street` belong to
-`house_number`; the wkt load of `match_sources` belongs to `admin_level::repository`.
+`house_number`. the rtree read behind the coordinate service is `admin_level::spatial_index::nearest`
+now, and the wkt of a match comes from `admin_level::repository::wkt_by_ids`.
 
 ## osm_pbf_file
 

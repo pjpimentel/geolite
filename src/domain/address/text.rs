@@ -34,7 +34,7 @@ pub(super) fn run(
   let region_ids = opts
     .bounding
     .as_ref()
-    .map(|b| crate::domain::admin_level::repository::ids_in_bounding_box(conn, b.envelope));
+    .map(|b| crate::domain::admin_level::spatial_index::ids_in_bounding_box(conn, b.envelope));
   if region_ids.as_ref().is_some_and(|r| r.is_empty()) {
     return empty();
   }

@@ -1,4 +1,5 @@
-use super::best_admin_levels;
+use super::WORLD_BOUNDING_BOX;
+use crate::domain::admin_level::spatial_index::nearest;
 use crate::domain::address::{address, bounding_geometry, query_match, query_opts, query_output};
 use crate::domain::admin_level::geometry::bounding_box;
 use crate::domain::admin_level::repository::batch_upsert;
@@ -635,7 +636,7 @@ fn _11_no_candidates_returns_empty() {
   let conn = crate::database::open_write(":memory:");
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
-  let candidates = best_admin_levels(&conn, first_street_point(), None);
+  let candidates = nearest(&conn, first_street_point(), WORLD_BOUNDING_BOX);
   assert!(candidates.is_empty());
 }
 
@@ -647,7 +648,7 @@ fn _12_candidate_outside_rtree_delta_is_not_returned() {
 
   // street_00 sits near (-46.3, -23.97); a query at (0, 0) is far beyond the
   // RTREE_DELTA_DEG (0.1) box, so the rtree pre-filter never surfaces it.
-  let candidates = best_admin_levels(&conn, Point::new(0.0, 0.0), None);
+  let candidates = nearest(&conn, Point::new(0.0, 0.0), WORLD_BOUNDING_BOX);
   assert!(candidates.is_empty());
 }
 
@@ -659,11 +660,11 @@ fn _13_candidate_within_delta_is_included_with_distance() {
 
   // querying exactly on the street's first endpoint → closest point is that
   // vertex → haversine distance is 0.
-  let candidates = best_admin_levels(&conn, first_street_point(), None);
+  let candidates = nearest(&conn, first_street_point(), WORLD_BOUNDING_BOX);
   assert_eq!(candidates.len(), 1);
   let c = &candidates[0];
   assert_eq!(c.id, 2);
-  assert_eq!(c.admin_level, level::street);
+  assert_eq!(c.level, level::street);
   assert_eq!(c.distance_in_meters, Some(0));
 }
 
@@ -676,10 +677,10 @@ fn _14_multiple_candidates_ordered_by_distance_ascending() {
   batch_upsert(&conn, &rows);
   crate::domain::admin_level::spatial_index::run(&conn, |_| {});
 
-  // every candidate is admin_level 12 (streets_for_coordinates hardcodes
+  // every candidate is admin_level 12 (the rtree read hardcodes
   // `admin_level = 12`), so the `admin_level DESC` tier of the sort is never
   // exercised here — only the `distance ASC` tie-breaker is observable.
-  let candidates = best_admin_levels(&conn, first_street_point(), None);
+  let candidates = nearest(&conn, first_street_point(), WORLD_BOUNDING_BOX);
   assert_eq!(candidates.len(), 3);
 
   let distances: Vec<Option<u32>> = candidates.iter().map(|c| c.distance_in_meters).collect();
@@ -698,7 +699,7 @@ fn _15_empty_linestring_candidate_is_discarded() {
 
   // rewrite the indexed street to an empty linestring. the rtree row (built from
   // the original geometry's bbox) survives, so the candidate is still returned to
-  // best_admin_levels — which must drop it silently (rej_empty). the writer's
+  // nearest — which must drop it silently (rej_empty). the writer's
   // ToSql rejects no-bbox geometries, so we encode the blob directly here.
   let empty: Geometry<f64> = Geometry::LineString(LineString(vec![]));
   let first = street(0);
@@ -710,7 +711,7 @@ fn _15_empty_linestring_candidate_is_discarded() {
     .execute(SQL_UPDATE_WKB, rusqlite::params![blob, 2_i64])
     .expect("failed to update wkb");
 
-  let candidates = best_admin_levels(&conn, first_street_point(), None);
+  let candidates = nearest(&conn, first_street_point(), WORLD_BOUNDING_BOX);
   assert!(candidates.is_empty());
 }
 
@@ -750,7 +751,7 @@ fn _16_point_on_the_line_has_zero_distance() {
   insert_horizontal_segment(&conn);
 
   let mid_lon = (SEG_LON_A + SEG_LON_B) / 2.0;
-  let candidates = best_admin_levels(&conn, Point::new(mid_lon, SEG_LAT), None);
+  let candidates = nearest(&conn, Point::new(mid_lon, SEG_LAT), WORLD_BOUNDING_BOX);
   assert_eq!(candidates.len(), 1);
   let c = &candidates[0];
 
@@ -767,7 +768,7 @@ fn _17_point_perpendicular_to_segment_has_correct_distance() {
 
   let mid_lon = (SEG_LON_A + SEG_LON_B) / 2.0;
   let query = Point::new(mid_lon, SEG_LAT + 0.005);
-  let candidates = best_admin_levels(&conn, query, None);
+  let candidates = nearest(&conn, query, WORLD_BOUNDING_BOX);
   assert_eq!(candidates.len(), 1);
   let c = &candidates[0];
 
@@ -789,7 +790,7 @@ fn _18_point_beyond_endpoint_snaps_to_endpoint() {
 
   // past B along the line direction → the projection clamps to endpoint B.
   let query = Point::new(SEG_LON_B + 0.005, SEG_LAT);
-  let candidates = best_admin_levels(&conn, query, None);
+  let candidates = nearest(&conn, query, WORLD_BOUNDING_BOX);
   assert_eq!(candidates.len(), 1);
   let c = &candidates[0];
 

@@ -195,11 +195,6 @@ pub fn build(
   boosts: tantivy_boosts,
   abbreviations: &[(&str, &str)],
 ) -> tantivy_index {
-  const SQL_LOAD_NAMES: &str = "
-    SELECT id, name, post_code, admin_level
-    FROM admin_levels
-  ";
-
   const SQL_LOAD_HIERARCHY: &str = "
     SELECT admin_level_id, json(ancestor_ids)
     FROM admin_levels_hierarchy
@@ -228,24 +223,9 @@ pub fn build(
   // giving ["01310", "100"], while the digits-only form stays one token
   let mut names_map: HashMap<i64, String> = HashMap::new();
   let mut levels_map: HashMap<i64, u64> = HashMap::new();
-  {
-    let mut stmt = conn
-      .prepare(SQL_LOAD_NAMES)
-      .expect("failed to prepare load_names");
-    let rows = stmt
-      .query_map([], |row| {
-        let id: i64 = row.get(0)?;
-        let name: String = row.get(1)?;
-        let post_code: Option<String> = row.get(2)?;
-        let admin_level: u8 = row.get(3)?;
-        Ok((id, build_entity_text(&name, post_code.as_deref()), admin_level))
-      })
-      .expect("failed to query admin_levels names");
-    for row in rows.filter_map(|r| r.ok()) {
-      let (id, entity_text, admin_level) = row;
-      names_map.insert(id, entity_text);
-      levels_map.insert(id, admin_level as u64);
-    }
+  for row in crate::domain::admin_level::repository::load_all_names(conn) {
+    names_map.insert(row.id, build_entity_text(&row.name, row.post_code.as_deref()));
+    levels_map.insert(row.id, row.admin_level.value() as u64);
   }
 
   let mut writer = index

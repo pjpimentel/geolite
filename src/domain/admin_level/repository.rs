@@ -1,7 +1,9 @@
 use rusqlite::Connection;
 
 use super::entity::admin_level;
-use super::geometry::{admin_geometry, bounding_box};
+use geozero::ToWkt;
+
+use super::geometry::{admin_geometry, mbr_center};
 use super::id::admin_level_id;
 use super::scale::level;
 use crate::domain::table;
@@ -120,84 +122,6 @@ pub fn load_all_below_street(conn: &Connection) -> Vec<admin_level_geom_row> {
     .collect()
 }
 
-pub struct street_query_row {
-  pub id: i64,
-  pub admin_level: level,
-  pub wkb: Option<admin_geometry>,
-}
-
-pub fn streets_for_coordinates(
-  conn: &Connection,
-  lon: f64,
-  lat: f64,
-  delta: f64,
-  bbox: bounding_box,
-) -> Vec<street_query_row> {
-  const SQL_STREETS_FOR_COORDINATES: &str = "
-    SELECT
-      al.id,
-      al.admin_level,
-      al.wkb
-    FROM admin_levels al
-    INNER JOIN admin_levels_rtree rt ON al.id = rt.id
-    WHERE rt.min_lon <= ?1 AND rt.max_lon >= ?2
-      AND rt.min_lat <= ?3 AND rt.max_lat >= ?4
-      AND rt.min_lon <= ?5 AND rt.max_lon >= ?6
-      AND rt.min_lat <= ?7 AND rt.max_lat >= ?8
-      AND al.admin_level = ?9
-  ";
-
-  let mut stmt = conn
-    .prepare(SQL_STREETS_FOR_COORDINATES)
-    .expect("failed to prepare streets for coordinates");
-  stmt
-    .query_map(
-      rusqlite::params![
-        lon + delta,
-        lon - delta,
-        lat + delta,
-        lat - delta,
-        bbox.max_lon,
-        bbox.min_lon,
-        bbox.max_lat,
-        bbox.min_lat,
-        level::street.value()
-      ],
-      |row| {
-        let id: i64 = row.get(0)?;
-        Ok(level_of(id, row.get(1)?).map(|admin_level| street_query_row {
-          id,
-          admin_level,
-          wkb: row.get(2).ok().flatten(),
-        }))
-      },
-    )
-    .expect("failed to query streets for coordinates")
-    .filter_map(|r| r.expect("failed to read street row"))
-    .collect()
-}
-
-pub fn ids_in_bounding_box(conn: &Connection, bbox: bounding_box) -> Vec<i64> {
-  const SQL_IDS_IN_BOUNDING_BOX: &str = "
-    SELECT id
-    FROM admin_levels_rtree
-    WHERE min_lon <= ?1 AND max_lon >= ?2
-      AND min_lat <= ?3 AND max_lat >= ?4
-  ";
-
-  let mut stmt = conn
-    .prepare(SQL_IDS_IN_BOUNDING_BOX)
-    .expect("failed to prepare ids_in_bounding_box");
-  stmt
-    .query_map(
-      rusqlite::params![bbox.max_lon, bbox.min_lon, bbox.max_lat, bbox.min_lat],
-      |row| row.get::<_, i64>(0),
-    )
-    .expect("failed to query ids_in_bounding_box")
-    .map(|r| r.expect("failed to read bounding box id"))
-    .collect()
-}
-
 pub fn load_by_ids(conn: &Connection, ids: &[i64]) -> Vec<admin_level_geom_row> {
   const SQL_LOAD_BY_IDS: &str = "
     SELECT
@@ -287,6 +211,93 @@ pub fn load_metadata_by_ids(
   .flatten()
   .map(|r| (r.id, r))
   .collect()
+}
+
+pub struct street_centre_row {
+  pub id: i64,
+  pub name: String,
+  pub cx: f64,
+  pub cy: f64,
+}
+
+pub fn streets_with_centroid(conn: &Connection) -> Vec<street_centre_row> {
+  const SQL_STREETS_WITH_GEOMETRY: &str = "
+    SELECT id, name, wkb
+    FROM admin_levels
+    WHERE admin_level = ?1
+      AND wkb IS NOT NULL
+    ORDER BY id
+  ";
+
+  let mut stmt = conn
+    .prepare(SQL_STREETS_WITH_GEOMETRY)
+    .expect("failed to prepare streets with geometry");
+  stmt
+    .query_map([level::street.value()], |row| {
+      Ok((
+        row.get::<_, i64>(0)?,
+        row.get::<_, String>(1)?,
+        row.get::<_, Vec<u8>>(2)?,
+      ))
+    })
+    .expect("failed to query streets")
+    .filter_map(|r| {
+      let (id, name, blob) = r.expect("failed to read street row");
+      let (cx, cy) = mbr_center(&blob)?;
+      Some(street_centre_row { id, name, cx, cy })
+    })
+    .collect()
+}
+
+pub fn geometry_by_ids(conn: &Connection, ids: &[i64]) -> Vec<(i64, admin_geometry)> {
+  const SQL_GEOMETRY_BY_IDS: &str = "
+    SELECT id, wkb
+    FROM admin_levels
+    WHERE wkb IS NOT NULL
+      AND id IN
+  ";
+
+  by_ids(conn, SQL_GEOMETRY_BY_IDS, ids, |row| Ok((row.get(0)?, row.get(1)?)))
+}
+
+pub fn wkt_by_ids(conn: &Connection, ids: &[i64]) -> std::collections::HashMap<i64, String> {
+  geometry_by_ids(conn, ids)
+    .into_iter()
+    .filter_map(|(id, wkb)| Some((id, wkb.geometry().to_wkt().ok()?)))
+    .collect()
+}
+
+pub struct name_row {
+  pub id: i64,
+  pub name: String,
+  pub admin_level: level,
+  pub post_code: Option<String>,
+}
+
+pub fn load_all_names(conn: &Connection) -> Vec<name_row> {
+  const SQL_LOAD_ALL_NAMES: &str = "
+    SELECT id, name, post_code, admin_level
+    FROM admin_levels
+  ";
+
+  let mut stmt = conn
+    .prepare(SQL_LOAD_ALL_NAMES)
+    .expect("failed to prepare load all names");
+  stmt
+    .query_map([], |row| {
+      let id: i64 = row.get(0)?;
+      let name: String = row.get(1)?;
+      let post_code: Option<String> = row.get(2)?;
+      Ok(level_of(id, row.get(3)?).map(|admin_level| name_row {
+        id,
+        name,
+        admin_level,
+        post_code,
+      }))
+    })
+    .expect("failed to query all names")
+    .filter_map(|r| r.expect("failed to read name row"))
+    .collect()
 }
 
 pub fn count_with_geometry(conn: &Connection) -> i64 {

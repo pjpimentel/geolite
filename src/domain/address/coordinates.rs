@@ -1,16 +1,14 @@
-use geo::{Closest, ClosestPoint, Geometry, HaversineDistance, LineString, Point};
+use geo::Point;
 use rusqlite::Connection;
 
 use super::entity::{
   self, leaf, match_sources, query_match, query_match_attributes, query_output, query_service,
   round5,
 };
-use super::filter::{self, bounding_geometry};
+use super::filter;
 use super::{house_number, query_opts};
 use crate::domain::admin_level::geometry::bounding_box;
-use crate::domain::admin_level::level;
-
-const RTREE_DELTA_DEG: f64 = 0.1;
+use crate::domain::admin_level::spatial_index;
 
 const WORLD_BOUNDING_BOX: bounding_box = bounding_box {
   min_lat: -90.0,
@@ -19,120 +17,16 @@ const WORLD_BOUNDING_BOX: bounding_box = bounding_box {
   max_lon: 180.0,
 };
 
-struct admin_candidate {
-  id: i64,
-  admin_level: level,
-  closest_point: Point<f64>,
-  distance_in_meters: Option<u32>,
-}
-
-fn best_admin_levels(
-  conn: &Connection,
-  input_pt: Point<f64>,
-  bounding: Option<&bounding_geometry>,
-) -> Vec<admin_candidate> {
-  let (lon, lat) = (input_pt.x(), input_pt.y());
-  let envelope = bounding.map(|b| b.envelope).unwrap_or(WORLD_BOUNDING_BOX);
-  let raw = crate::domain::admin_level::repository::streets_for_coordinates(
-    conn,
-    lon,
-    lat,
-    RTREE_DELTA_DEG,
-    envelope,
-  );
-  crate::debug!("debug: rtree raw={} for lon={} lat={}", raw.len(), lon, lat);
-
-  let mut rej_wkt_none = 0;
-  let mut rej_not_linestring = 0;
-  let mut rej_empty = 0;
-  let mut rej_indeterminate = 0;
-  let mut rej_outside_polygon = 0;
-  let mut min_dist = f64::MAX;
-
-  let mut candidates: Vec<admin_candidate> = Vec::new();
-  for s in raw {
-    let geom = match s.wkb {
-      Some(g) => g.into_geometry(),
-      None => {
-        rej_wkt_none += 1;
-        continue;
-      }
-    };
-    let linestrings: Vec<LineString<f64>> = match geom {
-      Geometry::LineString(ls) => vec![ls],
-      Geometry::MultiLineString(mls) => mls.0,
-      _ => {
-        rej_not_linestring += 1;
-        continue;
-      }
-    };
-    let mut best: Option<(Point<f64>, f64)> = None;
-    let mut had_non_empty = false;
-    for ls in &linestrings {
-      if ls.0.is_empty() {
-        continue;
-      }
-      had_non_empty = true;
-      if let Closest::SinglePoint(p) | Closest::Intersection(p) = ls.closest_point(&input_pt) {
-        let d = input_pt.haversine_distance(&p);
-        if best.is_none_or(|(_, bd)| d < bd) {
-          best = Some((p, d));
-        }
-      }
-    }
-    if !had_non_empty {
-      rej_empty += 1;
-      continue;
-    }
-    let (cp, dist) = match best {
-      Some(b) => b,
-      None => {
-        rej_indeterminate += 1;
-        continue;
-      }
-    };
-    // the polygon test runs on the candidates, before the heavy loads: the coordinate service
-    // never moves a match's point, so filtering here equals filtering at the end
-    if let Some(b) = bounding
-      && !b.contains(cp.y(), cp.x())
-    {
-      rej_outside_polygon += 1;
-      continue;
-    }
-    if dist < min_dist {
-      min_dist = dist;
-    }
-    let distance_in_meters = Some(dist.round().clamp(0.0, u32::MAX as f64) as u32);
-    candidates.push(admin_candidate {
-      id: s.id,
-      admin_level: s.admin_level,
-      closest_point: cp,
-      distance_in_meters,
-    });
-  }
-
-  crate::debug!(
-    "debug: rejections wkt_none={} not_linestring={} empty={} indeterminate={} outside_polygon={} min_dist_m={:.2}",
-    rej_wkt_none,
-    rej_not_linestring,
-    rej_empty,
-    rej_indeterminate,
-    rej_outside_polygon,
-    min_dist
-  );
-
-  candidates.sort_by(|a, b| {
-    b.admin_level
-      .cmp(&a.admin_level)
-      .then(a.distance_in_meters.cmp(&b.distance_in_meters))
-  });
-  candidates
-}
-
 pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query_opts) -> query_output {
   let input_pt = Point::new(longitude, latitude);
 
-  let mut candidates = best_admin_levels(conn, input_pt, opts.bounding.as_ref());
+  let envelope = opts.bounding.as_ref().map(|b| b.envelope).unwrap_or(WORLD_BOUNDING_BOX);
+  let mut candidates = spatial_index::nearest(conn, input_pt, envelope);
+  // the polygon test runs on the candidates, before the heavy loads: the coordinate service
+  // never moves a match's point, so filtering here equals filtering at the end
+  if let Some(b) = opts.bounding.as_ref() {
+    candidates.retain(|c| b.contains(c.closest_point.y(), c.closest_point.x()));
+  }
   if let Some(threshold) = opts.min_quality {
     candidates.retain(|c| filter::coordinate_quality(c.distance_in_meters) >= threshold);
   }
@@ -155,7 +49,7 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
     let ancestors = sources.ancestors_of(sources.chain_of(c.id).iter().rev());
     let leaf = leaf {
       id: c.id,
-      level: c.admin_level,
+      level: c.level,
       name: own_name,
       relation_id: own_meta.and_then(|m| m.relation_id),
       way_id: own_meta.and_then(|m| m.way_id),
