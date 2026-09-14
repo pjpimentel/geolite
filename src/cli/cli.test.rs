@@ -94,27 +94,6 @@ pub(crate) fn street_row(
 }
 
 #[test]
-fn _00_00_parse_min_quality_accepts_boundaries_and_midpoint() {
-  assert_eq!(parse_min_quality("0.0"), Ok(0.0));
-  assert_eq!(parse_min_quality("0.5"), Ok(0.5));
-  assert_eq!(parse_min_quality("1.0"), Ok(1.0));
-}
-
-#[test]
-fn _00_01_parse_min_quality_rejects_non_number() {
-  let err = parse_min_quality("abc").expect_err("non-number must be rejected");
-  assert!(err.contains("not a number"), "unexpected error: {err}");
-}
-
-#[test]
-fn _00_02_parse_min_quality_rejects_values_outside_range() {
-  for input in ["-0.1", "1.1"] {
-    let err = parse_min_quality(input).expect_err("out-of-range must be rejected");
-    assert!(err.contains("must be between 0.0 and 1.0"), "unexpected error: {err}");
-  }
-}
-
-#[test]
 fn _01_00_default_threads_is_at_least_one() {
   assert!(default_threads() >= 1);
 }

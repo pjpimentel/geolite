@@ -539,16 +539,12 @@ pub(crate) fn insert_node(
     lon,
     tags: tag_map(tags),
   };
-  let mut payload = Vec::new();
-  crate::database::jsonb::encoder::new().encode_osm_node(&mut payload, &node);
-  crate::database::osm_nodes::insert_rows(
-    conn,
-    &[crate::database::osm_nodes::osm_node_row {
-      id,
-      osm_pbf_chunk_id: 0,
-      payload,
-    }],
+  let row = crate::domain::osm_node::osm_node_row::encode(
+    &node,
+    0,
+    &mut crate::database::jsonb::encoder::new(),
   );
+  crate::domain::osm_node::repository::insert_rows(conn, &[row]);
 }
 
 pub(crate) fn insert_way(
@@ -562,16 +558,12 @@ pub(crate) fn insert_way(
     refs: refs.to_vec(),
     tags: tag_map(tags),
   };
-  let mut payload = Vec::new();
-  crate::database::jsonb::encoder::new().encode_osm_way(&mut payload, &way);
-  crate::database::osm_ways::insert_rows(
-    conn,
-    &[crate::database::osm_ways::osm_way_row {
-      id,
-      osm_pbf_chunk_id: 0,
-      payload,
-    }],
+  let row = crate::domain::osm_way::osm_way_row::encode(
+    &way,
+    0,
+    &mut crate::database::jsonb::encoder::new(),
   );
+  crate::domain::osm_way::repository::insert_rows(conn, &[row]);
 }
 
 // membros: (tipo 0=node/1=way/2=relation, id, role)
@@ -599,16 +591,12 @@ pub(crate) fn insert_relation(
       })
       .collect(),
   };
-  let mut payload = Vec::new();
-  crate::database::jsonb::encoder::new().encode_osm_relation(&mut payload, &relation);
-  crate::database::osm_relations::insert_rows(
-    conn,
-    &[crate::database::osm_relations::osm_relation_row {
-      id,
-      osm_pbf_chunk_id: 0,
-      payload,
-    }],
+  let row = crate::domain::osm_relation::osm_relation_row::encode(
+    &relation,
+    0,
+    &mut crate::database::jsonb::encoder::new(),
   );
+  crate::domain::osm_relation::repository::insert_rows(conn, &[row]);
 }
 
 // cria um way fechado (quadrado) com os nodes correspondentes, retornando o way_id
@@ -675,8 +663,8 @@ pub(crate) const NAME_PRIORITY: &[&str] = &["name"];
 // override de regras de um nivel so, no formato que o run dos estagios aceita
 pub(crate) fn level_rules(
   level: crate::domain::admin_level::level,
-  include: &'static [crate::database::osm_ways::filters],
-  exclude: &'static [crate::database::osm_ways::filters],
+  include: &'static [crate::domain::osm_way::way_filter],
+  exclude: &'static [crate::domain::osm_way::way_filter],
 ) -> [crate::domain::admin_level::extraction_rules; 1] {
   [crate::domain::admin_level::extraction_rules {
     level,

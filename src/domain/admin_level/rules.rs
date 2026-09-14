@@ -1,31 +1,31 @@
 use super::scale::level;
-use crate::database::osm_ways::filters;
+use crate::domain::osm_way::way_filter;
 
 #[derive(Clone, Copy)]
 pub struct extraction_rules {
   pub level: level,
-  pub include: &'static [filters],
-  pub exclude: &'static [filters],
+  pub include: &'static [way_filter],
+  pub exclude: &'static [way_filter],
 }
 
-fn default_include(level: level) -> &'static [filters] {
+fn default_include(level: level) -> &'static [way_filter] {
   match level {
     level::neighborhood => &[
-      filters::include_place_neighbourhood,
-      filters::include_place_suburb,
+      way_filter::include_place_neighbourhood,
+      way_filter::include_place_suburb,
     ],
     _ => &[],
   }
 }
 
-fn default_exclude(level: level) -> &'static [filters] {
+fn default_exclude(level: level) -> &'static [way_filter] {
   match level {
     level::street => &[
-      filters::exclude_place_neighbourhood,
-      filters::exclude_place_suburb,
-      filters::exclude_leisure_park,
-      filters::exclude_building,
-      filters::exclude_waterway,
+      way_filter::exclude_place_neighbourhood,
+      way_filter::exclude_place_suburb,
+      way_filter::exclude_leisure_park,
+      way_filter::exclude_building,
+      way_filter::exclude_waterway,
     ],
     _ => &[],
   }
@@ -34,7 +34,7 @@ fn default_exclude(level: level) -> &'static [filters] {
 pub(super) fn resolve_rules(
   level: level,
   overrides: &[extraction_rules],
-) -> (&'static [filters], &'static [filters]) {
+) -> (&'static [way_filter], &'static [way_filter]) {
   if let Some(r) = overrides.iter().find(|r| r.level == level) {
     return (r.include, r.exclude);
   }

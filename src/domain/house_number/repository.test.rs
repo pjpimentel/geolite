@@ -1,4 +1,4 @@
-use super::{batch_insert_links, by_admin_level_ids, candidate_row, load_all_candidates, streets_with_centroid};
+use super::{batch_insert_links, by_admin_level_ids, candidate_row, load_all_candidates};
 use crate::domain::house_number::{house_number, house_number_policy};
 
 use crate::domain::admin_level::repository::batch_upsert;
@@ -90,27 +90,7 @@ fn _05_street_tag_fallback_is_used() {
 }
 
 #[test]
-fn _06_streets_with_centroid_reads_mbr_center_of_each_street() {
-  let conn = memory_db();
-  batch_upsert(
-    &conn,
-    &[
-      street_along(1, "street_a", &[(0.0, 0.0), (2.0, 4.0)]),
-      street_along(2, "street_b", &[(10.0, 20.0), (20.0, 30.0)]),
-    ],
-  );
-
-  let mut rows = streets_with_centroid(&conn);
-  rows.sort_by(|a, b| a.name.cmp(&b.name));
-  assert_eq!(rows.len(), 2);
-  assert_eq!(rows[0].name, "street_a");
-  assert!((rows[0].cx - 1.0).abs() < 1e-9 && (rows[0].cy - 2.0).abs() < 1e-9);
-  assert_eq!(rows[1].name, "street_b");
-  assert!((rows[1].cx - 15.0).abs() < 1e-9 && (rows[1].cy - 25.0).abs() < 1e-9);
-}
-
-#[test]
-fn _07_batch_insert_links_ignores_a_node_already_linked() {
+fn _06_batch_insert_links_ignores_a_node_already_linked() {
   let conn = memory_db();
   batch_upsert(&conn, &[street_along(1, "rua x", &[(0.0, 0.0), (1.0, 0.0)])]);
   let first = batch_insert_links(&conn, &[link(7, 2, "12A", 0.0, 0.0)]);

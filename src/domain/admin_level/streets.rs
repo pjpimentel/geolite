@@ -19,9 +19,9 @@ pub(super) fn run(
   name_priority: &[&str],
   mut progress: impl FnMut(progress_report),
 ) {
-  let street = level::street.value();
   let (_, exclude) = resolve_rules(level::street, rules);
-  let candidate_ids = crate::database::osm_ways::remaining_ids_by_tags(conn, street, exclude);
+  let candidate_ids =
+    crate::domain::osm_way::repository::remaining_ids_by_tags(conn, level::street, exclude);
 
   let total = candidate_ids.len() as u64;
   progress(progress_report {
@@ -53,7 +53,7 @@ pub(super) fn run(
 }
 
 fn load_chunk(conn: &Connection, chunk: &[u64], name_priority: &[&str]) -> Vec<way_work> {
-  let raw_rows = crate::database::osm_ways::way_coords_chunk(conn, chunk, name_priority);
+  let raw_rows = crate::domain::osm_way::repository::way_coords_chunk(conn, chunk, name_priority);
 
   type way_name_tuple = (String, Option<String>);
 

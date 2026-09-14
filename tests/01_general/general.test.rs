@@ -657,6 +657,16 @@ fn _01_21_the_error_bodies_are_exactly_these() {
       "invalid_last_admin_levels",
       format!("/geocode?query={query}&last_admin_levels=abc"),
     ),
+    (
+      "GET",
+      "invalid_quality",
+      format!("/geocode?query={query}&quality=5"),
+    ),
+    (
+      "GET",
+      "non_numeric_quality",
+      format!("/geocode?query={query}&quality=abc"),
+    ),
   ];
 
   let mut recorded = serde_json::Map::new();
@@ -678,12 +688,20 @@ fn _01_21_the_error_bodies_are_exactly_these() {
         "body": "{\"error\":\"last_admin_levels: invalid level 'abc'\"}",
         "status": 400,
       },
+      "invalid_quality": {
+        "body": "{\"error\":\"quality: must be between 0.0 and 1.0, got 5\"}",
+        "status": 400,
+      },
       "method_not_allowed": {
         "body": "{\"error\":\"method not allowed\"}",
         "status": 405,
       },
       "missing_query": {
         "body": "{\"error\":\"missing query param: query\"}",
+        "status": 400,
+      },
+      "non_numeric_quality": {
+        "body": "{\"error\":\"quality: not a number: invalid float literal\"}",
         "status": 400,
       },
       "unknown_route": {
@@ -855,18 +873,19 @@ fn _02_10_an_invalid_last_admin_levels_returns_bad_request() {
   assert_eq!(get(s.port, &path).status, 400);
 }
 
-// 02.11. dead case: http drops an out-of-range quality where the cli rejects it
+// 02.11. dead case: http rejects an out-of-range quality with the rule the cli applies
 #[test]
 #[ignore]
-fn _02_11_an_out_of_range_quality_is_ignored_rather_than_rejected() {
+fn _02_11_an_out_of_range_quality_returns_bad_request() {
   let w = world();
-  // a deliberate asymmetry with the cli, which errors in parse_min_quality. the http handler
-  // drops the value with .filter(...) instead.
   let s = w.start_server();
   let path = format!("{}&quality=5", ask(ANY_TEXT).http_path());
   let r = get(s.port, &path);
-  assert_eq!(r.status, 200, "body: {}", r.text());
-  assert!(!r.json()["matches"].as_array().expect("matches").is_empty());
+  assert_eq!(r.status, 400, "body: {}", r.text());
+  assert_eq!(
+    r.json()["error"],
+    "quality: must be between 0.0 and 1.0, got 5"
+  );
 }
 
 // 02.12. dead case

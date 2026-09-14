@@ -78,4 +78,22 @@ jobs:
           fi
 
       - name: 2, validate build maldives
-        run: docker run --rm "$IMAGE" build maldives
+        run: docker run --rm -v "$PWD/geolite-data:/.geolite" "$IMAGE" --data-path /.geolite build maldives
+
+      - name: 3, validate the image answers a geocode
+        run: |
+          query() {
+            docker run --rm -v "$PWD/geolite-data:/.geolite" "$IMAGE" --data-path /.geolite query "$1" --include-wkt false
+          }
+          text=$(query "chandhanee magu")
+          echo "text: $(echo "$text" | jq -c '.matches[0].friendly_name')"
+          if ! echo "$text" | jq -e '.matches | length > 0' > /dev/null; then
+            echo "::error::the image answered no match for a text query"
+            exit 1
+          fi
+          coordinates=$(query "4.1755,73.5093")
+          echo "coordinates: $(echo "$coordinates" | jq -c '.matches[0].friendly_name')"
+          if ! echo "$coordinates" | jq -e '.matches | length > 0' > /dev/null; then
+            echo "::error::the image answered no match for a coordinate query"
+            exit 1
+          fi

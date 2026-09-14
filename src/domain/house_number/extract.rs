@@ -5,7 +5,8 @@ use std::sync::Arc;
 use super::entity::house_number_link;
 use super::linker::{self, street, tile_data};
 use super::policy::house_number_policy;
-use super::repository::{self, candidate_row, street_meta_row};
+use super::repository::{self, candidate_row};
+use crate::domain::admin_level::repository::street_centre_row;
 
 const TILE_SIZE: f64 = 2.0;
 const WKB_BATCH: usize = 500;
@@ -34,10 +35,11 @@ impl house_number_link {
       return;
     }
 
-    let meta = repository::streets_with_centroid(conn);
+    let meta = crate::domain::admin_level::repository::streets_with_centroid(conn);
     let by_tile = tiles_of(candidates);
     let streets = load_streets(conn, &meta, &by_tile);
-    let links = link_in_parallel(tiles_with_streets(by_tile, &meta, &streets));
+    let mut links = link_in_parallel(tiles_with_streets(by_tile, &meta, &streets));
+  links.sort_unstable_by_key(|link| link.node_id);
 
     let mut processed: u64 = 0;
     for chunk in links.chunks(CHUNK_SIZE) {
@@ -72,7 +74,7 @@ fn tiles_of(candidates: Vec<candidate_row>) -> HashMap<tile, Vec<candidate_row>>
 
 fn load_streets(
   conn: &Connection,
-  meta: &[street_meta_row],
+  meta: &[street_centre_row],
   by_tile: &HashMap<tile, Vec<candidate_row>>,
 ) -> HashMap<i64, Arc<street>> {
   let mut needed: HashSet<i64> = HashSet::new();
@@ -88,11 +90,9 @@ fn load_streets(
   let ids: Vec<i64> = needed.into_iter().collect();
   let mut streets: HashMap<i64, Arc<street>> = HashMap::new();
   for chunk in ids.chunks(WKB_BATCH) {
-    for row in repository::streets_wkb_by_ids(conn, chunk) {
-      if let Some(street) =
-        street::from_geometry(row.id, names[&row.id].to_string(), row.wkb.geometry())
-      {
-        streets.insert(row.id, Arc::new(street));
+    for (id, wkb) in crate::domain::admin_level::repository::geometry_by_ids(conn, chunk) {
+      if let Some(street) = street::from_geometry(id, names[&id].to_string(), wkb.geometry()) {
+        streets.insert(id, Arc::new(street));
       }
     }
   }
@@ -101,10 +101,12 @@ fn load_streets(
 
 fn tiles_with_streets(
   by_tile: HashMap<tile, Vec<candidate_row>>,
-  meta: &[street_meta_row],
+  meta: &[street_centre_row],
   streets: &HashMap<i64, Arc<street>>,
 ) -> Vec<tile_data> {
-  by_tile
+  let mut tiles: Vec<(tile, Vec<candidate_row>)> = by_tile.into_iter().collect();
+  tiles.sort_unstable_by_key(|(tile, _)| *tile);
+  tiles
     .into_iter()
     .map(|(tile, candidates)| tile_data {
       streets: meta

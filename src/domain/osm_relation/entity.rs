@@ -1,25 +1,43 @@
-#[derive(serde::Serialize, serde::Deserialize)]
+use crate::database::jsonb;
+
 pub struct osm_relation {
-  #[serde(skip_serializing, default)]
   pub id: i64,
   pub tags: std::collections::HashMap<String, String>,
   pub members: Vec<osm_relation_member>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
 pub enum osm_member_type {
-  #[serde(rename = "n")]
   node = 0,
-  #[serde(rename = "w")]
   way = 1,
-  #[serde(rename = "r")]
   relation = 2,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
 pub struct osm_relation_member {
-  #[serde(rename = "type")]
   pub osm_member_type: osm_member_type,
   pub id: i64,
   pub role: String,
+}
+
+// encoded up front in the decoder threads, like `osm_node_row`: encoding at insert time would
+// serialise the pipeline in the single writer thread
+pub struct osm_relation_row {
+  pub id: u64,
+  pub osm_pbf_chunk_id: u32,
+  pub payload: Vec<u8>,
+}
+
+impl osm_relation_row {
+  pub fn encode(
+    relation: &osm_relation,
+    osm_pbf_chunk_id: u32,
+    encoder: &mut jsonb::encoder,
+  ) -> Self {
+    let mut payload = Vec::with_capacity(128 + relation.members.len() * 32);
+    super::payload::encode(encoder, &mut payload, relation);
+    Self {
+      id: relation.id as u64,
+      osm_pbf_chunk_id,
+      payload,
+    }
+  }
 }

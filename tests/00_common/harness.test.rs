@@ -1,10 +1,11 @@
 #![allow(dead_code)]
 
 use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 pub const BIN: &str = env!("CARGO_BIN_EXE_geolite");
@@ -367,8 +368,12 @@ pub fn encode(value: &str) -> String {
 pub struct server {
   child: Child,
   pub port: u16,
+  pub stdout_path: PathBuf,
   pub stderr_path: PathBuf,
 }
+
+// every spawn gets its own log files: the world is shared by every test of the process
+static SPAWN_SEQ: AtomicU64 = AtomicU64::new(0);
 
 // SIGTERM, not Child::kill (SIGKILL): geolite installs a SIGTERM handler that flips SHUTDOWN and
 // lets serve() return, and an instrumented binary only writes its coverage profile on a clean exit.
@@ -396,6 +401,10 @@ impl Drop for server {
 }
 
 impl server {
+  pub fn stdout(&self) -> String {
+    read_or_empty(&self.stdout_path)
+  }
+
   pub fn stderr(&self) -> String {
     read_or_empty(&self.stderr_path)
   }
@@ -412,43 +421,70 @@ impl world {
   }
 
   fn spawn_server(&self, index_path: &str, tag: &str) -> server {
-    let mut last = String::new();
+    // the os picks the port (`--port 0`) and the child names it on stdout: nothing to probe
+    let seq = SPAWN_SEQ.fetch_add(1, Ordering::Relaxed);
+    let stdout_path = self.root.join(format!("server-{tag}-{seq}.stdout"));
+    let stderr_path = self.root.join(format!("server-{tag}-{seq}.stderr"));
+    let stdout_file = std::fs::File::create(&stdout_path).expect("failed to create the stdout log");
+    let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create the stderr log");
 
-    // there is no way to hand tiny_http an already-bound socket, so probing a port and letting the
-    // child re-bind it is inherently racy. spawn-and-verify closes the race in effect: the child
-    // either owns the port or dies, and the loop observes which.
-    for attempt in 0..10 {
-      let port = probe_free_port();
-      let stderr_path = self.root.join(format!("server-{tag}-{attempt}.stderr"));
-      let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create the log file");
+    let child = Command::new(BIN)
+      .arg("--data-path")
+      .arg(&self.data_path)
+      .arg("--index-path")
+      .arg(index_path)
+      .arg("http-server")
+      .arg("--host")
+      .arg("127.0.0.1")
+      .arg("--port")
+      .arg("0")
+      .stdout(Stdio::from(stdout_file))
+      .stderr(Stdio::from(stderr_file))
+      .spawn()
+      .unwrap_or_else(|e| panic!("failed to spawn {BIN}: {e}"));
 
-      let child = Command::new(BIN)
-        .arg("--data-path")
-        .arg(&self.data_path)
-        .arg("--index-path")
-        .arg(index_path)
-        .arg("http-server")
-        .arg("--host")
-        .arg("127.0.0.1")
-        .arg("--port")
-        .arg(port.to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::from(stderr_file))
-        .spawn()
-        .unwrap_or_else(|e| panic!("failed to spawn {BIN}: {e}"));
-
-      let mut candidate = server {
-        child,
-        port,
-        stderr_path,
-      };
-      match wait_until_answering(&mut candidate) {
-        Ok(()) => return candidate,
-        Err(e) => last = e,
-      }
-    }
-    panic!("could not start the http server after 10 attempts: {last}");
+    let mut candidate = server {
+      child,
+      port: 0,
+      stdout_path,
+      stderr_path,
+    };
+    candidate.port = wait_for_port(&mut candidate)
+      .unwrap_or_else(|e| panic!("could not start the http server: {e}"));
+    wait_until_answering(&mut candidate)
+      .unwrap_or_else(|e| panic!("could not start the http server: {e}"));
+    candidate
   }
+}
+
+// the port is on the `listening on 127.0.0.1:PORT ...` line `http::serve` prints; a reworded line
+// shows up here as a timeout
+fn wait_for_port(candidate: &mut server) -> Result<u16, String> {
+  let deadline = Instant::now() + Duration::from_secs(60);
+  while Instant::now() < deadline {
+    if let Ok(Some(status)) = candidate.child.try_wait() {
+      return Err(format!(
+        "the server exited with {status}: {}",
+        candidate.stderr()
+      ));
+    }
+    let stdout = plain(&candidate.stdout());
+    let port = stdout
+      .split_inclusive('\n')
+      .filter(|line| line.ends_with('\n'))
+      .find_map(|line| line.strip_prefix("listening on 127.0.0.1:"))
+      .and_then(|rest| rest.split_whitespace().next())
+      .and_then(|digits| digits.parse::<u16>().ok());
+    if let Some(port) = port {
+      return Ok(port);
+    }
+    std::thread::sleep(Duration::from_millis(50));
+  }
+  Err(format!(
+    "timed out waiting for the listening line in {} (stderr: {})",
+    candidate.stdout_path.display(),
+    candidate.stderr()
+  ))
 }
 
 fn wait_until_answering(candidate: &mut server) -> Result<(), String> {
@@ -470,14 +506,6 @@ fn wait_until_answering(candidate: &mut server) -> Result<(), String> {
     std::thread::sleep(Duration::from_millis(50));
   }
   Err("timed out waiting for the server".to_string())
-}
-
-fn probe_free_port() -> u16 {
-  TcpListener::bind("127.0.0.1:0")
-    .expect("failed to probe a free port")
-    .local_addr()
-    .expect("failed to read the probe address")
-    .port()
 }
 
 // the stages colour their verbs with ansi escapes; the words are asserted without them

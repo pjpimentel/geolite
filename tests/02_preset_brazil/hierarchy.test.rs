@@ -279,30 +279,19 @@ fn _01_05_neighbourhoods_from_relations_and_from_ways_resolve_alike() {
   );
 }
 
-// 02.00. search: the ancestry is indexed with the name, and tells homonym streets apart
+// 02.00. search: the ancestry is indexed with the name, and tells homonym streets apart; the two
+// segments of each street tie on score and the lower id wins
 #[test]
 #[ignore]
 fn _02_00_the_ancestry_tells_homonym_streets_apart() {
-  for (query, neighbourhood, ways) in [
-    (
-      "rua bento de abreu boqueirao",
-      "Boqueirão",
-      [255_734_641, 883_674_520],
-    ),
-    (
-      "rua bento de abreu embare",
-      "Embaré",
-      [485_448_287, 883_674_521],
-    ),
+  for (query, neighbourhood, way) in [
+    ("rua bento de abreu boqueirao", "Boqueirão", 255_734_641),
+    ("rua bento de abreu embare", "Embaré", 485_448_287),
   ] {
     let result = world().run(&[query]);
     let top = first(&result);
     assert_eq!(name_at(top, 10).as_deref(), Some(neighbourhood), "{query}");
-    let way_id = street_way_of(top);
-    assert!(
-      ways.contains(&way_id),
-      "{query} landed on way {way_id}; {REGENERATE}"
-    );
+    assert_eq!(street_way_of(top), way, "{query}; {REGENERATE}");
   }
 }
 
@@ -318,10 +307,6 @@ fn _02_01_a_post_code_finds_its_street_in_both_written_forms() {
       Some("Avenida Monteiro Lobato"),
       "{query}: {top}"
     );
-    let way_id = street_way_of(top);
-    assert!(
-      [48_458_023, 484_439_194].contains(&way_id),
-      "{query} landed on way {way_id}; {REGENERATE}"
-    );
+    assert_eq!(street_way_of(top), 48_458_023, "{query}; {REGENERATE}");
   }
 }

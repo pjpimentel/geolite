@@ -142,3 +142,32 @@ fn _06_skips_streets_whose_geometry_is_not_linear() {
     "rua sem geometria linear nao pode casar endereco"
   );
 }
+
+// 07: the rows land in node id order, whatever the tile or the thread the link came from
+#[test]
+fn _07_the_rows_are_inserted_in_node_id_order() {
+  let conn = memory_db();
+  insert_street(&conn, 1, "Rua Um", &[(0.0, 0.0), (0.01, 0.0)]);
+  insert_street(&conn, 2, "Rua Dois", &[(10.0, 10.0), (10.01, 10.0)]);
+  insert_street(&conn, 3, "Rua Tres", &[(-10.0, -10.0), (-9.99, -10.0)]);
+  for (node_id, lon, lat) in [
+    (90, 0.001, 0.0001),
+    (10, 10.001, 10.0001),
+    (50, -9.999, -10.0001),
+    (70, 0.002, 0.0001),
+    (30, 10.002, 10.0001),
+  ] {
+    insert_node(&conn, node_id, lon, lat, &[("addr:housenumber", "1")]);
+  }
+
+  extracted(&conn);
+
+  let by_rowid: Vec<i64> = conn
+    .prepare("SELECT node_id FROM house_numbers ORDER BY id")
+    .expect("failed to prepare")
+    .query_map([], |r| r.get(0))
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read row"))
+    .collect();
+  assert_eq!(by_rowid, vec![10, 30, 50, 70, 90]);
+}

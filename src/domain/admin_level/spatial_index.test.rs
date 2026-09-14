@@ -4,6 +4,8 @@ use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 
 use super::super::entity::admin_level;
+use super::super::geometry::bounding_box;
+use super::super::id::admin_level_id;
 use super::super::repository::batch_upsert;
 use super::super::scale::level;
 use super::{recreate, run};
@@ -83,4 +85,46 @@ fn _02_recreate_empties_the_rtree() {
   assert_eq!(boxes(&conn).len(), 2);
   recreate(&conn);
   assert!(boxes(&conn).is_empty());
+}
+
+#[test]
+fn _03_nearest_measures_the_closest_point_of_each_street_in_the_window() {
+  let conn = seeded(":memory:", 3);
+  run(&conn, |_| {});
+
+  // (1.5, 1.0) lies on the bottom edge of the first square; the others sit outside the 0.1° window
+  let hits = super::nearest(&conn, geo::Point::new(1.5, 1.0), bounding_box_of(0.0, 10.0));
+
+  assert_eq!(hits.len(), 1);
+  assert_eq!(hits[0].id, admin_level_id::from_way(1).raw() as i64);
+  assert_eq!(hits[0].level, level::street);
+  assert_eq!(hits[0].distance_in_meters, Some(0));
+  assert!((hits[0].closest_point.x() - 1.5).abs() < 1e-9);
+  assert!(super::nearest(&conn, geo::Point::new(1.5, 1.0), bounding_box_of(5.0, 10.0)).is_empty());
+}
+
+#[test]
+fn _04_ids_in_bounding_box_answers_every_box_the_region_touches() {
+  let conn = seeded(":memory:", 3);
+  run(&conn, |_| {});
+
+  let mut ids = super::ids_in_bounding_box(&conn, bounding_box_of(1.5, 2.5));
+  ids.sort_unstable();
+
+  assert_eq!(
+    ids,
+    vec![
+      admin_level_id::from_way(1).raw() as i64,
+      admin_level_id::from_way(2).raw() as i64
+    ]
+  );
+}
+
+fn bounding_box_of(min: f64, max: f64) -> bounding_box {
+  bounding_box {
+    min_lat: min,
+    max_lat: max,
+    min_lon: min,
+    max_lon: max,
+  }
 }

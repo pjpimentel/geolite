@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use geozero::ToWkt;
 use rusqlite::Connection;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -116,7 +115,7 @@ impl match_sources {
     let meta = crate::domain::admin_level::repository::load_metadata_by_ids(conn, &meta_ids);
     // the polygons of countries and states are megabytes of wkt: nothing loads them unless asked
     let wkt = if include_wkt {
-      load_wkt_by_ids(conn, &meta_ids)
+      crate::domain::admin_level::repository::wkt_by_ids(conn, &meta_ids)
     } else {
       HashMap::new()
     };
@@ -164,13 +163,6 @@ impl match_sources {
     });
     admin_levels
   }
-}
-
-fn load_wkt_by_ids(conn: &Connection, ids: &[i64]) -> HashMap<i64, String> {
-  crate::domain::admin_level::repository::load_full_by_ids(conn, ids)
-    .into_iter()
-    .filter_map(|r| Some((r.id, r.wkb.as_ref()?.geometry().to_wkt().ok()?)))
-    .collect()
 }
 
 pub(super) fn friendly_name_of(

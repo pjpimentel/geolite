@@ -151,13 +151,10 @@ fn _00_03_friendly_name_format_house_number_alias() {
 #[test]
 #[ignore]
 fn _00_04_the_text_query_matches_are_exactly_these() {
-  // every match, whole. the two segments tie on score, so the array is sorted by id before
-  // comparing — their order follows the tantivy segment layout and must never be asserted.
+  // every match, whole and in order: the two segments tie on score and rank by id
   let result = world().run(&[TEXT_QUERY]);
-  let mut sorted = matches(&result).clone();
-  sorted.sort_by_key(|m| m["id"].as_u64().expect("id must be a number"));
   world().assert_exact(
-    &Value::Array(sorted),
+    &Value::Array(matches(&result).clone()),
     &json!([
       {
         "admin_levels": [

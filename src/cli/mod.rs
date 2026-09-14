@@ -52,14 +52,6 @@ fn default_data_dir() -> String {
     .unwrap_or_else(|_| "./.geolite-data".to_string())
 }
 
-fn parse_min_quality(s: &str) -> Result<f64, String> {
-  let v: f64 = s.parse().map_err(|e| format!("not a number: {e}"))?;
-  if !(0.0..=1.0).contains(&v) {
-    return Err(format!("must be between 0.0 and 1.0, got {v}"));
-  }
-  Ok(v)
-}
-
 #[derive(Parser)]
 #[command(name = "geolite", version)]
 struct cli {
@@ -118,7 +110,7 @@ enum commands {
     input: String,
     #[arg(long, value_parser = crate::domain::address::validate_friendly_name_format)]
     friendly_name_format: Option<String>,
-    #[arg(long, value_parser = parse_min_quality)]
+    #[arg(long, value_parser = crate::domain::address::parse_min_quality)]
     min_quality: Option<f64>,
     #[arg(long, allow_hyphen_values = true, value_parser = crate::http::parse_bounding_wkt)]
     bounding_wkt: Option<crate::domain::address::bounding_geometry>,
@@ -277,8 +269,7 @@ pub fn run() {
     commands::http_server { host, port } => http_server::command_handler_http_server(
       &sqlite_path,
       &index_path,
-      &host,
-      port,
+      crate::http::bind(&format!("{host}:{port}")),
       args.threads,
       preset.index_user_friendly_name.boosts,
       preset.house_numbers,

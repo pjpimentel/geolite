@@ -1,4 +1,4 @@
-use super::{parse_bounding_wkt, parse_last_admin_levels, query_param, url_decode};
+use super::{bind, parse_bounding_wkt, parse_last_admin_levels, query_param, url_decode};
 use crate::domain::admin_level::level;
 
 #[test]
@@ -148,4 +148,12 @@ fn _04_06_a_level_outside_the_scale_errors_with_its_value() {
     parse_last_admin_levels("abc").unwrap_err(),
     "last_admin_levels: invalid level 'abc'"
   );
+}
+
+#[test]
+fn _05_00_bind_on_port_zero_reports_the_port_the_os_chose() {
+  let server = bind("127.0.0.1:0");
+
+  assert_ne!(server.addr().port(), 0);
+  assert_eq!(server.addr().ip(), std::net::IpAddr::from([127, 0, 0, 1]));
 }

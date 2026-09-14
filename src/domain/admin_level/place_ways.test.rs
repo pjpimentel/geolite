@@ -2,7 +2,7 @@ use geo::{Geometry, Winding};
 
 use super::super::scale::level;
 use super::{load_chunk, process_one_way, run, way_meta, way_work};
-use crate::database::osm_ways::filters;
+use crate::domain::osm_way::way_filter;
 use crate::domain::pbf_fixtures::{self, NAME_PRIORITY, coords, stored_admin_levels, stored_geometry};
 
 fn work(way_id: u64, points: &[(f64, f64)]) -> way_work {
@@ -153,9 +153,9 @@ fn _01_04_deduplicates_ways_matching_more_than_one_include_filter() {
   let conn = pbf_fixtures::memory_db();
   // place so pode ter um valor; para forcar a duplicata usamos um override
   // cujos dois filtros casam com o mesmo way
-  const BOTH: &[filters] = &[
-    filters::include_place_neighbourhood,
-    filters::include_place_neighbourhood,
+  const BOTH: &[way_filter] = &[
+    way_filter::include_place_neighbourhood,
+    way_filter::include_place_neighbourhood,
   ];
   let rules = pbf_fixtures::level_rules(level::neighborhood, BOTH, &[]);
   pbf_fixtures::insert_unit_square_way(&conn, 10, 1, ALVALADE);
