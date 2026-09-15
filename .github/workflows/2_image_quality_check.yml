@@ -78,12 +78,12 @@ jobs:
           fi
 
       - name: 2, validate build maldives
-        run: docker run --rm -v "$PWD/geolite-data:/.geolite" "$IMAGE" --data-path /.geolite build maldives
+        run: docker run --rm -v geolite-data:/.geolite "$IMAGE" --data-path /.geolite build maldives
 
       - name: 3, validate the image answers a geocode
         run: |
           query() {
-            docker run --rm -v "$PWD/geolite-data:/.geolite" "$IMAGE" --data-path /.geolite query "$1" --include-wkt false
+            docker run --rm -v geolite-data:/.geolite "$IMAGE" --data-path /.geolite query "$1" --include-wkt false
           }
           text=$(query "chandhanee magu")
           echo "text: $(echo "$text" | jq -c '.matches[0].friendly_name')"
