@@ -31,8 +31,8 @@ fn _00_bounding_box_and_last_admin_levels_apply_as_and() {
   };
   apply_filters_and_truncate(&mut matches, &opts);
 
-  let surviving: Vec<u64> = matches.iter().map(|m| m.id).collect();
-  assert_eq!(surviving, vec![1]);
+  let surviving: Vec<String> = matches.iter().map(|m| m.id.clone()).collect();
+  assert_eq!(surviving, vec![crate::domain::address::entity::path_id(1, &[])]);
 }
 
 #[test]

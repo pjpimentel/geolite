@@ -2,13 +2,17 @@ use geo::Geometry;
 use rusqlite::Connection;
 
 use crate::common::harness::decode_wkb;
-use crate::common::query::{first, level_at, name_at};
+use crate::common::query::{first, level_at, matches, name_at};
 use crate::santos::world;
 
 const BRASIL: i64 = 118_941;
 const SAO_PAULO: i64 = 596_409;
 const SANTOS: i64 = 596_885;
 const APARECIDA: i64 = 8_148_001;
+const EMBARE: i64 = 8_565_765;
+const BOQUEIRAO: i64 = 8_565_761;
+const JOSE_MENINO: i64 = 8_565_771;
+const MARAPE: i64 = 8_565_773;
 const STREETS: i64 = 12_878;
 const STATES: usize = 27;
 const PLACE_WAYS: usize = 22;
@@ -24,19 +28,71 @@ fn relation(osm_id: u64) -> i64 {
   ((osm_id << 1) | 1) as i64
 }
 
-fn chain_of(conn: &Connection, id: i64) -> (Vec<i64>, String) {
-  let (chain, label): (String, String) = conn
-    .query_row(
-      "SELECT json(ancestor_ids), user_friendly_name FROM admin_levels_hierarchy \
-       WHERE admin_level_id = ?1",
-      [id],
-      |r| Ok((r.get(0)?, r.get(1)?)),
+fn parents_of(conn: &Connection, id: i64) -> Vec<i64> {
+  conn
+    .prepare(
+      "SELECT parent_id FROM admin_levels_hierarchy \
+       WHERE admin_level_id = ?1 AND parent_id IS NOT NULL ORDER BY parent_id",
     )
-    .unwrap_or_else(|e| panic!("no hierarchy row for {id}: {e}"));
-  (
-    serde_json::from_str(&chain).expect("ancestor_ids must be a json array"),
-    label,
-  )
+    .expect("failed to prepare")
+    .query_map([id], |r| r.get(0))
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read a parent id"))
+    .collect()
+}
+
+// the paths the domain enumerates, climbed here from the edges: most specific first, one per
+// parent, and an empty path for a root
+fn paths_of(conn: &Connection, id: i64) -> Vec<Vec<i64>> {
+  let parents = parents_of(conn, id);
+  if parents.is_empty() {
+    assert!(
+      has_row(conn, id),
+      "no hierarchy row for {id}: a resolved area always has one"
+    );
+    return vec![vec![]];
+  }
+  let mut paths: Vec<Vec<i64>> = Vec::new();
+  for parent in parents {
+    for tail in paths_of(conn, parent) {
+      let mut path = vec![parent];
+      path.extend(tail);
+      paths.push(path);
+    }
+  }
+  paths
+}
+
+fn has_row(conn: &Connection, id: i64) -> bool {
+  conn
+    .query_row(
+      "SELECT COUNT(*) FROM admin_levels_hierarchy WHERE admin_level_id = ?1",
+      [id],
+      |r| r.get::<_, i64>(0),
+    )
+    .expect("failed to count the rows of an area")
+    > 0
+}
+
+fn names_of(conn: &Connection, path: &[i64]) -> Vec<String> {
+  path
+    .iter()
+    .map(|id| {
+      conn
+        .query_row("SELECT name FROM admin_levels WHERE id = ?1", [id], |r| {
+          r.get(0)
+        })
+        .unwrap_or_else(|e| panic!("no admin_levels row {id}: {e}"))
+    })
+    .collect()
+}
+
+// the label is composed at query time now, so the query is where it is read
+fn friendly_name(query: &str) -> String {
+  first(&world().run(&[query]))["friendly_name"]
+    .as_str()
+    .expect("a match must carry a friendly name")
+    .to_string()
 }
 
 fn geometry_of(conn: &Connection, id: i64) -> Geometry<f64> {
@@ -133,7 +189,7 @@ fn _00_02_a_street_keeps_the_post_code_of_its_way_and_its_label_ends_with_it() {
     .expect("the avenue must be extracted");
   assert_eq!(post_code.as_deref(), Some("11380-500"), "{REGENERATE}");
   assert_eq!(
-    chain_of(&conn, way(48_458_023)).1,
+    friendly_name("11380-500"),
     "Avenida Monteiro Lobato, São Paulo, Brasil, 11380-500"
   );
   let with_post_code = ids_where(
@@ -148,21 +204,15 @@ fn _00_02_a_street_keeps_the_post_code_of_its_way_and_its_label_ends_with_it() {
 #[ignore]
 fn _01_00_the_country_is_the_root_and_every_state_hangs_from_it() {
   let conn = world().open_sqlite();
-  assert_eq!(chain_of(&conn, BRASIL), (vec![], "Brasil".to_string()));
+  assert_eq!(paths_of(&conn, BRASIL), vec![Vec::<i64>::new()]);
 
-  let states: Vec<(i64, String)> = conn
-    .prepare("SELECT id, name FROM admin_levels WHERE admin_level = 4 ORDER BY name")
-    .expect("failed to prepare")
-    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-    .expect("failed to query")
-    .map(|r| r.expect("failed to read a state"))
-    .collect();
+  let states: Vec<i64> = ids_where(
+    &conn,
+    "SELECT id FROM admin_levels WHERE admin_level = 4 ORDER BY name",
+  );
   assert_eq!(states.len(), STATES, "{REGENERATE}");
-  for (id, name) in states {
-    assert_eq!(
-      chain_of(&conn, id),
-      (vec![BRASIL], format!("{name}, Brasil"))
-    );
+  for id in states {
+    assert_eq!(paths_of(&conn, id), vec![vec![BRASIL]]);
   }
 }
 
@@ -179,11 +229,8 @@ fn _01_01_a_clipped_city_never_becomes_an_ancestor() {
     "Cubatão is clipped by the extract; {REGENERATE}"
   );
   assert_eq!(
-    chain_of(&conn, way(169_924_327)),
-    (
-      vec![SAO_PAULO, BRASIL],
-      "Rua Castro Alves, São Paulo, Brasil".to_string()
-    ),
+    paths_of(&conn, way(169_924_327)),
+    vec![vec![SAO_PAULO, BRASIL]],
     "the street in Cubatão attaches to the state, skipping its city"
   );
 }
@@ -191,25 +238,26 @@ fn _01_01_a_clipped_city_never_becomes_an_ancestor() {
 // 01.02. chains: five segments with one name, three labels
 #[test]
 #[ignore]
-fn _01_02_homonyms_get_labels_that_tell_them_apart() {
+fn _01_02_homonyms_get_ancestries_that_tell_them_apart() {
   let conn = world().open_sqlite();
-  let labels: Vec<String> = conn
-    .prepare(
-      "SELECT DISTINCT h.user_friendly_name FROM admin_levels al \
-       JOIN admin_levels_hierarchy h ON h.admin_level_id = al.id \
-       WHERE al.name = 'Rua Castro Alves' ORDER BY 1",
-    )
-    .expect("failed to prepare")
-    .query_map([], |r| r.get(0))
-    .expect("failed to query")
-    .map(|r| r.expect("failed to read a label"))
+  let segments = ids_where(
+    &conn,
+    "SELECT id FROM admin_levels WHERE name = 'Rua Castro Alves' ORDER BY id",
+  );
+  let mut ancestries: Vec<String> = segments
+    .iter()
+    .flat_map(|&id| paths_of(&conn, id))
+    .map(|path| names_of(&conn, &path).join(", "))
     .collect();
+  ancestries.sort_unstable();
+  ancestries.dedup();
+
   assert_eq!(
-    labels,
+    ancestries,
     vec![
-      "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil",
-      "Rua Castro Alves, Guarujá, São Paulo, Brasil",
-      "Rua Castro Alves, São Paulo, Brasil",
+      "Embaré, Santos, São Paulo, Brasil",
+      "Guarujá, São Paulo, Brasil",
+      "São Paulo, Brasil",
     ],
     "{REGENERATE}"
   );
@@ -221,22 +269,20 @@ fn _01_02_homonyms_get_labels_that_tell_them_apart() {
 fn _01_03_a_neighbourhood_inside_a_neighbourhood_chains_through_it() {
   let conn = world().open_sqlite();
   assert_eq!(
-    chain_of(&conn, way(196_616_079)),
-    (
-      vec![APARECIDA, SANTOS, SAO_PAULO, BRASIL],
-      "Conjunto Habitacional Jaú, Aparecida, Santos, São Paulo, Brasil".to_string()
-    ),
+    paths_of(&conn, way(196_616_079)),
+    vec![vec![APARECIDA, SANTOS, SAO_PAULO, BRASIL]],
     "{REGENERATE}"
   );
-  let (chain, label) = chain_of(&conn, way(185_852_085));
-  assert_eq!(chain.len(), 5);
+  let paths = paths_of(&conn, way(185_852_085));
+  assert_eq!(paths.len(), 1);
+  assert_eq!(paths[0].len(), 5);
   assert_eq!(
-    chain[0],
+    paths[0][0],
     way(196_616_079),
     "the innermost neighbourhood comes first"
   );
   assert_eq!(
-    label,
+    friendly_name("rua aureliano coutinho conjunto habitacional jau"),
     "Rua Aureliano Coutinho, Conjunto Habitacional Jaú, Aparecida, Santos, São Paulo, Brasil"
   );
 }
@@ -247,11 +293,8 @@ fn _01_03_a_neighbourhood_inside_a_neighbourhood_chains_through_it() {
 fn _01_04_a_street_outside_every_neighbourhood_attaches_to_its_city() {
   let conn = world().open_sqlite();
   assert_eq!(
-    chain_of(&conn, way(360_562_735)),
-    (
-      vec![SANTOS, SAO_PAULO, BRASIL],
-      "Avenida Brasil, Santos, São Paulo, Brasil".to_string()
-    ),
+    paths_of(&conn, way(360_562_735)),
+    vec![vec![SANTOS, SAO_PAULO, BRASIL]],
     "{REGENERATE}"
   );
 }
@@ -261,22 +304,13 @@ fn _01_04_a_street_outside_every_neighbourhood_attaches_to_its_city() {
 #[ignore]
 fn _01_05_neighbourhoods_from_relations_and_from_ways_resolve_alike() {
   let conn = world().open_sqlite();
-  let under_santos = vec![SANTOS, SAO_PAULO, BRASIL];
+  let under_santos = vec![vec![SANTOS, SAO_PAULO, BRASIL]];
   assert_eq!(
-    chain_of(&conn, relation(4_074_000)),
-    (
-      under_santos.clone(),
-      "Aparecida, Santos, São Paulo, Brasil".to_string()
-    ),
+    paths_of(&conn, relation(4_074_000)),
+    under_santos,
     "{REGENERATE}"
   );
-  assert_eq!(
-    chain_of(&conn, way(1_223_042_714)),
-    (
-      under_santos,
-      "Alemoa, Santos, São Paulo, Brasil".to_string()
-    )
-  );
+  assert_eq!(paths_of(&conn, way(1_223_042_714)), under_santos);
 }
 
 // 02.00. search: the ancestry is indexed with the name, and tells homonym streets apart; the two
@@ -309,4 +343,85 @@ fn _02_01_a_post_code_finds_its_street_in_both_written_forms() {
     );
     assert_eq!(street_way_of(top), 48_458_023, "{query}; {REGENERATE}");
   }
+}
+
+// 03.00. the tree: a street traced over the line two neighbourhoods share hangs from both
+#[test]
+#[ignore]
+fn _03_00_a_street_along_a_shared_boundary_hangs_from_both_neighbourhoods() {
+  let conn = world().open_sqlite();
+
+  assert_eq!(
+    paths_of(&conn, way(368_068_238)),
+    vec![
+      vec![JOSE_MENINO, SANTOS, SAO_PAULO, BRASIL],
+      vec![MARAPE, SANTOS, SAO_PAULO, BRASIL]
+    ],
+    "{REGENERATE}"
+  );
+}
+
+// 03.01. the tree: a street crossing two neighbourhoods answers once per path
+#[test]
+#[ignore]
+fn _03_01_a_street_crossing_two_neighbourhoods_answers_one_match_per_path() {
+  let conn = world().open_sqlite();
+  assert_eq!(
+    paths_of(&conn, way(883_674_521)),
+    vec![
+      vec![BOQUEIRAO, SANTOS, SAO_PAULO, BRASIL],
+      vec![EMBARE, SANTOS, SAO_PAULO, BRASIL]
+    ],
+    "{REGENERATE}"
+  );
+
+  let answers = world().run(&["rua bento de abreu"]);
+  let crossing: Vec<&serde_json::Value> = matches(&answers)
+    .iter()
+    .filter(|m| street_way_of(m) == 883_674_521)
+    .collect();
+  assert_eq!(crossing.len(), 2, "one match per path");
+  let neighbourhoods: Vec<Option<String>> = crossing.iter().map(|m| name_at(m, 10)).collect();
+  assert_eq!(
+    neighbourhoods,
+    vec![Some("Boqueirão".to_string()), Some("Embaré".to_string())]
+  );
+  assert_ne!(crossing[0]["id"], crossing[1]["id"], "one id per path");
+}
+
+// 03.02. the tree: the country is the only root, and an area lists the areas directly inside it
+#[test]
+#[ignore]
+fn _03_02_the_country_is_the_only_root_and_an_area_lists_what_is_directly_inside_it() {
+  let conn = world().open_sqlite();
+  assert_eq!(
+    ids_where(
+      &conn,
+      "SELECT admin_level_id FROM admin_levels_hierarchy WHERE parent_id IS NULL",
+    ),
+    vec![BRASIL]
+  );
+
+  let neighbourhoods_of_santos = ids_where(
+    &conn,
+    "SELECT al.id FROM admin_levels al \
+     WHERE al.admin_level = 10 \
+       AND al.id IN (SELECT admin_level_id FROM admin_levels_hierarchy WHERE parent_id = 596885) \
+     ORDER BY al.id",
+  );
+  for id in [EMBARE, BOQUEIRAO, APARECIDA] {
+    assert!(
+      neighbourhoods_of_santos.contains(&id),
+      "{id} is in Santos; {REGENERATE}"
+    );
+  }
+  assert!(
+    !neighbourhoods_of_santos.contains(&way(196_616_079)),
+    "the neighbourhood inside Aparecida hangs from it, not from the city"
+  );
+  assert_eq!(
+    parents_of(&conn, way(196_616_079)),
+    vec![APARECIDA],
+    "one step down from Aparecida"
+  );
 }

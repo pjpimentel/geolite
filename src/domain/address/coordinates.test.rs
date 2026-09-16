@@ -166,7 +166,11 @@ fn _00_returns_the_10_closest_records() {
   assert_eq!(m0.longitude, -46.31980);
   assert_eq!(m0.attributes.country_iso_3166_1_alpha_2_code, None);
   assert_eq!(m0.attributes.post_code, None);
-  assert_eq!(m0.id, 2);
+  assert_eq!(
+    m0.id,
+    crate::domain::address::entity::path_id(2, &[]),
+    "a street nobody contains is its own path"
+  );
   assert_eq!(m0.similarity, None);
   assert_eq!(m0.friendly_name, "street_00");
 
@@ -800,4 +804,89 @@ fn _18_point_beyond_endpoint_snaps_to_endpoint() {
     c.distance_in_meters,
     Some(query.haversine_distance(&endpoint_b).round() as u32)
   );
+}
+
+// 19. a street inside two neighbourhoods answers one match per path, in path order
+#[test]
+fn _19_a_street_with_two_paths_answers_two_matches_in_path_order() {
+  use crate::domain::admin_level::id::admin_level_id;
+  use crate::domain::admin_level_hierarchy::entity::hierarchy_edges;
+
+  let conn = crate::database::open_write(":memory:");
+  let street = LineString(vec![
+    Coord {
+      x: -46.31980,
+      y: -23.97241,
+    },
+    Coord {
+      x: -46.31979,
+      y: -23.97240,
+    },
+  ]);
+  let around = |min: f64, max: f64| {
+    Geometry::Polygon(Polygon::new(
+      LineString(vec![
+        Coord { x: min, y: min },
+        Coord { x: max, y: min },
+        Coord { x: max, y: max },
+        Coord { x: min, y: max },
+        Coord { x: min, y: min },
+      ]),
+      vec![],
+    ))
+  };
+  batch_upsert(
+    &conn,
+    &[
+      way_row(1, level::street, "rua x", Geometry::LineString(street)),
+      way_row(2, level::neighborhood, "bairro a", around(-47.0, -23.0)),
+      way_row(3, level::neighborhood, "bairro b", around(-47.0, -23.0)),
+    ],
+  );
+  crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+  // the two parents are written by hand: what the resolver picks is its own test
+  let id_of = |way: u64| admin_level_id::from_way(way).raw() as i64;
+  crate::domain::admin_level_hierarchy::repository::batch_insert(
+    &conn,
+    &[
+      hierarchy_edges {
+        admin_level_id: id_of(1),
+        parents: vec![id_of(3), id_of(2)],
+      },
+      hierarchy_edges {
+        admin_level_id: id_of(2),
+        parents: vec![],
+      },
+      hierarchy_edges {
+        admin_level_id: id_of(3),
+        parents: vec![],
+      },
+    ],
+  );
+
+  let output = ask(&conn, -23.97241, -46.31980);
+
+  assert_eq!(output.matches.len(), 2, "one match per path");
+  let names: Vec<String> = output
+    .matches
+    .iter()
+    .map(|m| m.friendly_name.clone())
+    .collect();
+  assert_eq!(names, vec!["rua x, bairro a", "rua x, bairro b"], "by parent id");
+  assert_ne!(output.matches[0].id, output.matches[1].id, "one id per path");
+  assert_eq!(
+    output.matches[0].id,
+    crate::domain::address::entity::path_id(id_of(1), &[id_of(2)])
+  );
+}
+
+// 20. a street the hierarchy never saw still answers, with an empty path
+#[test]
+fn _20_a_candidate_without_an_edge_still_answers_one_match() {
+  let conn = boxed_streets();
+
+  let output = ask(&conn, -23.97241, -46.31980);
+
+  assert_eq!(output.matches.len(), 10);
+  assert_eq!(output.matches[0].admin_levels.len(), 1, "the street alone");
 }

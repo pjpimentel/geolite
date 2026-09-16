@@ -43,38 +43,46 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
   for c in &candidates {
     let own_meta = sources.meta.get(&c.id);
     let own_name = own_meta.map(|m| m.name.as_str()).unwrap_or_default();
-    let hierarchy = sources.hierarchies.get(&c.id);
-    // the chain comes most-specific first; reversed before the stable sort so that, within one
-    // level, the order is general → specific
-    let ancestors = sources.ancestors_of(sources.chain_of(c.id).iter().rev());
-    let leaf = leaf {
-      id: c.id,
-      level: c.level,
-      name: own_name,
-      relation_id: own_meta.and_then(|m| m.relation_id),
-      way_id: own_meta.and_then(|m| m.way_id),
-    };
-    let admin_levels = sources.level_ladder(&ancestors, &leaf);
-    let friendly_name =
-      entity::friendly_name_of(opts.friendly_name_format, &admin_levels, hierarchy, own_name);
+    // a street inside two neighbourhoods is two answers, in the order the paths are enumerated
+    for path in sources.paths_of(c.id) {
+      // the path comes most-specific first; reversed before the stable sort so that, within one
+      // level, the order is general → specific
+      let ancestors = sources.ancestors_of(path.iter().rev());
+      let leaf = leaf {
+        id: c.id,
+        level: c.level,
+        name: own_name,
+        relation_id: own_meta.and_then(|m| m.relation_id),
+        way_id: own_meta.and_then(|m| m.way_id),
+      };
+      let admin_levels = sources.level_ladder(&ancestors, &leaf);
+      let friendly_name = entity::friendly_name_of(
+        opts.friendly_name_format,
+        &admin_levels,
+        &sources,
+        c.id,
+        own_name,
+        path,
+      );
 
-    matches.push(query_match {
-      admin_levels,
-      latitude: round5(c.closest_point.y()),
-      longitude: round5(c.closest_point.x()),
-      coordinates_distance_in_meters: c.distance_in_meters,
-      similarity: None,
-      score: None,
-      friendly_name,
-      attributes: query_match_attributes {
-        country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
-        post_code: entity::post_code_of(&ancestors)
-          .or_else(|| own_meta.and_then(|m| m.post_code.clone())),
-      },
-      house_number: None,
-      id: c.id as u64,
-      admin_level_id: Some(c.id),
-    });
+      matches.push(query_match {
+        admin_levels,
+        latitude: round5(c.closest_point.y()),
+        longitude: round5(c.closest_point.x()),
+        coordinates_distance_in_meters: c.distance_in_meters,
+        similarity: None,
+        score: None,
+        friendly_name,
+        attributes: query_match_attributes {
+          country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
+          post_code: entity::post_code_of(&ancestors)
+            .or_else(|| own_meta.and_then(|m| m.post_code.clone())),
+        },
+        house_number: None,
+        id: entity::path_id(c.id, path),
+        admin_level_id: Some(c.id),
+      });
+    }
   }
 
   house_number::enrich_house_numbers(conn, input_pt, &mut matches, opts.friendly_name_format);

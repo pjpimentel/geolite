@@ -8,7 +8,7 @@ use crate::general::world;
 const SANTOS_RELATION: u64 = 298_442;
 const SANTOS_ID: i64 = 596_885;
 const COUNTRY_STATE_CITY: i64 = 40;
-const EVERY_LEVEL: i64 = 12_981;
+const EVERY_EDGE: i64 = 13_643;
 
 fn admin_levels_at(w: &world, dir: &Path, levels: &str, extra: &[&str]) -> output {
   let mut args = vec![
@@ -63,14 +63,14 @@ fn ledger_count(conn: &rusqlite::Connection) -> Option<i64> {
     .expect("failed to read the ledger")
 }
 
-fn hierarchy_rows(conn: &rusqlite::Connection) -> Vec<(i64, String, String)> {
+fn hierarchy_rows(conn: &rusqlite::Connection) -> Vec<(i64, Option<i64>)> {
   conn
     .prepare(
-      "SELECT admin_level_id, json(ancestor_ids), user_friendly_name \
-       FROM admin_levels_hierarchy ORDER BY admin_level_id",
+      "SELECT admin_level_id, parent_id \
+       FROM admin_levels_hierarchy ORDER BY admin_level_id, parent_id",
     )
     .expect("failed to prepare")
-    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
     .expect("failed to query")
     .map(|r| r.expect("failed to read a hierarchy row"))
     .collect()
@@ -262,12 +262,12 @@ fn _02_00_the_hierarchy_stage_is_deterministic() {
 
   index_at(w, &s.dir, &["admin-levels-hierarchy"]);
   let first_run = hierarchy_rows(&s.ledger());
-  assert_eq!(first_run.len() as i64, EVERY_LEVEL, "{REGENERATE}");
+  assert_eq!(first_run.len() as i64, EVERY_EDGE, "{REGENERATE}");
 
   index_at(w, &s.dir, &["admin-levels-hierarchy"]);
   assert!(
     hierarchy_rows(&s.ledger()) == first_run,
-    "the second run must write the same chains and labels"
+    "the second run must write the same edges"
   );
 }
 

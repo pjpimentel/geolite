@@ -10,7 +10,7 @@ pub(crate) fn admin_level_at(level: u8, name: &str) -> admin_level {
   }
 }
 
-pub(crate) fn match_at(id: u64, lat: f64, lon: f64, admin_levels: Vec<admin_level>) -> query_match {
+pub(crate) fn match_at(id: i64, lat: f64, lon: f64, admin_levels: Vec<admin_level>) -> query_match {
   query_match {
     admin_levels,
     latitude: lat,
@@ -24,7 +24,7 @@ pub(crate) fn match_at(id: u64, lat: f64, lon: f64, admin_levels: Vec<admin_leve
       post_code: None,
     },
     house_number: None,
-    id,
-    admin_level_id: None,
+    id: crate::domain::address::entity::path_id(id, &[]),
+    admin_level_id: Some(id),
   }
 }

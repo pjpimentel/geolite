@@ -5,7 +5,7 @@ use crate::domain::table;
 // bumped whenever the on-disk schema changes in a way that makes builds incompatible;
 // stamped into every writable database via PRAGMA user_version. open_write_main refuses a
 // database stamped with another version, and `geolite merge` refuses to combine one.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 pub mod jsonb;
 pub mod merge;
@@ -192,15 +192,7 @@ pub fn open_write_main(path: &str) -> Connection {
     panic!("failed to create sqlite parent dir: {error}");
   }
   let conn = Connection::open(path).expect("failed to open sqlite");
-  let stamped: u32 = conn
-    .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
-    .map(|v| v as u32)
-    .expect("failed to read user_version");
-  if stamped != 0 && stamped != SCHEMA_VERSION {
-    panic!(
-      "incompatible schema version on {path}: found {stamped}, expected {SCHEMA_VERSION} \u{2014} rebuild required"
-    );
-  }
+  require_schema_version(&conn, path);
   conn
     .execute_batch(
       "PRAGMA journal_mode=WAL;
@@ -239,6 +231,18 @@ pub fn open_write(path: &str) -> Connection {
   crate::domain::osm_way::osm_ways::create_table(&conn);
   crate::domain::osm_relation::osm_relations::create_table(&conn);
   conn
+}
+
+fn require_schema_version(conn: &Connection, path: &str) {
+  let stamped: u32 = conn
+    .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+    .map(|v| v as u32)
+    .expect("failed to read user_version");
+  if stamped != 0 && stamped != SCHEMA_VERSION {
+    panic!(
+      "incompatible schema version on {path}: found {stamped}, expected {SCHEMA_VERSION} \u{2014} rebuild required"
+    );
+  }
 }
 
 pub fn open_readonly(path: &str) -> Connection {
