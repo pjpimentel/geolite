@@ -67,6 +67,30 @@ impl scene {
     }
   }
 
+  // the hierarchy written by hand instead of resolved, so that an area can carry two paths
+  fn with_edges(rows: &[admin_levels_row], edges: &[(u64, Vec<i64>)]) -> scene {
+    let conn = crate::database::open_write(":memory:");
+    batch_upsert(&conn, rows);
+    crate::domain::admin_level::spatial_index::run(&conn, |_| {});
+    let edges: Vec<crate::domain::admin_level_hierarchy::entity::hierarchy_edges> = edges
+      .iter()
+      .map(|(way_id, parents)| {
+        crate::domain::admin_level_hierarchy::entity::hierarchy_edges {
+          admin_level_id: crate::domain::admin_level::id::admin_level_id::from_way(*way_id).raw()
+            as i64,
+          parents: parents.clone(),
+        }
+      })
+      .collect();
+    crate::domain::admin_level_hierarchy::repository::batch_insert(&conn, &edges);
+    let (index_dir, index) = build_test_index(&conn);
+    scene {
+      conn,
+      _index_dir: index_dir,
+      index,
+    }
+  }
+
   // one street carrying the given numbers, node ids counted from 1
   fn numbered_street(name: &str, numbers: &[(&str, f64, f64)]) -> scene {
     let s = scene::of(&[make_street_row(name, 0.000, 1)]);
@@ -663,4 +687,39 @@ fn _28_bounding_wkt_keeps_in_region_match_ranked_beyond_fts_limit() {
     leaf_names(&out),
     vec!["praca do mar shopping center jardim"]
   );
+}
+
+// 29. a street inside two neighbourhoods is two answers, and the named one comes first
+#[test]
+fn _29_a_street_with_two_paths_answers_one_match_per_path() {
+  let embare = make_street_row("embare", 0.010, 10);
+  let boqueirao = make_street_row("boqueirao", 0.020, 20);
+  let street = make_street_row("rua bento de abreu", 0.000, 1);
+  let embare_id = way_id_of(10);
+  let boqueirao_id = way_id_of(20);
+  let s = scene::with_edges(
+    &[street, embare, boqueirao],
+    &[(1, vec![boqueirao_id, embare_id]), (10, vec![]), (20, vec![])],
+  );
+
+  let both = s.ask("rua bento de abreu");
+  assert_eq!(both.matches.len(), 2, "one match per path");
+  assert_eq!(
+    both.matches.iter().map(|m| m.friendly_name.clone()).collect::<Vec<_>>(),
+    vec!["rua bento de abreu, embare", "rua bento de abreu, boqueirao"],
+    "the paths answer in parent id order, whatever order the parents were written in"
+  );
+  let ids: Vec<&str> = both.matches.iter().map(|m| m.id.as_str()).collect();
+  assert_ne!(ids[0], ids[1], "one id per path");
+
+  let named = s.ask("rua bento de abreu embare");
+  assert_eq!(
+    named.matches.first().map(|m| m.friendly_name.as_str()),
+    Some("rua bento de abreu, embare"),
+    "naming the neighbourhood ranks its path first"
+  );
+}
+
+fn way_id_of(way_id: u64) -> i64 {
+  crate::domain::admin_level::id::admin_level_id::from_way(way_id).raw() as i64
 }

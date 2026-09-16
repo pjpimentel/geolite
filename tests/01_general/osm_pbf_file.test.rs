@@ -175,7 +175,7 @@ fn _00_the_ledger_row_of_a_local_build_has_a_local_path_origin() {
       "SELECT COUNT(*) FROM admin_levels WHERE wkb IS NOT NULL"
     )
   );
-  assert_eq!(count(&conn, "PRAGMA user_version"), 2);
+  assert_eq!(count(&conn, "PRAGMA user_version"), 3);
 }
 
 // 01. schema version
@@ -202,7 +202,7 @@ fn _01_a_write_command_refuses_a_database_stamped_with_another_schema_version() 
   );
   assert!(
     out.stderr.contains("incompatible schema version")
-      && out.stderr.contains("found 1, expected 2"),
+      && out.stderr.contains("found 1, expected 3"),
     "stderr: {}",
     out.stderr
   );
@@ -774,7 +774,7 @@ fn _15_a_database_without_origin_wkt_gains_it_on_the_next_write_command() {
   );
   assert_eq!(
     count(&conn, "PRAGMA user_version"),
-    2,
+    3,
     "no version bump for an added column"
   );
   let santos = ledger(&conn)

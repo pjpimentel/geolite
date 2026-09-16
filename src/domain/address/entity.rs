@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 use super::label;
 use crate::domain::admin_level::level;
 use crate::domain::admin_level::repository::admin_meta_row;
-use crate::domain::admin_level_hierarchy::hierarchy_lookup_row;
+use crate::domain::admin_level_hierarchy::paths::paths_of;
 
 #[derive(Serialize, ToSchema)]
 pub enum query_service {
@@ -56,7 +56,7 @@ pub struct query_match {
   pub attributes: query_match_attributes,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub house_number: Option<query_house_number>,
-  pub id: u64,
+  pub id: String,
   #[serde(skip)]
   pub admin_level_id: Option<i64>,
 }
@@ -87,6 +87,22 @@ pub(super) fn round5(v: f64) -> f64 {
   (v * 100_000.0).round() / 100_000.0
 }
 
+// one area reached through two paths is two answers, so the identity of a match is its path and
+// not its area: the ids from the root down to the leaf, the way a directory path reads
+pub(super) fn path_id(own_id: i64, path: &[i64]) -> String {
+  // uuid v5 of "https://github.com/pjpimentel/geolite" under the url namespace, computed once:
+  // `new_v5` is not const, and the namespace never changes
+  const NAMESPACE: uuid::Uuid = uuid::Uuid::from_u128(0x4d29_6f1c_5a5f_5b2e_9b8a_2f7d_3c61_8e04);
+
+  let mut name = String::with_capacity((path.len() + 1) * 12);
+  for id in path.iter().rev() {
+    name.push_str(&id.to_string());
+    name.push('/');
+  }
+  name.push_str(&own_id.to_string());
+  uuid::Uuid::new_v5(&NAMESPACE, name.as_bytes()).to_string()
+}
+
 pub(super) struct leaf<'a> {
   pub(super) id: i64,
   pub(super) level: level,
@@ -96,20 +112,18 @@ pub(super) struct leaf<'a> {
 }
 
 pub(super) struct match_sources {
-  pub(super) hierarchies: HashMap<i64, hierarchy_lookup_row>,
+  paths: HashMap<i64, Vec<Vec<i64>>>,
   pub(super) meta: HashMap<i64, admin_meta_row>,
   wkt: HashMap<i64, String>,
 }
 
 impl match_sources {
   pub(super) fn load(conn: &Connection, ids: &[i64], include_wkt: bool) -> Self {
-    let hierarchies = crate::domain::admin_level_hierarchy::repository::load_by_ids(conn, ids);
+    let edges = crate::domain::admin_level_hierarchy::repository::ancestry_of(conn, ids);
+    let paths: HashMap<i64, Vec<Vec<i64>>> =
+      ids.iter().map(|&id| (id, paths_of(id, &edges))).collect();
     let mut meta_ids: Vec<i64> = ids.to_vec();
-    meta_ids.extend(
-      hierarchies
-        .values()
-        .flat_map(|h| h.ancestor_ids.iter().copied()),
-    );
+    meta_ids.extend(paths.values().flatten().flatten().copied());
     meta_ids.sort_unstable();
     meta_ids.dedup();
     let meta = crate::domain::admin_level::repository::load_metadata_by_ids(conn, &meta_ids);
@@ -119,19 +133,27 @@ impl match_sources {
     } else {
       HashMap::new()
     };
-    match_sources {
-      hierarchies,
-      meta,
-      wkt,
-    }
+    match_sources { paths, meta, wkt }
   }
 
-  pub(super) fn chain_of(&self, id: i64) -> &[i64] {
+  // an area the hierarchy does not know still answers one match, with an empty path
+  pub(super) fn paths_of(&self, id: i64) -> &[Vec<i64>] {
+    const NO_PATH: &[Vec<i64>] = &[Vec::new()];
+
     self
-      .hierarchies
+      .paths
       .get(&id)
-      .map(|h| h.ancestor_ids.as_slice())
-      .unwrap_or(&[])
+      .filter(|paths| !paths.is_empty())
+      .map(Vec::as_slice)
+      .unwrap_or(NO_PATH)
+  }
+
+  pub(super) fn path_at(&self, id: i64, ordinal: u8) -> Option<&[i64]> {
+    self
+      .paths
+      .get(&id)
+      .and_then(|paths| paths.get(ordinal as usize))
+      .map(Vec::as_slice)
   }
 
   pub(super) fn ancestors_of<'a>(
@@ -141,6 +163,19 @@ impl match_sources {
     let mut ancestors: Vec<&admin_meta_row> = chain.filter_map(|id| self.meta.get(id)).collect();
     ancestors.sort_by_key(|a| a.admin_level);
     ancestors
+  }
+
+  // the label without a template follows the chain's own order, not the ladder's: the ladder
+  // sorts by level and the two services order a level differently, while the label is one
+  pub(super) fn default_label(&self, own_id: i64, own_name: &str, chain: &[i64]) -> String {
+    let own_post_code = self.meta.get(&own_id).and_then(|m| m.post_code.as_deref());
+    crate::domain::admin_level_hierarchy::label::render(
+      (own_name, own_post_code),
+      chain
+        .iter()
+        .filter_map(|id| self.meta.get(id))
+        .map(|a| (a.name.as_str(), a.post_code.as_deref())),
+    )
   }
 
   pub(super) fn level_ladder(&self, ancestors: &[&admin_meta_row], leaf: &leaf) -> Vec<admin_level> {
@@ -168,14 +203,14 @@ impl match_sources {
 pub(super) fn friendly_name_of(
   format: Option<&str>,
   admin_levels: &[admin_level],
-  hierarchy: Option<&hierarchy_lookup_row>,
+  sources: &match_sources,
+  own_id: i64,
   own_name: &str,
+  chain: &[i64],
 ) -> String {
   match format {
     Some(fmt) => label::render_friendly_name(fmt, admin_levels),
-    None => hierarchy
-      .map(|h| h.user_friendly_name.clone())
-      .unwrap_or_else(|| own_name.to_string()),
+    None => sources.default_label(own_id, own_name, chain),
   }
 }
 

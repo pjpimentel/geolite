@@ -3,8 +3,13 @@
 ## **2026-XX-XX** - 0.0.11
 
 1. REMOVED unit tests
-1. REMOVED user_friendly_name persistence.
-1. MODIFIED hierarchy table.
+1. REMOVED the `user_friendly_name` and `ancestor_ids` columns of `admin_levels_hierarchy`: the label is composed at query time by `admin_level_hierarchy::label::render`, and every chain is derived from the edges.
+1. MODIFIED `admin_levels_hierarchy`: the table is one edge `(admin_level_id, parent_id)` per row, an area has one row per parent and a root one row with a null parent, and `admin_levels_hierarchy_search_by_parent` covers both directions of the walk.
+1. MODIFIED `index admin-levels-hierarchy`: an area gets every parent that contains it, not one. an area is measured where it is — a polygon by a grid over its interior, a line by its vertices and segment midpoints — a street joins every area one sample falls inside, any other area needs a tenth of its samples inside a more general candidate or half inside a peer of its level, and a point on a shared border promotes only a street.
+1. ADDED `admin_level_hierarchy::paths::paths_of` and `repository::{roots, children_of, parents_of, ancestry_of, load_all_edges}`: the paths of an area are enumerated from the edges, and the tree reads downward as well as up.
+1. MODIFIED `query` and `/geocode`: one match per root-to-leaf path, so a street inside two neighbourhoods answers twice; `matches[].id` becomes the uuid v5 of the path instead of the packed osm id.
+1. MODIFIED the search index: one document per path, and two hits with the same score rank by area id then by path ordinal. an index built by 0.0.10 is refused as absent — run `geolite index user-friendly-name` again.
+1. MODIFIED `SCHEMA_VERSION` to 3: an existing database is refused by a write command and has to be rebuilt.
 
 ## **2026-09-14** - 0.0.10
 

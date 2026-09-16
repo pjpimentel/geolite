@@ -151,7 +151,8 @@ fn _00_03_friendly_name_format_house_number_alias() {
 #[test]
 #[ignore]
 fn _00_04_the_text_query_matches_are_exactly_these() {
-  // every match, whole and in order: the two segments tie on score and rank by id
+  // every match, whole and in order: the two segments tie on score and rank by id, and the id of
+  // a match is the uuid of the path it took
   let result = world().run(&[TEXT_QUERY]);
   world().assert_exact(
     &Value::Array(matches(&result).clone()),
@@ -195,10 +196,10 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
         },
         "coordinates_distance_in_meters": null,
         "friendly_name": "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil",
-        "id": 511420780,
+        "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
         "latitude": -23.9718,
         "longitude": -46.3195,
-        "score": 111.089,
+        "score": 111.817,
         "similarity": 1.0,
       },
       {
@@ -240,10 +241,10 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
         },
         "coordinates_distance_in_meters": null,
         "friendly_name": "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil",
-        "id": 1458411426,
+        "id": "92d2fd8c-a4e1-5fa6-a3cc-43ee45c32b45",
         "latitude": -23.9692,
         "longitude": -46.3173,
-        "score": 111.089,
+        "score": 111.817,
         "similarity": 1.0,
       },
     ]),
@@ -302,7 +303,7 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
       },
       "coordinates_distance_in_meters": 3,
       "friendly_name": "Rua Castro Alves, 35, Embaré, Santos, São Paulo, Brasil",
-      "id": 1458411426,
+      "id": "92d2fd8c-a4e1-5fa6-a3cc-43ee45c32b45",
       "latitude": -23.9709,
       "longitude": -46.3188,
       "score": null,
@@ -674,7 +675,7 @@ fn _03_06_the_two_services_disagree_on_the_street_post_code() {
       &ask(input),
       &json!({
         "matches": [{
-          "id": 1513188090,
+          "id": "c8e841fc-db3a-5bc8-ab40-019e7ef4b4d5",
           "friendly_name": "Ateneu São Vicente, São Paulo, Brasil, 11320-060",
           "attributes": { "post_code": post_code },
         }]
@@ -701,7 +702,10 @@ fn _03_07_the_two_services_order_same_level_ancestors_differently() {
       "Conjunto Habitacional Jaú",
     ),
   ] {
-    let result = w.assert_cli(&ask(input), &json!({ "matches": [{ "id": 371704170 }] }));
+    let result = w.assert_cli(
+      &ask(input),
+      &json!({ "matches": [{ "id": "9695f186-46eb-539f-a831-ac0489ebd841" }] }),
+    );
     let top = first(&result);
     assert_eq!(levels_of(top), [2, 4, 8, 10, 10, 12], "input {input:?}");
     assert_eq!(names_at(top, 10), level_10_names, "input {input:?}");

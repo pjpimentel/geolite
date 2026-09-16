@@ -3,13 +3,13 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
-use super::super::entity::hierarchy_row;
-use super::super::fixtures::{area, street, way};
+use super::super::entity::hierarchy_edges;
+use super::super::fixtures::{area, relation, street, way};
 use super::super::repository::batch_insert;
 use super::testing::{build_test_index, tempdir_guard};
 use super::{
   build, build_entity_text, default_path_for, destroy, expand_abbreviations, fuzzy_distance_for,
-  load, run, tokenize,
+  load, run, search_hit, tokenize,
 };
 use crate::domain::admin_level::id::admin_level_id;
 use crate::domain::admin_level::repository::batch_upsert;
@@ -20,10 +20,10 @@ const RUA_AUGUSTA: i64 = 2;
 const RUA_ANGUSTA: i64 = 4;
 const AUGUSTA: i64 = 15;
 
-// one hierarchy row per area, each its own root, so that the index has one document per area
+// one root row per area, so that the index has one document per area
 fn indexed(rows: Vec<admin_level>) -> Connection {
   let conn = crate::database::open_write(":memory:");
-  let hierarchy: Vec<hierarchy_row> = rows
+  let hierarchy: Vec<hierarchy_edges> = rows
     .iter()
     .map(|r| {
       let id = match (r.relation_id, r.way_id) {
@@ -31,10 +31,9 @@ fn indexed(rows: Vec<admin_level>) -> Connection {
         (None, Some(way)) => admin_level_id::from_way(way),
         (None, None) => unreachable!(),
       };
-      hierarchy_row {
+      hierarchy_edges {
         admin_level_id: id.raw() as i64,
-        ancestor_ids: "[]".to_string(),
-        user_friendly_name: r.name.clone(),
+        parents: vec![],
       }
     })
     .collect();
@@ -43,8 +42,8 @@ fn indexed(rows: Vec<admin_level>) -> Connection {
   conn
 }
 
-fn ids(hits: Vec<(i64, f32)>) -> Vec<i64> {
-  let mut ids: Vec<i64> = hits.into_iter().map(|(id, _)| id).collect();
+fn ids(hits: Vec<search_hit>) -> Vec<i64> {
+  let mut ids: Vec<i64> = hits.into_iter().map(|h| h.admin_level_id).collect();
   ids.sort_unstable();
   ids
 }
@@ -171,7 +170,7 @@ fn _10_hits_with_the_same_score_rank_by_id_ascending() {
   let hits: Vec<i64> = index
     .search("rua igual", 10, None, None)
     .into_iter()
-    .map(|(id, _)| id)
+    .map(|h| h.admin_level_id)
     .collect();
 
   assert_eq!(hits, [10, 20, 30, 40, 50].map(way));
@@ -189,6 +188,49 @@ fn _11_load_refuses_an_index_whose_id_is_not_a_fast_field() {
     builder.add_text_field(name, tantivy::schema::TEXT);
   }
   tantivy::Index::create_in_dir(&guard.path, builder.build()).expect("failed to write the old index");
+
+  assert!(load(&guard.path, DEFAULT.index_user_friendly_name.boosts).is_none());
+}
+
+#[test]
+fn _12_two_paths_of_one_area_rank_by_ordinal_after_the_id() {
+  // two parents with the same name, so that the two documents of the street tie on score
+  let conn = indexed(vec![
+    area(7, level::neighborhood, "Bairro", 0.0, 1.0),
+    area(8, level::neighborhood, "Bairro", 0.0, 1.0),
+  ]);
+  batch_upsert(&conn, &[street(1, "Rua Igual", 0.0)]);
+  batch_insert(
+    &conn,
+    &[hierarchy_edges {
+      admin_level_id: way(1),
+      parents: vec![relation(8), relation(7)],
+    }],
+  );
+  let (_guard, index) = build_test_index(&conn);
+
+  let hits: Vec<(i64, u8)> = index
+    .search("rua igual", 10, None, None)
+    .into_iter()
+    .map(|h| (h.admin_level_id, h.ordinal))
+    .collect();
+
+  assert_eq!(hits, vec![(way(1), 0), (way(1), 1)]);
+  assert_eq!(ids(index.search("bairro", 10, None, None)), vec![way(1), way(1), relation(7), relation(8)]);
+}
+
+#[test]
+fn _13_load_refuses_an_index_whose_ordinal_is_not_a_fast_field() {
+  let guard = tempdir_guard::new();
+  std::fs::create_dir_all(&guard.path).expect("failed to create the index dir");
+  let mut builder = tantivy::schema::Schema::builder();
+  builder.add_u64_field("admin_level_id", tantivy::schema::INDEXED | tantivy::schema::FAST);
+  builder.add_u64_field("ordinal", tantivy::schema::INDEXED);
+  builder.add_u64_field("admin_level", tantivy::schema::INDEXED);
+  for name in ["name", "hier", "name_strict", "hier_strict", "name_lower", "hier_lower"] {
+    builder.add_text_field(name, tantivy::schema::TEXT);
+  }
+  tantivy::Index::create_in_dir(&guard.path, builder.build()).expect("failed to write the index");
 
   assert!(load(&guard.path, DEFAULT.index_user_friendly_name.boosts).is_none());
 }

@@ -258,7 +258,10 @@ fn _12_a_database_built_without_origin_wkt_gains_the_column_on_open() {
   {
     let old = Connection::open(&path).expect("failed to create the old database");
     old
-      .execute_batch(&format!("PRAGMA user_version = 2;{before_the_column}"))
+      .execute_batch(&format!(
+        "PRAGMA user_version = {};{before_the_column}",
+        crate::database::SCHEMA_VERSION
+      ))
       .expect("failed to shape the old database");
     assert!(!crate::database::has_column(&old, "osm_pbf_files", "origin_wkt"));
   }

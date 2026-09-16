@@ -1,16 +1,23 @@
-pub fn root(name: &str, own_post_code: Option<&str>) -> String {
-  with_post_code(name, own_post_code)
-}
-
-pub fn nested(name: &str, parent_label: &str, own_post_code: Option<&str>) -> String {
-  with_post_code(&format!("{name}, {parent_label}"), own_post_code)
-}
-
-fn with_post_code(base: &str, own_post_code: Option<&str>) -> String {
-  match own_post_code.map(str::trim).filter(|s| !s.is_empty()) {
-    Some(pc) => format!("{base}, {pc}"),
-    None => base.to_string(),
+// the names from the area outward, then the post codes from the root inward: what the stored
+// label used to read, composed at query time from the path
+pub fn render<'a>(
+  own: (&'a str, Option<&'a str>),
+  ancestors: impl Iterator<Item = (&'a str, Option<&'a str>)>,
+) -> String {
+  let mut names: Vec<&str> = vec![own.0];
+  let mut post_codes: Vec<Option<&str>> = vec![own.1];
+  for (name, post_code) in ancestors {
+    names.push(name);
+    post_codes.push(post_code);
   }
+  let mut label = names.join(", ");
+  for post_code in post_codes.iter().rev() {
+    if let Some(pc) = post_code.map(str::trim).filter(|s| !s.is_empty()) {
+      label.push_str(", ");
+      label.push_str(pc);
+    }
+  }
+  label
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@ use super::{filter, house_number, query_opts};
 use crate::domain::admin_level::level;
 use crate::domain::admin_level::repository::{admin_area_row, admin_meta_row};
 use crate::domain::admin_level_hierarchy::search_index::{
-  build_entity_text, tantivy_index, tokenize,
+  build_entity_text, search_hit, tantivy_index, tokenize,
 };
 use crate::domain::house_number::house_number_policy;
 
@@ -52,18 +52,27 @@ pub(super) fn run(
   }
 
   let query_tokens = tokenize(text);
-  let ids: Vec<i64> = hits.iter().map(|(id, _)| *id).collect();
-  let scores: HashMap<i64, f32> = hits.into_iter().collect();
+  let mut ids: Vec<i64> = hits.iter().map(|hit| hit.admin_level_id).collect();
+  ids.sort_unstable();
+  ids.dedup();
   let sources = match_sources::load(conn, &ids, opts.include_wkt);
   let records = crate::domain::admin_level::repository::load_full_by_ids(conn, &ids);
   let record_map: HashMap<i64, &admin_area_row> = records.iter().map(|r| (r.id, r)).collect();
 
-  let mut matches: Vec<query_match> = ids
+  // one match per hit: a hit is one path of an area, and its ordinal names the path
+  let mut matches: Vec<query_match> = hits
     .iter()
-    .filter_map(|id| {
-      let record = record_map.get(id)?;
-      let score = *scores.get(id).unwrap_or(&0.0);
-      build_match(record, &sources, &query_tokens, score, opts)
+    .filter_map(|hit| {
+      let record = record_map.get(&hit.admin_level_id)?;
+      let Some(path) = sources.path_at(hit.admin_level_id, hit.ordinal) else {
+        crate::debug!(
+          "debug: hit {} ordinal {} has no path: the index is out of step with the hierarchy",
+          hit.admin_level_id,
+          hit.ordinal
+        );
+        return None;
+      };
+      build_match(record, &sources, &query_tokens, hit, path, opts)
     })
     .collect();
 
@@ -102,14 +111,14 @@ fn build_match(
   record: &admin_area_row,
   sources: &match_sources,
   query_tokens: &[String],
-  score: f32,
+  hit: &search_hit,
+  path: &[i64],
   opts: &query_opts,
 ) -> Option<query_match> {
   let geom = record.wkb.as_ref()?.geometry();
   let centroid = geom.centroid()?;
 
-  let hierarchy = sources.hierarchies.get(&record.id);
-  let ancestors = sources.ancestors_of(sources.chain_of(record.id).iter());
+  let ancestors = sources.ancestors_of(path.iter());
   let leaf = leaf {
     id: record.id,
     level: record.admin_level,
@@ -121,8 +130,10 @@ fn build_match(
   let friendly_name = entity::friendly_name_of(
     opts.friendly_name_format,
     &admin_levels,
-    hierarchy,
+    sources,
+    record.id,
     &record.name,
+    path,
   );
   let own_meta = sources.meta.get(&record.id);
   let coverage = token_coverage(
@@ -140,14 +151,14 @@ fn build_match(
     longitude: round5(centroid.x()),
     coordinates_distance_in_meters: None,
     similarity: Some(round5(coverage as f64) as f32),
-    score: Some(score),
+    score: Some(hit.score),
     friendly_name,
     attributes: query_match_attributes {
       country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
       post_code: entity::post_code_of(&ancestors),
     },
     house_number: None,
-    id: record.id as u64,
+    id: entity::path_id(record.id, path),
     admin_level_id: (record.admin_level == level::street).then_some(record.id),
   })
 }

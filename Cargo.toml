@@ -29,6 +29,7 @@ tiny_http = "0.12"
 tantivy = "0.26.1"
 sysinfo = "0.38.4"
 utoipa = "5.5.0"
+uuid = { version = "1.26.1", features = ["v5"] }
 
 [profile.dev]
 opt-level = 0

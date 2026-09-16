@@ -3,7 +3,7 @@ use rusqlite::Connection;
 
 use super::super::geometry::{admin_geometry, approx_eq};
 use super::super::id::admin_level_id;
-use super::super::repository::load_all_below_street;
+use super::super::repository::{load_all_below_street, load_metadata_by_ids};
 use super::super::scale::level;
 use super::{load_and_send, process_one_relation, rel_meta, run_with_ids};
 use crate::domain::pbf_fixtures::{self, NAME_PRIORITY};
@@ -120,13 +120,16 @@ fn setup_square_relation(conn: &Connection) {
 }
 
 fn stored_levels(conn: &Connection) -> Vec<(Option<u64>, u8, String)> {
-  load_all_below_street(conn)
+  let rows = load_all_below_street(conn);
+  let ids: Vec<i64> = rows.iter().map(|row| row.id).collect();
+  let meta = load_metadata_by_ids(conn, &ids);
+  rows
     .into_iter()
     .map(|row| {
       (
         Some(admin_level_id::from_raw(row.id as u64).osm_id()),
         row.admin_level.value(),
-        row.name,
+        meta[&row.id].name.clone(),
       )
     })
     .collect()

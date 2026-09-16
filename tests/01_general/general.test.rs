@@ -165,13 +165,15 @@ fn _00_07_hierarchy_is_populated_for_every_admin_level() {
     .query_row("SELECT COUNT(*) FROM admin_levels", [], |r| r.get(0))
     .expect("failed to count admin_levels");
   let hierarchy: i64 = conn
-    .query_row("SELECT COUNT(*) FROM admin_levels_hierarchy", [], |r| {
-      r.get(0)
-    })
+    .query_row(
+      "SELECT COUNT(DISTINCT admin_level_id) FROM admin_levels_hierarchy",
+      [],
+      |r| r.get(0),
+    )
     .expect("failed to count admin_levels_hierarchy");
   assert_eq!(
     levels, hierarchy,
-    "every admin level must get a hierarchy row"
+    "every admin level must get at least one edge, a root's included"
   );
 }
 
@@ -1019,24 +1021,34 @@ fn _04_00_distant_coordinates_still_resolve_because_streets_have_no_distance_cap
   );
 }
 
-// 05.00. regression guard: id is admin_level_id::from_way(osm_id), a pure function, never an insert-order rowid
+// 05.00. regression guard: the id names the path an answer took, a pure function of the area ids,
+// never an insert-order rowid, and the same query answers the same ids twice
 #[test]
 #[ignore]
-fn _05_00_match_id_is_the_packed_osm_id() {
+fn _05_00_match_id_names_the_path_and_repeats_across_runs() {
   let result = world().run(&[ANY_POINT]);
-  for m in matches(&result) {
-    let id = m["id"].as_u64().expect("id must be a number");
-    let leaf = m["admin_levels"]
-      .as_array()
-      .and_then(|a| a.iter().rev().find(|l| l["level"].as_u64() != Some(30)))
-      .expect("a match must carry at least one admin level");
-    match (
-      leaf["osm_way_id"].as_u64(),
-      leaf["osm_relation_id"].as_u64(),
-    ) {
-      (Some(way), _) => assert_eq!(id, way * 2, "way ids pack as osm_id << 1"),
-      (None, Some(rel)) => assert_eq!(id, rel * 2 + 1, "relation ids set the low bit"),
-      (None, None) => panic!("the leaf admin level carries neither a way nor a relation id"),
-    }
-  }
+  let ids: Vec<String> = matches(&result)
+    .iter()
+    .map(|m| {
+      let id = m["id"].as_str().expect("id must be a string").to_string();
+      assert_eq!(id.len(), 36, "a uuid in its hyphenated form: {id}");
+      assert!(
+        m["admin_levels"]
+          .as_array()
+          .is_some_and(|levels| !levels.is_empty()),
+        "a match must carry at least one admin level"
+      );
+      id
+    })
+    .collect();
+  let mut unique = ids.clone();
+  unique.sort_unstable();
+  unique.dedup();
+  assert_eq!(unique.len(), ids.len(), "one id per answer");
+
+  let again: Vec<String> = matches(&world().run(&[ANY_POINT]))
+    .iter()
+    .map(|m| m["id"].as_str().expect("id must be a string").to_string())
+    .collect();
+  assert_eq!(again, ids, "the same question answers the same ids");
 }
