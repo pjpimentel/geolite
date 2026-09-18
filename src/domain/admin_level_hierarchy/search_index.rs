@@ -383,6 +383,13 @@ fn bonus_clauses(tokens: &[String], fields: [(Field, f32); 2]) -> Vec<clause> {
   clauses
 }
 
+// two documents with the same text score an ulp apart depending on the segment each one fell in,
+// and that layout changes with the build: comparing the score at the precision the api answers
+// leaves the tie to the id and the ordinal
+fn rounded_score(score: Score) -> Score {
+  (score * 1_000.0).round() / 1_000.0
+}
+
 fn run_query(searcher: &Searcher, query: BooleanQuery, limit: usize) -> Vec<search_hit> {
   // the tie-break has to be the collector's own key: `order_by_score` prunes with block-wand and
   // drops a document that merely ties the current threshold, so a sort afterwards would still see
@@ -399,7 +406,7 @@ fn run_query(searcher: &Searcher, query: BooleanQuery, limit: usize) -> Vec<sear
         .expect("ordinal is a fast field");
       move |doc: DocId, score: Score| {
         (
-          score,
+          rounded_score(score),
           std::cmp::Reverse(ids.first(doc).unwrap_or(u64::MAX)),
           std::cmp::Reverse(ordinals.first(doc).unwrap_or(u64::MAX)),
         )

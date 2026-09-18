@@ -13,6 +13,7 @@
 1. MODIFIED `admin_levels_hierarchy` to one edge per row, with every parent that contains an area.
 1. MODIFIED `query`, `/geocode` and the search index to answer one match per path.
 1. MODIFIED `matches[].id` to the uuid v5 of the path: an id stored from 0.0.10 no longer matches.
+1. MODIFIED the search index to compare the score at three decimals, so two documents that tie rank by area id on every build.
 1. MODIFIED `SCHEMA_VERSION` to 3: an existing database and an index built by 0.0.10 have to be rebuilt.
 1. ADDED the reads that walk the hierarchy downward.
 

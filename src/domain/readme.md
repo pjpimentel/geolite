@@ -356,8 +356,9 @@ only re-rank that set, never widen it; the loose one runs only when the strict o
 exact and fuzzy terms as optional clauses, which covers a typo, an extra word or partial coverage.
 the score is the raw bm25 of whichever query found the document. `last_admin_levels` and the
 region filter are Must clauses with boost 0.0: they restrict the document set without touching the
-score. why exact and fuzzy carry separate boosts, and why short tokens get one edit of tolerance,
-is written next to the boosts in the source.
+score. why exact and fuzzy carry separate
+boosts, and why short tokens get one edit of tolerance, is written next to the boosts in the
+source.
 
 one document per path, so the two paths of a street crossing two neighbourhoods are two
 documents, and naming one of the neighbourhoods ranks its path first. a hit answers the area id
@@ -369,7 +370,9 @@ tantivy: the multi-threaded writer lays the documents out differently on every b
 scored collector prunes with block-wand and drops a document that merely ties the threshold, so a
 sort after the fact would still see a different set per layout — the ids in the key are what make
 the ranking a contract. `load` refuses an index missing either fast field: one built by an earlier
-version reads as absent, and the cli asks for `geolite index user-friendly-name`.
+version reads as absent, and the cli asks for `geolite index user-friendly-name`. the score in that
+key is rounded to three decimals: bm25 separates two identical documents by an ulp, according to the
+segment each one fell in, and the raw value would let that noise decide ahead of the ids.
 
 `build` reads the names, post codes and levels through `admin_level::repository::load_all_names`,
 so the index knows the table only through its owner. `run` is what the cli's
