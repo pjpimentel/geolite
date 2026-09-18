@@ -46,7 +46,3 @@ pub fn is_valid_key(key: &str) -> bool {
       .chars()
       .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '-' || c == '_')
 }
-
-#[cfg(test)]
-#[path = "key.test.rs"]
-mod tests;

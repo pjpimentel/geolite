@@ -1,16 +1,17 @@
-use geo::{Area, BoundingRect, Centroid, Geometry};
+use geo::{Area, BoundingRect, Centroid, Geometry, LineString};
 use rstar::{AABB, RTree, RTreeObject};
 use rusqlite::Connection;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::mpsc;
 use std::thread;
 
-use super::entity::{encode_chain, hierarchy_row};
-use super::{label, repository};
+use super::entity::hierarchy_edges;
+use super::repository::{self, admin_levels_hierarchy};
 use crate::domain::admin_level::level;
 use crate::domain::admin_level::repository as admin_level_repository;
 use crate::domain::admin_level::repository::admin_level_geom_row;
+use crate::domain::table;
 
 pub struct progress_report {
   pub total: Option<u64>,
@@ -20,6 +21,12 @@ pub struct progress_report {
 const BATCH_SIZE: usize = 10_000;
 const READ_SIZE: usize = 5_000;
 const MAX_WORKERS: usize = 8;
+// how much of an area has to sit inside another for it to be a parent: a tenth is enough to
+// straddle a more general area, while nesting under a peer of the same level asks for most of it,
+// or a sloppily drawn neighbourhood would swallow the one beside it
+const STRADDLE_FRACTION: f64 = 0.10;
+const NESTING_FRACTION: f64 = 0.50;
+const GRID_SIDE: usize = 8;
 
 struct spatial_entry {
   idx: usize,
@@ -33,40 +40,95 @@ impl RTreeObject for spatial_entry {
   }
 }
 
+// a ring above this many edges is asked about often enough to pay for an index, and the bands
+// are sized so that a point test walks a few dozen edges instead of the whole boundary of a state
+const RING_INDEX_MIN_EDGES: usize = 512;
+const RING_BAND_EDGES: usize = 32;
+const MAX_BANDS: usize = 4_096;
+
+struct ring {
+  points: Vec<[f64; 2]>,
+  min_y: f64,
+  height: f64,
+  bands: Vec<Vec<u32>>,
+}
+
+impl ring {
+  fn new(points: Vec<[f64; 2]>) -> Self {
+    let (min_y, max_y) = points.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+      (lo.min(p[1]), hi.max(p[1]))
+    });
+    let height = if points.is_empty() { 0.0 } else { max_y - min_y };
+    let edges = points.len();
+    let mut bands: Vec<Vec<u32>> = Vec::new();
+    if edges >= RING_INDEX_MIN_EDGES && height > 0.0 {
+      let count = (edges / RING_BAND_EDGES).clamp(1, MAX_BANDS);
+      bands = vec![Vec::new(); count];
+      for edge in 0..edges {
+        let (a, b) = (points[edge][1], points[(edge + 1) % edges][1]);
+        let first = band_of(a.min(b), min_y, height, count);
+        let last = band_of(a.max(b), min_y, height, count);
+        for band in &mut bands[first..=last] {
+          band.push(edge as u32);
+        }
+      }
+    }
+    ring {
+      points,
+      min_y,
+      height,
+      bands,
+    }
+  }
+}
+
+fn band_of(y: f64, min_y: f64, height: f64, count: usize) -> usize {
+  if height <= 0.0 {
+    return 0;
+  }
+  let raw = (y - min_y) / height * count as f64;
+  (raw.max(0.0) as usize).min(count - 1)
+}
+
 struct polygon_entry {
-  exterior: Vec<[f64; 2]>,
-  interiors: Vec<Vec<[f64; 2]>>,
+  exterior: ring,
+  interiors: Vec<ring>,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum point_class {
+  inside,
+  on_edge,
+  outside,
 }
 
 struct ancestor_entry {
   id: i64,
   admin_level: level,
-  name: String,
   bbox: Option<[f64; 4]>,
   polys: Vec<polygon_entry>,
+  samples: Vec<[f64; 2]>,
   area: f64,
   cx: f64,
   cy: f64,
-  ancestor_ids: Vec<i64>,
-  user_friendly_name: String,
-  own_post_code: Option<String>,
+  ancestors: HashSet<i64>,
 }
 
 struct sink<'a, F: Fn(progress_report)> {
   conn: &'a Connection,
   total: u64,
   processed: u64,
-  batch: Vec<hierarchy_row>,
+  batch: Vec<hierarchy_edges>,
   progress: &'a F,
 }
 
 impl<F: Fn(progress_report)> sink<'_, F> {
-  fn push(&mut self, row: hierarchy_row) {
+  fn push(&mut self, row: hierarchy_edges) {
     self.batch.push(row);
     self.processed += 1;
   }
 
-  fn extend(&mut self, rows: Vec<hierarchy_row>) {
+  fn extend(&mut self, rows: Vec<hierarchy_edges>) {
     self.processed += rows.len() as u64;
     self.batch.extend(rows);
     self.flush_if_full();
@@ -99,11 +161,12 @@ pub fn run(conn: &Connection, progress: impl Fn(progress_report)) {
   });
 
   if total == 0 {
+    admin_levels_hierarchy::create_indexes(conn);
     return;
   }
 
   let raw = admin_level_repository::load_all_below_street(conn);
-  let mut entries: Vec<ancestor_entry> = raw.iter().map(parse_entry).collect();
+  let entries: Vec<ancestor_entry> = raw.iter().map(parse_entry).collect();
   let by_level = indices_by_level(&entries);
   let tree = build_rtree(&entries);
   let n_workers = worker_count();
@@ -116,17 +179,22 @@ pub fn run(conn: &Connection, progress: impl Fn(progress_report)) {
   };
 
   // levels ascend so that every parent is final before its children look it up
+  let mut entries = entries;
   for indices in by_level.values() {
-    for (idx, ancestor_ids, user_friendly_name) in resolve_level(&entries, indices, &tree, n_workers) {
-      entries[idx].ancestor_ids = ancestor_ids;
-      entries[idx].user_friendly_name = user_friendly_name;
-    }
-    propagate_chains(&mut entries, indices);
-    for &idx in indices {
-      sink.push(hierarchy_row {
+    // the geometry runs in parallel against the entries as they are; the reduction that follows
+    // reads the finished ancestors of a parent, so it runs alone, largest area first
+    let qualified = resolve_level(&entries, indices, &tree, n_workers);
+    for (position, &idx) in indices.iter().enumerate() {
+      let parents = reduce_to_parents(&qualified[position], &entries);
+      let mut ancestors: HashSet<i64> = HashSet::new();
+      for &p in &parents {
+        ancestors.insert(entries[p].id);
+        ancestors.extend(entries[p].ancestors.iter().copied());
+      }
+      entries[idx].ancestors = ancestors;
+      sink.push(hierarchy_edges {
         admin_level_id: entries[idx].id,
-        ancestor_ids: encode_chain(&entries[idx].ancestor_ids),
-        user_friendly_name: entries[idx].user_friendly_name.clone(),
+        parents: parents.iter().map(|&p| entries[p].id).collect(),
       });
     }
     sink.flush_if_full();
@@ -140,6 +208,7 @@ pub fn run(conn: &Connection, progress: impl Fn(progress_report)) {
     None => run_streets_sequential(&tree, &entries, &street_ids, &mut sink),
   }
   sink.flush();
+  admin_levels_hierarchy::create_indexes(conn);
 }
 
 fn worker_count() -> usize {
@@ -149,74 +218,53 @@ fn worker_count() -> usize {
     .min(MAX_WORKERS)
 }
 
+// largest area first within a level, then by id, so that the order never depends on the load
 fn indices_by_level(entries: &[ancestor_entry]) -> BTreeMap<level, Vec<usize>> {
   let mut by_level: BTreeMap<level, Vec<usize>> = BTreeMap::new();
   for (idx, e) in entries.iter().enumerate() {
     by_level.entry(e.admin_level).or_default().push(idx);
   }
-  // largest first, so that the peer pass finds an enclosing peer already finished
   for indices in by_level.values_mut() {
     indices.sort_by(|&a, &b| {
       entries[b]
         .area
         .partial_cmp(&entries[a].area)
         .unwrap_or(std::cmp::Ordering::Equal)
+        .then(entries[a].id.cmp(&entries[b].id))
     });
   }
   by_level
 }
 
+// the candidates each area qualifies under, by position in `indices`: the workers answer in
+// whatever order they finish, so the position is what puts the answer back in place
 fn resolve_level(
   entries: &[ancestor_entry],
   indices: &[usize],
   tree: &RTree<spatial_entry>,
   n_workers: usize,
-) -> Vec<(usize, Vec<i64>, String)> {
+) -> Vec<Vec<usize>> {
   let chunk_size = indices.len().div_ceil(n_workers).max(1);
-  let (tx, rx) = mpsc::channel::<(usize, Vec<i64>, String)>();
-  let mut results: Vec<(usize, Vec<i64>, String)> = Vec::with_capacity(indices.len());
+  let (tx, rx) = mpsc::channel::<(usize, Vec<usize>)>();
+  let mut results: Vec<Vec<usize>> = vec![Vec::new(); indices.len()];
 
   thread::scope(|s| {
-    for chunk in indices.chunks(chunk_size) {
+    for (chunk_index, chunk) in indices.chunks(chunk_size).enumerate() {
       let tx = tx.clone();
+      let base = chunk_index * chunk_size;
       s.spawn(move || {
-        for &idx in chunk {
-          let (ancestor_ids, user_friendly_name) = resolve_hierarchy(&entries[idx], tree, entries);
-          tx.send((idx, ancestor_ids, user_friendly_name)).ok();
+        for (offset, &idx) in chunk.iter().enumerate() {
+          tx.send((base + offset, qualifying_candidates(&entries[idx], tree, entries)))
+            .ok();
         }
       });
     }
     drop(tx);
-    for item in rx {
-      results.push(item);
+    for (position, qualifying) in rx {
+      results[position] = qualifying;
     }
   });
   results
-}
-
-// peers of one level resolve in parallel against entries in their initial state, so a chain
-// a → b → c between peers comes back truncated (b's label is still "b" when c reads it). the
-// indices are in descending area order, so re-applying the first ancestor's finished chain
-// propagates it transitively.
-fn propagate_chains(entries: &mut [ancestor_entry], indices: &[usize]) {
-  for &idx in indices {
-    let Some(parent_id) = entries[idx].ancestor_ids.first().copied() else {
-      continue;
-    };
-    let Some(parent_idx) = entries.iter().position(|e| e.id == parent_id) else {
-      continue;
-    };
-    let new_ancestors: Vec<i64> = std::iter::once(parent_id)
-      .chain(entries[parent_idx].ancestor_ids.iter().copied())
-      .collect();
-    let new_label = label::nested(
-      &entries[idx].name,
-      &entries[parent_idx].user_friendly_name,
-      entries[idx].own_post_code.as_deref(),
-    );
-    entries[idx].ancestor_ids = new_ancestors;
-    entries[idx].user_friendly_name = new_label;
-  }
 }
 
 fn resolve_street_rows(
@@ -224,16 +272,18 @@ fn resolve_street_rows(
   ids: &[i64],
   tree: &RTree<spatial_entry>,
   entries: &[ancestor_entry],
-) -> Vec<hierarchy_row> {
+) -> Vec<hierarchy_edges> {
   admin_level_repository::load_by_ids(conn, ids)
     .iter()
     .map(|db_row| {
       let e = parse_entry(db_row);
-      let (ancestor_ids, user_friendly_name) = resolve_hierarchy(&e, tree, entries);
-      hierarchy_row {
+      let qualifying = qualifying_candidates(&e, tree, entries);
+      hierarchy_edges {
         admin_level_id: e.id,
-        ancestor_ids: encode_chain(&ancestor_ids),
-        user_friendly_name,
+        parents: reduce_to_parents(&qualifying, entries)
+          .iter()
+          .map(|&p| entries[p].id)
+          .collect(),
       }
     })
     .collect()
@@ -247,7 +297,7 @@ fn run_streets_parallel<F: Fn(progress_report)>(
   n_workers: usize,
   sink: &mut sink<F>,
 ) {
-  let (tx, rx) = mpsc::channel::<Vec<hierarchy_row>>();
+  let (tx, rx) = mpsc::channel::<Vec<hierarchy_edges>>();
   let chunk_size = street_ids.len().div_ceil(n_workers).max(1);
 
   thread::scope(|s| {
@@ -269,7 +319,7 @@ fn scan_streets(
   ids: &[i64],
   tree: &RTree<spatial_entry>,
   entries: &[ancestor_entry],
-  tx: &mpsc::Sender<Vec<hierarchy_row>>,
+  tx: &mpsc::Sender<Vec<hierarchy_edges>>,
 ) {
   let Ok(reader) = Connection::open_with_flags(
     path,
@@ -307,21 +357,90 @@ fn parse_entry(row: &admin_level_geom_row) -> ancestor_entry {
     .as_ref()
     .and_then(|g| g.bounding_rect())
     .map(|r| [r.min().x, r.min().y, r.max().x, r.max().y]);
-  let polys = geometry.map(extract_polygons).unwrap_or_default();
-  let own_post_code = row.post_code.clone();
-  let user_friendly_name = label::root(&row.name, own_post_code.as_deref());
+  let polys = geometry
+    .as_ref()
+    .map(|g| extract_polygons(g.clone()))
+    .unwrap_or_default();
+  let samples = geometry
+    .as_ref()
+    .map(|g| sample_points(g, &polys, bbox, cx, cy))
+    .unwrap_or_default();
   ancestor_entry {
     id: row.id,
     admin_level: row.admin_level,
-    name: row.name.clone(),
     bbox,
     polys,
+    samples,
     area,
     cx,
     cy,
-    ancestor_ids: vec![],
-    user_friendly_name,
-    own_post_code,
+    ancestors: HashSet::new(),
+  }
+}
+
+// where an area is asked about: the interior of a polygon on a grid, the vertices and the middle
+// of each segment of a line. a border two areas share runs through the vertices of both, which is
+// why a line is asked about its midpoints too, and an area only about points strictly inside it
+fn sample_points(
+  geometry: &Geometry<f64>,
+  polys: &[polygon_entry],
+  bbox: Option<[f64; 4]>,
+  cx: f64,
+  cy: f64,
+) -> Vec<[f64; 2]> {
+  if polys.is_empty() {
+    let mut samples = Vec::new();
+    line_samples(geometry, &mut samples);
+    return samples;
+  }
+  let Some([min_x, min_y, max_x, max_y]) = bbox else {
+    return vec![[cx, cy]];
+  };
+  let mut samples = Vec::with_capacity(GRID_SIDE * GRID_SIDE + 1);
+  for column in 0..GRID_SIDE {
+    for row in 0..GRID_SIDE {
+      let step = |min: f64, max: f64, at: usize| {
+        min + (max - min) * (at as f64 + 0.5) / GRID_SIDE as f64
+      };
+      let (x, y) = (step(min_x, max_x, column), step(min_y, max_y, row));
+      if classify_in_polygons(x, y, polys) == point_class::inside {
+        samples.push([x, y]);
+      }
+    }
+  }
+  if classify_in_polygons(cx, cy, polys) == point_class::inside {
+    samples.push([cx, cy]);
+  }
+  if samples.is_empty() {
+    samples.push([cx, cy]);
+  }
+  samples
+}
+
+fn line_samples(geometry: &Geometry<f64>, out: &mut Vec<[f64; 2]>) {
+  match geometry {
+    Geometry::LineString(ls) => push_line_samples(ls, out),
+    Geometry::MultiLineString(mls) => mls.0.iter().for_each(|ls| push_line_samples(ls, out)),
+    Geometry::Polygon(p) => push_line_samples(p.exterior(), out),
+    Geometry::MultiPolygon(mp) => mp.0.iter().for_each(|p| push_line_samples(p.exterior(), out)),
+    Geometry::Point(p) => out.push([p.x(), p.y()]),
+    Geometry::GeometryCollection(gc) => gc.0.iter().for_each(|g| line_samples(g, out)),
+    _ => {}
+  }
+}
+
+fn push_line_samples(ls: &LineString<f64>, out: &mut Vec<[f64; 2]>) {
+  let mut previous: Option<[f64; 2]> = None;
+  for coord in &ls.0 {
+    let point = [coord.x, coord.y];
+    if let Some(before) = previous {
+      out.push([
+        (before[0] + point[0]) / 2.0,
+        (before[1] + point[1]) / 2.0,
+      ]);
+    }
+    out.push(point);
+    previous = Some(point);
   }
 }
 
@@ -335,105 +454,241 @@ fn extract_polygons(geometry: Geometry<f64>) -> Vec<polygon_entry> {
 
 fn polygon_to_entry(p: geo::Polygon<f64>) -> polygon_entry {
   let (exterior, interiors) = p.into_inner();
+  let points_of = |ls: LineString<f64>| ls.0.into_iter().map(|c| [c.x, c.y]).collect();
   polygon_entry {
-    exterior: exterior.0.into_iter().map(|c| [c.x, c.y]).collect(),
-    interiors: interiors
-      .into_iter()
-      .map(|ring| ring.0.into_iter().map(|c| [c.x, c.y]).collect())
-      .collect(),
+    exterior: ring::new(points_of(exterior)),
+    interiors: interiors.into_iter().map(points_of).map(ring::new).collect(),
   }
 }
 
-fn resolve_hierarchy(
+// every area the child sits in, at any level: an area it entered, plus one it only runs along the
+// border of when that one is more specific than everything it entered, which is the street traced
+// over the line two neighbourhoods share.
+// the candidates are tried from the most specific outward and an area already above one that
+// qualified is never measured: the reduction would drop it anyway, and the ring of a country is
+// the expensive one to walk
+fn qualifying_candidates(
   e: &ancestor_entry,
   tree: &RTree<spatial_entry>,
   entries: &[ancestor_entry],
-) -> (Vec<i64>, String) {
-  let by_level = candidates_by_level(e, tree, entries);
-  match smallest_enclosing(e, &by_level, entries) {
-    None => (vec![], label::root(&e.name, e.own_post_code.as_deref())),
-    Some(idx) => {
-      let p = &entries[idx];
-      let mut ancestor_ids = vec![p.id];
-      ancestor_ids.extend_from_slice(&p.ancestor_ids);
-      (
-        ancestor_ids,
-        label::nested(&e.name, &p.user_friendly_name, e.own_post_code.as_deref()),
-      )
-    }
-  }
-}
-
-// every area whose box covers the centroid and that could contain this one: a lower level, or
-// the same level with a larger area
-fn candidates_by_level(
-  e: &ancestor_entry,
-  tree: &RTree<spatial_entry>,
-  entries: &[ancestor_entry],
-) -> BTreeMap<level, Vec<usize>> {
-  let mut by_level: BTreeMap<level, Vec<usize>> = BTreeMap::new();
-  for se in tree.locate_in_envelope_intersecting(&AABB::from_point([e.cx, e.cy])) {
-    let c = &entries[se.idx];
-    let could_contain = c.id != e.id
-      && (c.admin_level < e.admin_level
-        || (c.admin_level == e.admin_level && c.area > e.area));
-    if could_contain {
-      by_level.entry(c.admin_level).or_default().push(se.idx);
-    }
-  }
-  by_level
-}
-
-// the most specific level with a polygon around the centroid, and within it the smallest area
-fn smallest_enclosing(
-  e: &ancestor_entry,
-  by_level: &BTreeMap<level, Vec<usize>>,
-  entries: &[ancestor_entry],
-) -> Option<usize> {
-  for candidates in by_level.values().rev() {
-    let smallest = candidates
-      .iter()
-      .copied()
-      .filter(|&idx| point_in_polygons(e.cx, e.cy, &entries[idx].polys))
-      .min_by(|&a, &b| {
+) -> Vec<usize> {
+  let mut candidates: Vec<usize> = tree
+    .locate_in_envelope_intersecting(&envelope_of(e))
+    .map(|se| se.idx)
+    .filter(|&idx| {
+      let c = &entries[idx];
+      c.id != e.id
+        && !c.polys.is_empty()
+        && (c.admin_level < e.admin_level
+          || (c.admin_level == e.admin_level && c.area > e.area))
+    })
+    .collect();
+  candidates.sort_by(|&a, &b| {
+    entries[b]
+      .admin_level
+      .cmp(&entries[a].admin_level)
+      .then(
         entries[a]
           .area
           .partial_cmp(&entries[b].area)
-          .unwrap_or(std::cmp::Ordering::Equal)
-      });
-    if smallest.is_some() {
-      return smallest;
+          .unwrap_or(std::cmp::Ordering::Equal),
+      )
+      .then(entries[a].id.cmp(&entries[b].id))
+  });
+
+  let mut inside: Vec<usize> = Vec::new();
+  let mut on_edge: Vec<usize> = Vec::new();
+  let mut covered: HashSet<i64> = HashSet::new();
+  for idx in candidates {
+    let c = &entries[idx];
+    if covered.contains(&c.id) {
+      continue;
+    }
+    match containment(e, c) {
+      point_class::inside => {
+        covered.extend(c.ancestors.iter().copied());
+        inside.push(idx);
+      }
+      point_class::on_edge => on_edge.push(idx),
+      point_class::outside => {}
     }
   }
-  None
+  let mut qualifying = inside;
+  // only a street is promoted by a border it never crosses: two areas that share a boundary are
+  // neighbours, and reading that border as containment would nest every city in the one beside it
+  if e.admin_level == level::street {
+    let deepest_entered = qualifying.iter().map(|&idx| entries[idx].admin_level).max();
+    for idx in on_edge {
+      if deepest_entered.is_none_or(|deepest| entries[idx].admin_level > deepest) {
+        qualifying.push(idx);
+      }
+    }
+  }
+  qualifying
 }
 
-fn point_in_polygons(px: f64, py: f64, polys: &[polygon_entry]) -> bool {
-  polys.iter().any(|poly| {
-    point_in_ring(px, py, &poly.exterior)
-      && poly
-        .interiors
+// an area that another qualifying area already hangs from is not a parent: the street inside a
+// neighbourhood hangs from the neighbourhood, not from its city as well
+fn reduce_to_parents(qualifying: &[usize], entries: &[ancestor_entry]) -> Vec<usize> {
+  let mut parents: Vec<usize> = qualifying
+    .iter()
+    .copied()
+    .filter(|&idx| {
+      let id = entries[idx].id;
+      !qualifying
         .iter()
-        .all(|hole| !point_in_ring(px, py, hole))
-  })
+        .any(|&other| other != idx && entries[other].ancestors.contains(&id))
+    })
+    .collect();
+  parents.sort_by_key(|&idx| entries[idx].id);
+  parents.dedup_by_key(|&mut idx| entries[idx].id);
+  parents
 }
 
-fn point_in_ring(px: f64, py: f64, ring: &[[f64; 2]]) -> bool {
-  let n = ring.len();
+fn envelope_of(e: &ancestor_entry) -> AABB<[f64; 2]> {
+  match e.bbox {
+    Some([min_x, min_y, max_x, max_y]) => AABB::from_corners([min_x, min_y], [max_x, max_y]),
+    None => AABB::from_point([e.cx, e.cy]),
+  }
+}
+
+// a street belongs to every area it enters, so one point inside is enough; an area belongs where
+// enough of it falls, whether it closed into a polygon or was clipped into a line by the extract
+fn containment(child: &ancestor_entry, candidate: &ancestor_entry) -> point_class {
+  let fraction = if candidate.admin_level == child.admin_level {
+    NESTING_FRACTION
+  } else {
+    STRADDLE_FRACTION
+  };
+  let needed = if child.admin_level == level::street {
+    1
+  } else {
+    ((child.samples.len() as f64) * fraction).ceil().max(1.0) as usize
+  };
+  let Some([min_x, min_y, max_x, max_y]) = candidate.bbox else {
+    return point_class::outside;
+  };
+  let mut hits = 0;
+  let mut touched_edge = false;
+  let mut left = child.samples.len();
+  for sample in &child.samples {
+    let [x, y] = *sample;
+    // the box first: walking the ring of a state for a point that is plainly outside it is the
+    // one cost this pass cannot afford
+    if x >= min_x && x <= max_x && y >= min_y && y <= max_y {
+      match classify_in_polygons(x, y, &candidate.polys) {
+        point_class::inside => {
+          hits += 1;
+          if hits >= needed {
+            return point_class::inside;
+          }
+        }
+        point_class::on_edge => touched_edge = true,
+        point_class::outside => {}
+      }
+    }
+    left -= 1;
+    if hits + left < needed {
+      break;
+    }
+  }
+  if touched_edge {
+    point_class::on_edge
+  } else {
+    point_class::outside
+  }
+}
+
+fn classify_in_polygons(px: f64, py: f64, polys: &[polygon_entry]) -> point_class {
+  let mut touched_edge = false;
+  for poly in polys {
+    match classify_point(px, py, &poly.exterior) {
+      point_class::outside => continue,
+      point_class::on_edge => touched_edge = true,
+      point_class::inside => {
+        let mut in_hole = false;
+        for hole in &poly.interiors {
+          match classify_point(px, py, hole) {
+            point_class::inside => in_hole = true,
+            point_class::on_edge => {
+              touched_edge = true;
+              in_hole = true;
+            }
+            point_class::outside => continue,
+          }
+          break;
+        }
+        if !in_hole {
+          return point_class::inside;
+        }
+      }
+    }
+  }
+  if touched_edge {
+    point_class::on_edge
+  } else {
+    point_class::outside
+  }
+}
+
+fn classify_point(px: f64, py: f64, ring: &ring) -> point_class {
+  let n = ring.points.len();
   if n < 3 {
-    return false;
+    return point_class::outside;
   }
   let mut inside = false;
-  let mut j = n - 1;
-  for i in 0..n {
-    let [xi, yi] = ring[i];
-    let [xj, yj] = ring[j];
-    if (yi > py) != (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi {
-      inside = !inside;
+  if ring.bands.is_empty() {
+    for edge in 0..n {
+      if crosses(px, py, ring.points[edge], ring.points[(edge + 1) % n], &mut inside) {
+        return point_class::on_edge;
+      }
     }
-    j = i;
+  } else {
+    // only the edges of the band the point falls in can cross a ray at its latitude
+    let band = band_of(py, ring.min_y, ring.height, ring.bands.len());
+    for &edge in &ring.bands[band] {
+      let edge = edge as usize;
+      if crosses(px, py, ring.points[edge], ring.points[(edge + 1) % n], &mut inside) {
+        return point_class::on_edge;
+      }
+    }
   }
-  inside
+  if inside {
+    point_class::inside
+  } else {
+    point_class::outside
+  }
+}
+
+// answers whether the point lies on the edge; otherwise flips `inside` when a ray to the left of
+// the point crosses it
+fn crosses(px: f64, py: f64, a: [f64; 2], b: [f64; 2], inside: &mut bool) -> bool {
+  if on_segment(px, py, a, b) {
+    return true;
+  }
+  let ([xj, yj], [xi, yi]) = (a, b);
+  if (yi > py) != (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi {
+    *inside = !*inside;
+  }
+  false
+}
+
+// a vertex osm shares between a border and a street lands on the segment exactly, so the
+// tolerance only has to cover the rounding of the cross product
+fn on_segment(px: f64, py: f64, a: [f64; 2], b: [f64; 2]) -> bool {
+  const EPSILON: f64 = 1e-9;
+
+  let ([ax, ay], [bx, by]) = (a, b);
+  if px < ax.min(bx) - EPSILON
+    || px > ax.max(bx) + EPSILON
+    || py < ay.min(by) - EPSILON
+    || py > ay.max(by) + EPSILON
+  {
+    return false;
+  }
+  let cross = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+  let length = ((bx - ax).powi(2) + (by - ay).powi(2)).sqrt();
+  cross.abs() <= EPSILON * length.max(EPSILON)
 }
 
 fn build_rtree(entries: &[ancestor_entry]) -> RTree<spatial_entry> {

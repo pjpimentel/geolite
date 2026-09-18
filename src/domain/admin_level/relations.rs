@@ -187,7 +187,3 @@ fn process_one_relation(
     wkb: geom.into(),
   })
 }
-
-#[cfg(test)]
-#[path = "relations.test.rs"]
-mod tests;

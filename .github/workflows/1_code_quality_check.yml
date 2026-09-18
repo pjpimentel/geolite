@@ -8,9 +8,13 @@ permissions:
   contents: read
 
 jobs:
-  fast_checks:
-    name: fast checks
+  checks:
+    name: checks
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUSTFLAGS: -C target-cpu=x86-64-v2
+      CARGO_TERM_COLOR: always
     steps:
       - name: checkout
         uses: actions/checkout@v7.0.1
@@ -42,8 +46,20 @@ jobs:
       - name: cargo audit
         run: cargo audit
 
-      - name: cargo test with coverage
-        run: cargo llvm-cov --all-targets --lcov --output-path lcov.info
+      # the cheap checks above fail first, so a commit that misses fmt or clippy never reaches the
+      # release build. the two batteries write into one profile, so a single lcov carries both;
+      # `--bin geolite` keeps the respawned `_90_` children ignored, as they exit on purpose.
+      - name: cargo test unit with coverage
+        run: cargo llvm-cov --release --no-report --bin geolite
+
+      - name: cargo test e2e with coverage
+        run: cargo llvm-cov --release --no-report --test '*' -- --ignored --nocapture
+
+      - name: lcov report
+        run: cargo llvm-cov report --release --lcov --output-path lcov.info
+
+      - name: build maldives
+        run: ./target/llvm-cov-target/release/geolite build maldives
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
@@ -52,37 +68,14 @@ jobs:
         with:
           args: -Dsonar.qualitygate.wait=true
 
-  # e2e builds in --release and takes up to 30 min; gating it on the cheap
-  # checks keeps a commit that already failed fmt or clippy from burning a runner.
-  e2e:
-    name: e2e
-    needs: fast_checks
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      RUSTFLAGS: -C target-cpu=x86-64-v2
-      CARGO_TERM_COLOR: always
-    steps:
-      - name: checkout
-        uses: actions/checkout@v7.0.1
-
-      - name: setup rust toolchain
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
-
-      - name: cargo test e2e
-        run: cargo test --release --test '*' -- --ignored --nocapture
-
-      - name: build maldives
-        run: ./target/release/geolite build maldives
-
       - name: upload the e2e workspace on failure
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: e2e-workspace
           path: |
-            target/tmp/*/build.stdout
-            target/tmp/*/build.stderr
-            target/tmp/*/server-*.stderr
+            target/llvm-cov-target/tmp/*/build.stdout
+            target/llvm-cov-target/tmp/*/build.stderr
+            target/llvm-cov-target/tmp/*/server-*.stderr
           if-no-files-found: ignore
           retention-days: 3

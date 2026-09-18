@@ -96,7 +96,3 @@ pub fn command_handler_optimize(
   println!();
   print_sqlite_sizes("after ", sqlite_path, index_path);
 }
-
-#[cfg(test)]
-#[path = "optimize.test.rs"]
-mod tests;

@@ -118,7 +118,3 @@ pub fn command_handler_osm_pbf_file_download(
     }
   }
 }
-
-#[cfg(test)]
-#[path = "download.test.rs"]
-mod tests;

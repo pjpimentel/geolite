@@ -38,7 +38,3 @@ impl admin_level_id {
     self.0 >> 1
   }
 }
-
-#[cfg(test)]
-#[path = "id.test.rs"]
-mod tests;

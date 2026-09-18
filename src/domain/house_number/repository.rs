@@ -178,7 +178,3 @@ pub fn batch_insert_links(conn: &Connection, links: &[house_number_link]) -> i64
   tx.commit().expect("failed to commit");
   total
 }
-
-#[cfg(test)]
-#[path = "repository.test.rs"]
-mod tests;

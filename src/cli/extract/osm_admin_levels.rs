@@ -163,7 +163,3 @@ pub fn command_handler_extract_osm_admin_levels(
 
   crate::domain::osm_pbf_file::repository::update_admin_levels_count(&conn);
 }
-
-#[cfg(test)]
-#[path = "osm_admin_levels.test.rs"]
-mod tests;

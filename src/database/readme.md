@@ -5,7 +5,7 @@ store admin data in `~/.geolite/database.sqlite3` (layers 1, 4, 5); raw OSM prim
 ## layers
 
 ```
-layer 5  ·  admin_levels_hierarchy     ancestor chain + user-friendly name per admin level — domain/admin_level_hierarchy
+layer 5  ·  admin_levels_hierarchy     one edge child > parent per row; parent_id for the downward read — domain/admin_level_hierarchy
          ·  admin_levels_rtree         virtual rtree: bbox spatial index for fast coord lookup — domain/admin_level
             ─────────────────────────────────────────────────────────────────────────────────
 layer 4  ·  admin_levels               admin areas — levels 1–9 (admin_level tag), 10 (place ways), 12 (streets) — domain/admin_level

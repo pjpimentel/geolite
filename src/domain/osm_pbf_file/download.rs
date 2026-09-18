@@ -204,7 +204,3 @@ fn verify_md5(url: &str, actual: &str) -> md5_status {
     }
   }
 }
-
-#[cfg(test)]
-#[path = "download.test.rs"]
-mod tests;

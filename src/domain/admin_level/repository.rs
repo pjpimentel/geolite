@@ -63,9 +63,7 @@ pub fn drop_indexes(conn: &Connection) {
 pub struct admin_level_geom_row {
   pub id: i64,
   pub admin_level: level,
-  pub name: String,
   pub wkb: Option<admin_geometry>,
-  pub post_code: Option<String>,
 }
 
 fn map_geom_row(row: &rusqlite::Row) -> rusqlite::Result<Option<admin_level_geom_row>> {
@@ -76,9 +74,7 @@ fn map_geom_row(row: &rusqlite::Row) -> rusqlite::Result<Option<admin_level_geom
   Ok(Some(admin_level_geom_row {
     id,
     admin_level,
-    name: row.get(2)?,
-    wkb: row.get(3)?,
-    post_code: row.get(4)?,
+    wkb: row.get(2)?,
   }))
 }
 
@@ -104,12 +100,10 @@ pub fn load_all_below_street(conn: &Connection) -> Vec<admin_level_geom_row> {
     SELECT
       id,
       admin_level,
-      name,
-      wkb,
-      post_code
+      wkb
     FROM admin_levels
     WHERE admin_level < ?1
-    ORDER BY admin_level ASC, wkb IS NULL ASC
+    ORDER BY admin_level ASC, wkb IS NULL ASC, id ASC
   ";
 
   let mut stmt = conn
@@ -127,9 +121,7 @@ pub fn load_by_ids(conn: &Connection, ids: &[i64]) -> Vec<admin_level_geom_row> 
     SELECT
       id,
       admin_level,
-      name,
-      wkb,
-      post_code
+      wkb
     FROM admin_levels
     WHERE id IN
   ";
@@ -419,7 +411,3 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
   tx.commit().expect("failed to commit transaction");
   total_changes
 }
-
-#[cfg(test)]
-#[path = "repository.test.rs"]
-mod tests;

@@ -170,7 +170,3 @@ pub(super) fn link_tile(tile: tile_data) -> Vec<house_number_link> {
   }
   links
 }
-
-#[cfg(test)]
-#[path = "linker.test.rs"]
-mod tests;

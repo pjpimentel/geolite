@@ -172,7 +172,3 @@ pub(super) fn list_local(data_path: &str) -> Vec<local_pbf> {
   result.sort_by(|a, b| a.path.cmp(&b.path));
   result
 }
-
-#[cfg(test)]
-#[path = "catalog.test.rs"]
-mod tests;

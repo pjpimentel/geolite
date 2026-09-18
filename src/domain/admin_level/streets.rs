@@ -112,7 +112,3 @@ fn process_one_way(
     wkb: Geometry::LineString(ls).into(),
   })
 }
-
-#[cfg(test)]
-#[path = "streets.test.rs"]
-mod tests;

@@ -11,7 +11,7 @@ fn decode(bytes: &[u8]) -> blob_msg {
 
 #[test]
 fn _00_returns_raw_bytes_when_blob_is_uncompressed() {
-  let payload = b"conteudo do bloco".to_vec();
+  let payload = b"block content".to_vec();
   let blob = decode(&make_blob(&payload, blob_compression::raw));
 
   assert_eq!(decompress(&blob), payload);
@@ -27,7 +27,7 @@ fn _01_inflates_zlib_blob_payload() {
   assert_eq!(decompress(&blob), payload);
   assert!(
     bytes.len() < payload.len(),
-    "o fixture deveria estar comprimido de fato"
+    "the fixture must actually be compressed"
   );
 }
 

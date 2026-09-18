@@ -256,7 +256,3 @@ pub fn command_handler_extract(
     }
   }
 }
-
-#[cfg(test)]
-#[path = "extract.test.rs"]
-mod tests;

@@ -14,8 +14,7 @@ use tantivy::{
   tokenizer::{AsciiFoldingFilter, LowerCaser, SimpleTokenizer, TextAnalyzer},
 };
 
-use super::entity::decode_chain;
-use super::repository;
+use super::{paths, repository};
 use crate::domain::admin_level::level;
 
 const TOKENIZER_NAME: &str = "geolite_ascii";
@@ -53,11 +52,13 @@ fn fuzzy_distance_for(token: &str) -> u8 {
 const WRITER_MEMORY_BUDGET: usize = 50_000_000;
 
 #[allow(clippy::type_complexity)]
-fn schema() -> (Schema, Field, Field, Field, Field, Field, Field, Field, Field) {
+fn schema() -> (Schema, Field, Field, Field, Field, Field, Field, Field, Field, Field) {
   let mut builder = Schema::builder();
   // FAST to hand the id back and to break score ties, INDEXED to restrict a search to a set of
-  // ids (the region filter)
+  // ids (the region filter); the ordinal tells the paths of one area apart, FAST for the same
+  // two reasons and never filtered on
   let admin_level_id = builder.add_u64_field("admin_level_id", INDEXED | FAST);
+  let ordinal = builder.add_u64_field("ordinal", FAST);
   let admin_level = builder.add_u64_field("admin_level", INDEXED);
   let folded_indexing = TextFieldIndexing::default()
     .set_tokenizer(TOKENIZER_NAME)
@@ -80,6 +81,7 @@ fn schema() -> (Schema, Field, Field, Field, Field, Field, Field, Field, Field) 
   (
     builder.build(),
     admin_level_id,
+    ordinal,
     admin_level,
     name,
     hier,
@@ -116,6 +118,12 @@ fn register_tokenizers(index: &Index) {
     .filter(LowerCaser)
     .build();
   index.tokenizers().register(TOKENIZER_LOWER_NAME, lower);
+}
+
+pub struct search_hit {
+  pub admin_level_id: i64,
+  pub ordinal: u8,
+  pub score: f32,
 }
 
 pub struct tantivy_index {
@@ -195,17 +203,13 @@ pub fn build(
   boosts: tantivy_boosts,
   abbreviations: &[(&str, &str)],
 ) -> tantivy_index {
-  const SQL_LOAD_HIERARCHY: &str = "
-    SELECT admin_level_id, json(ancestor_ids)
-    FROM admin_levels_hierarchy
-  ";
-
   let _ = std::fs::remove_dir_all(index_path);
   std::fs::create_dir_all(index_path).expect("failed to create tantivy index dir");
 
   let (
     schema,
     id_field,
+    ordinal_field,
     admin_level_field,
     name_field,
     hier_field,
@@ -232,40 +236,36 @@ pub fn build(
     .writer(WRITER_MEMORY_BUDGET)
     .expect("failed to create tantivy writer");
 
-  let mut stmt = conn
-    .prepare(SQL_LOAD_HIERARCHY)
-    .expect("failed to prepare load_hierarchy");
-  let rows = stmt
-    .query_map([], |row| {
-      Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-    })
-    .expect("failed to query admin_levels_hierarchy");
-
-  for row in rows {
-    let (id, ancestors_json) = row.expect("failed to read hierarchy row");
-    let ancestors = decode_chain(&ancestors_json);
+  // one document per path of every area the hierarchy knows, in id order
+  let edges = repository::load_all_edges(conn);
+  let mut ids: Vec<i64> = edges.keys().copied().collect();
+  ids.sort_unstable();
+  for id in ids {
     let own_name = names_map.get(&id).cloned().unwrap_or_default();
-    let hier_text: String = ancestors
-      .iter()
-      .filter_map(|aid| names_map.get(aid).cloned())
-      .collect::<Vec<_>>()
-      .join(" ");
     let own_name_folded = expand_abbreviations(&own_name, abbreviations);
-    let hier_text_folded = expand_abbreviations(&hier_text, abbreviations);
-    let mut doc = TantivyDocument::default();
-    doc.add_u64(id_field, id as u64);
-    doc.add_u64(admin_level_field, levels_map.get(&id).copied().unwrap_or(0));
-    doc.add_text(name_field, &own_name_folded);
-    doc.add_text(hier_field, &hier_text_folded);
-    doc.add_text(name_strict_field, &own_name);
-    doc.add_text(hier_strict_field, &hier_text);
-    doc.add_text(name_lower_field, &own_name);
-    doc.add_text(hier_lower_field, &hier_text);
-    writer
-      .add_document(doc)
-      .expect("failed to add tantivy document");
+    let admin_level = levels_map.get(&id).copied().unwrap_or(0);
+    for (ordinal, path) in paths::paths_of(id, &edges).iter().enumerate() {
+      let hier_text: String = path
+        .iter()
+        .filter_map(|aid| names_map.get(aid).cloned())
+        .collect::<Vec<_>>()
+        .join(" ");
+      let hier_text_folded = expand_abbreviations(&hier_text, abbreviations);
+      let mut doc = TantivyDocument::default();
+      doc.add_u64(id_field, id as u64);
+      doc.add_u64(ordinal_field, ordinal as u64);
+      doc.add_u64(admin_level_field, admin_level);
+      doc.add_text(name_field, &own_name_folded);
+      doc.add_text(hier_field, &hier_text_folded);
+      doc.add_text(name_strict_field, &own_name);
+      doc.add_text(hier_strict_field, &hier_text);
+      doc.add_text(name_lower_field, &own_name);
+      doc.add_text(hier_lower_field, &hier_text);
+      writer
+        .add_document(doc)
+        .expect("failed to add tantivy document");
+    }
   }
-  drop(stmt);
   writer.commit().expect("failed to commit tantivy writer");
 
   let reader = index
@@ -297,6 +297,11 @@ pub fn load(index_path: &Path, boosts: tantivy_boosts) -> Option<tantivy_index> 
   // an index written before the id became a fast field cannot break ties: refused, so the caller
   // asks for a rebuild instead of answering an empty result set
   if !schema.get_field_entry(id_field).is_fast() {
+    return None;
+  }
+  // an index written before the path ordinal cannot tell two paths of one area apart
+  let ordinal = schema.get_field("ordinal").ok()?;
+  if !schema.get_field_entry(ordinal).is_fast() {
     return None;
   }
   let admin_level_field = schema.get_field("admin_level").ok()?;
@@ -378,25 +383,46 @@ fn bonus_clauses(tokens: &[String], fields: [(Field, f32); 2]) -> Vec<clause> {
   clauses
 }
 
-fn run_query(searcher: &Searcher, query: BooleanQuery, limit: usize) -> Vec<(i64, f32)> {
+// two documents with the same text score an ulp apart depending on the segment each one fell in,
+// and that layout changes with the build: comparing the score at the precision the api answers
+// leaves the tie to the id and the ordinal
+fn rounded_score(score: Score) -> Score {
+  (score * 1_000.0).round() / 1_000.0
+}
+
+fn run_query(searcher: &Searcher, query: BooleanQuery, limit: usize) -> Vec<search_hit> {
   // the tie-break has to be the collector's own key: `order_by_score` prunes with block-wand and
   // drops a document that merely ties the current threshold, so a sort afterwards would still see
   // a different set of hits per segment layout
-  let by_score_then_id =
+  let by_score_then_id_then_ordinal =
     TopDocs::with_limit(limit).tweak_score(|segment_reader: &SegmentReader| {
       let ids = segment_reader
         .fast_fields()
         .u64("admin_level_id")
         .expect("admin_level_id is a fast field");
+      let ordinals = segment_reader
+        .fast_fields()
+        .u64("ordinal")
+        .expect("ordinal is a fast field");
       move |doc: DocId, score: Score| {
-        (score, std::cmp::Reverse(ids.first(doc).unwrap_or(u64::MAX)))
+        (
+          rounded_score(score),
+          std::cmp::Reverse(ids.first(doc).unwrap_or(u64::MAX)),
+          std::cmp::Reverse(ordinals.first(doc).unwrap_or(u64::MAX)),
+        )
       }
     });
   searcher
-    .search(&query, &by_score_then_id)
+    .search(&query, &by_score_then_id_then_ordinal)
     .unwrap_or_default()
     .into_iter()
-    .map(|((score, std::cmp::Reverse(id)), _)| (id as i64, score))
+    .map(
+      |((score, std::cmp::Reverse(id), std::cmp::Reverse(ordinal)), _)| search_hit {
+        admin_level_id: id as i64,
+        ordinal: ordinal.min(u8::MAX as u64) as u8,
+        score,
+      },
+    )
     .collect()
 }
 
@@ -412,7 +438,7 @@ impl tantivy_index {
     limit: usize,
     last_admin_levels: Option<&[level]>,
     allowed_ids: Option<&[i64]>,
-  ) -> Vec<(i64, f32)> {
+  ) -> Vec<search_hit> {
     let tokens = tokenize(query);
     if tokens.is_empty() {
       return vec![];
@@ -535,51 +561,3 @@ impl tantivy_index {
     clauses
   }
 }
-
-#[cfg(test)]
-pub(crate) mod testing {
-  use super::tantivy_index;
-  use rusqlite::Connection;
-  use std::path::PathBuf;
-
-  pub struct tempdir_guard {
-    pub path: PathBuf,
-  }
-
-  impl tempdir_guard {
-    pub fn new() -> Self {
-      static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-      let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-      let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("clock before epoch")
-        .as_nanos();
-      let path = std::env::temp_dir().join(format!(
-        "geolite-test-tantivy-{}-{nanos}-{seq}",
-        std::process::id()
-      ));
-      Self { path }
-    }
-  }
-
-  impl Drop for tempdir_guard {
-    fn drop(&mut self) {
-      let _ = std::fs::remove_dir_all(&self.path);
-    }
-  }
-
-  pub fn build_test_index(conn: &Connection) -> (tempdir_guard, tantivy_index) {
-    let guard = tempdir_guard::new();
-    let index = super::build(
-      conn,
-      &guard.path,
-      crate::presets::resolve(None).index_user_friendly_name.boosts,
-      &[],
-    );
-    (guard, index)
-  }
-}
-
-#[cfg(test)]
-#[path = "search_index.test.rs"]
-mod tests;

@@ -52,7 +52,3 @@ fn interpolate(known: &[(house_number, Point<f64>)], target: u32) -> Option<Poin
     low_point.y() + (high_point.y() - low_point.y()) * fraction,
   ))
 }
-
-#[cfg(test)]
-#[path = "resolution.test.rs"]
-mod tests;

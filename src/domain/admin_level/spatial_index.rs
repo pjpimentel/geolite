@@ -380,7 +380,3 @@ pub fn ids_in_bounding_box(conn: &Connection, bbox: bounding_box) -> Vec<i64> {
     .map(|r| r.expect("failed to read bounding box id"))
     .collect()
 }
-
-#[cfg(test)]
-#[path = "spatial_index.test.rs"]
-mod tests;

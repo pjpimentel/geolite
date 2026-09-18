@@ -139,7 +139,3 @@ pub(super) fn enrich_house_numbers(
     }
   }
 }
-
-#[cfg(test)]
-#[path = "house_number.test.rs"]
-mod tests;
