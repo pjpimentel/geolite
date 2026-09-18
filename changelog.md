@@ -2,115 +2,75 @@
 
 ## **2026-XX-XX** - 0.0.11
 
-1. REMOVED unit tests
-1. REMOVED the `user_friendly_name` and `ancestor_ids` columns of `admin_levels_hierarchy`: the label is composed at query time by `admin_level_hierarchy::label::render`, and every chain is derived from the edges.
-1. MODIFIED `admin_levels_hierarchy`: the table is one edge `(admin_level_id, parent_id)` per row, an area has one row per parent and a root one row with a null parent, and `admin_levels_hierarchy_search_by_parent` covers both directions of the walk.
-1. MODIFIED `index admin-levels-hierarchy`: an area gets every parent that contains it, not one. an area is measured where it is — a polygon by a grid over its interior, a line by its vertices and segment midpoints — a street joins every area one sample falls inside, any other area needs a tenth of its samples inside a more general candidate or half inside a peer of its level, and a point on a shared border promotes only a street.
-1. ADDED `admin_level_hierarchy::paths::paths_of` and `repository::{roots, children_of, parents_of, ancestry_of, load_all_edges}`: the paths of an area are enumerated from the edges, and the tree reads downward as well as up.
-1. MODIFIED `query` and `/geocode`: one match per root-to-leaf path, so a street inside two neighbourhoods answers twice; `matches[].id` becomes the uuid v5 of the path instead of the packed osm id.
-1. MODIFIED the search index: one document per path, and two hits with the same score rank by area id then by path ordinal. an index built by 0.0.10 is refused as absent — run `geolite index user-friendly-name` again.
-1. MODIFIED `SCHEMA_VERSION` to 3: an existing database is refused by a write command and has to be rebuilt.
+1. REMOVED unit tests.
+1. REMOVED the columns of `admin_levels_hierarchy` that the edges already derive.
+1. MODIFIED `admin_levels_hierarchy` to one edge per row, with every parent that contains an area.
+1. MODIFIED `query`, `/geocode` and the search index to answer one match per path.
+1. MODIFIED `SCHEMA_VERSION` to 3: an existing database and an index built by 0.0.10 have to be rebuilt.
+1. ADDED the reads that walk the hierarchy downward.
 
 ## **2026-09-14** - 0.0.10
 
-1. REMOVED `database/osm_nodes`, `database/osm_ways` and `database/osm_relations` mods, and the `impl_table_ops!` macro: `database` owns no table any more.
-1. REMOVED the `ToSql`/`FromSql` impls and the serde derives of `osm_node`, `osm_way` and `osm_relation`: nothing read an element back through rusqlite.
-1. REMOVED the cargo cache of the e2e job: the checks build from scratch on every run.
-1. MODIFIED `admin_level::extraction_rules`: `include` and `exclude` are `osm_way::way_filter`.
-1. MODIFIED `/geocode`: a `quality` outside `[0, 1]` or not a number answers 400 with the rule the cli applies to `--min-quality`; it was dropped silently.
-1. MODIFIED `http-server`: the `listening` line names the port actually bound, so `--port 0` lets the os choose one.
-1. MODIFIED `index user-friendly-name` and `query`: two hits with the same score rank by area id, ascending, build after build; an index built by an earlier version is refused as absent — run `geolite index user-friendly-name` again.
-1. MODIFIED `extract osm-house-numbers`: the links are inserted in node id order whatever the thread count, and a street's numbers are read in that order, so a duplicate number resolves to the same point on every build.
-1. MODIFIED `admin_level::spatial_index`: `nearest` and `ids_in_bounding_box` are the rtree's reads, moved from `address::coordinates` and `admin_level::repository`, so the index that answers a coordinate lives with the table it indexes.
-1. MODIFIED `admin_level::repository`: `streets_with_centroid`, `geometry_by_ids`, `wkt_by_ids` and `load_all_names` replace the sql `house_number`, `address` and `search_index` wrote over `admin_levels`; only the owner reads the table now.
-1. MODIFIED ci: the image check answers a text and a coordinate geocode after `build maldives`.
-1. ADDED `osm_node`, `osm_way` and `osm_relation` `payload` and `repository`, and `osm_way::filter`: each element table owns its jsonb shape and its persistence; `database` keeps the connection lifecycle, `merge`, the shared helpers and the generic jsonb codec.
-1. ADDED `osm_tag::osm_tag`, `osm_tag::value` and `select::{equals, not_in, is_null, is_not_null, normalized_coalesce}`: the way filters and the post-code and country aliases are typed instead of sql literals; the stored data does not change.
-1. ADDED `database::insert_in_chunks`: the one chunked multi-row insert behind the three element repositories.
-1. ADDED `address::parse_min_quality` (from the cli) and `http::bind`: the quality rule has one owner, and a server is bound before it serves.
-1. ADDED `tests/02_preset_brazil/readme.md`: the provenance and the licence of the santos fixture.
+1. REMOVED the element tables from `database`, which owns no table any more.
+1. MODIFIED `query` and the search index to rank two hits with the same score the same way on every build.
+1. MODIFIED `extract osm-house-numbers` to link a street's numbers in the same order on every build.
+1. MODIFIED `/geocode` to refuse an invalid `quality`, and `http-server` to report the port it bound.
+1. ADDED the payload and the repository of `osm_node`, `osm_way` and `osm_relation`.
+1. ADDED the typed `osm_tag` selects behind the way filters and the tag aliases.
 
 ## **2026-09-13** - 0.0.9
 
-1. REMOVED `database/house_numbers` mod.
-1. REMOVED `extract` mod.
-1. REMOVED `optimize` mod.
-1. REMOVED `query` mod.
-1. MODIFIED presets: `extract_house_numbers` became `house_numbers`, a `house_number_policy` (`number_tags`, `street_tags`, `drop_values`, `max_digits`, `shapes`, `allow_hash_prefix`).
-1. MODIFIED `extract osm-house-numbers`: the tag value is normalised in the domain (`house_number::normalize`) instead of in sql; the stored forms do not change.
-1. MODIFIED `extract osm-house-numbers`: the count it prints is the number of rows inserted; it was the number of candidates, so a rerun reported every candidate again instead of 0.
-1. MODIFIED `query` and `http-server` under the `colombia` preset: a compound number (`82-52`, `25B-48`, `16i56`) and the `#` prefix are read from the input, match their stored value exactly and are never interpolated; no rebuild required.
-1. ADDED `house_number` domain (`entity`, `value`, `policy`, `strategy`, `token`, `resolution`, `repository`, `extract`, `linker`).
-1. ADDED `house_number_link::extract`: the house-number stage as one use case of the domain.
-1. ADDED `database::compact` and `database::remove_osm_data_files`: the two steps of `optimize` as functions of the database module; the cli only renders them.
-1. ADDED `osm_pbf_file::delete`: the file, its blob chunks and its download columns (`path`, `size_bytes`, `md5`, `downloaded_at`) go together.
-1. MODIFIED `optimize delete-intermediary-data`: the ledger row of every deleted file forgets its path, so nothing resolves to a file that is gone; the pbf files are reported before the `osm_data` sibling.
-1. MODIFIED `build` and `download`: one rule (`input_kind`) tells a url, a local path and a geofabrik id apart; `download` refuses a path without asking the catalogue.
-1. ADDED `osm_pbf_file::resolve`: the path as given, the name under `data_path` or the file the ledger holds for an id or a url, moved out of `main.rs`.
-1. ADDED `osm_pbf_file::download`: the transfer, the md5 verdict and the ledger row in one use case; the cli only renders it.
-1. ADDED `address` domain (`entity`, `input`, `label`, `filter`, `text`, `coordinates`, `house_number`).
-1. ADDED `address::query_by_text` and `address::query_by_coordinates`: the two services as use cases of the domain; the cli and the http server tell a coordinate from a text themselves (`address::query_input`).
+1. REMOVED the `house_numbers`, `extract`, `optimize` and `query` mods.
+1. MODIFIED the presets to carry a house number policy.
+1. MODIFIED `query` and `http-server` to read a compound house number from the input and never interpolate it.
+1. ADDED the `house_number` and `address` domains, with their use cases.
+1. ADDED the resolve, download and delete use cases of `osm_pbf_file`.
 
 ## **2026-09-12** - 0.0.8
 
-1. REMOVED `database/admin_levels` mod.
-1. REMOVED `extract/admin_levels` mod.
-1. REMOVED `database/admin_levels_hierarchy` mod.
-1. REMOVED `index` mod (`coordinates`, `hierarchy`, `user_friendly_name`, `admin_levels_hierarchy_tantivy`).
-1. MODIFIED `extract osm-admin-levels`: `--admin-level` refuses a level outside the scale, a value that is not a number and an empty list instead of dropping them; the list is checked before `--recreate` touches the database.
-1. MODIFIED `query` and `http-server`: `--last-admin-levels` and `?last_admin_levels=` refuse a level outside the scale (the http server answers 400 where it answered an empty list); `--last-admin-levels` tolerates spaces around the values.
-1. MODIFIED `admin_levels` reads: a row whose level is outside the scale is skipped with a warning instead of being returned; no release ever writes one.
-1. ADDED `admin_level` domain (`entity`, `scale`, `id`, `geometry`, `repository`, `spatial_index`, `rules`, `extract`, `relations`, `place_ways`, `streets`).
-1. ADDED `admin_level::extract(level)`: the three extraction stages as one use case of the domain.
-1. ADDED `admin_level_hierarchy` domain (`entity`, `label`, `repository`, `resolver`, `search_index`).
+1. REMOVED the `admin_levels`, `admin_levels_hierarchy`, `extract/admin_levels` and `index` mods.
+1. MODIFIED the cli and the http server to refuse an admin level outside the scale.
+1. ADDED the `admin_level` and `admin_level_hierarchy` domains, with their use cases.
 
 ## **2026-09-07** - 0.0.7
 
-1. REMOVED `extract/osm_data` mod.
-1. ADDED `osm_node`, `osm_way` and `osm_relation` domains with their decoders.
-1. ADDED `osm_tag` domain, absorbing `build_name_select` and the tag key validation of the cli.
-1. ADDED `origin_wkt` to `osm_pbf_files`, the coverage polygon of every geofabrik region, cached by `ls`; databases built by 0.0.6 gain the column on open.
-1. MODIFIED `extract osm-pbf-data`: `--include-nodes`, `--include-ways` and `--include-relations` take an explicit value, and `--recreate` keeps the blob chunk index.
-1. MODIFIED `osm_pbf_file` domain, adding `extract_blob_chunks`, `extract_osm_header` and `extract_osm_data` to its facade.
-1. MODIFIED `database` mod, adding the `jsonb` encoder moved from `extract/osm_data`.
+1. REMOVED the `extract/osm_data` mod.
+1. MODIFIED `extract osm-pbf-data` to take an explicit value on every include flag and to keep the blob chunk index on `--recreate`.
+1. ADDED the `osm_node`, `osm_way`, `osm_relation` and `osm_tag` domains.
+1. ADDED `origin_wkt` to `osm_pbf_files`, the coverage polygon of every geofabrik region.
 
 ## **2026-09-06** - 0.0.6
 
-1. REMOVED unit tests redundant with e2e tests.
-1. MODIFIED release pipeline, splitting `try_publish` into `crates_publish` and `docker_publish`.
-1. MODIFIED `Dockerfile` to build from `cargo install` instead of the local source tree.
-1. REMOVED `osm_pbf_file` mod.
-1. ADDED `osm_pbf_file` domain.
-1. MODIFIED `osm_pbf_files` structure (not backward compatible)
-1. MODIFIED `build` to accept a direct url as source; it was refused as a missing local file.
+1. REMOVED the unit tests redundant with the e2e tests.
+1. REMOVED the `osm_pbf_file` mod.
+1. MODIFIED the release pipeline, splitting the crates publish from the docker publish.
+1. MODIFIED `build` to accept a direct url as source.
+1. ADDED the `osm_pbf_file` domain (not backward compatible).
 
 ## **2026-08-30** - 0.0.5
 
-1. REMOVED unit test files from crates publish.
-1. MODIFIED build command to not download pbf index.
-1. ADDED initial end to end test solution.
+1. REMOVED the unit test files from the crates publish.
+1. MODIFIED `build` to not download the pbf index.
+1. ADDED the end to end test solution.
 
 ## **2026-08-04** - 0.0.4
 
-1. REMOVED dead code from the cli download command handler (the download runner never returns without output).
-1. MODIFIED cli progress bars to stay hidden under cargo test, keeping the test output clean.
-1. ADDED initial presets for guyana, paraguay, peru, suriname, uruguay, venezuela, netherlands and switzerland.
-1. ADDED more tests to cli mod to cover all command handlers, clap parsing and exit paths.
+1. REMOVED dead code from the cli download command.
+1. MODIFIED the cli progress bars to stay hidden under cargo test.
+1. ADDED presets for guyana, paraguay, peru, suriname, uruguay, venezuela, netherlands and switzerland.
 
 ## **2026-08-02** - 0.0.3
 
-1. ADDED initial presets for chile, colombia and ecuador.
-1. ADDED user-agent to http requests.
-1. ADDED more tests to extract mod.
+1. ADDED presets for chile, colombia and ecuador.
+1. ADDED a user-agent to the http requests.
 
 ## **2026-07-11** - 0.0.2
 
-1. REMOVED .test files from sonar analysis to reduce noise.
-1. MODIFIED http-server files to fix sonar security issues.
-1. MODIFIED cargo.lock to fix audit report.
-1. ADDED new tests to osm_pbf_file mod to improve coverage.
-1. ADDED initial presets for portugal, argentina and bolivia.
-1. ADDED signal handler for shutdown (ctrl + c).
+1. REMOVED the test files from the sonar analysis.
+1. MODIFIED the http server to fix the sonar security findings.
+1. MODIFIED `Cargo.lock` to fix the audit report.
+1. ADDED presets for portugal, argentina and bolivia.
+1. ADDED a shutdown signal handler.
 
 ## **2026-06-28** - 0.0.1
 
