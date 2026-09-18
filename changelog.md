@@ -1,11 +1,18 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.11
+## **2026-XX-XX** - 0.0.12
+
+1. MODIFIED the friendly name to one rule for the path and for the label rebuilt around a house number, which diverge today on where the post codes go.
+1. MODIFIED `attributes.post_code` to one rule in both services, so the same street answers the same post code by text and by coordinate.
+1. MODIFIED an `admin_levels` row to carry its origin as one value instead of a pair of optionals, removing the panic on an empty pair.
+
+## **2026-09-17** - 0.0.11
 
 1. REMOVED the unit tests that the e2e battery already covers.
 1. REMOVED the columns of `admin_levels_hierarchy` that the edges already derive.
 1. MODIFIED `admin_levels_hierarchy` to one edge per row, with every parent that contains an area.
 1. MODIFIED `query`, `/geocode` and the search index to answer one match per path.
+1. MODIFIED `matches[].id` to the uuid v5 of the path: an id stored from 0.0.10 no longer matches.
 1. MODIFIED `SCHEMA_VERSION` to 3: an existing database and an index built by 0.0.10 have to be rebuilt.
 1. ADDED the reads that walk the hierarchy downward.
 
