@@ -37,7 +37,3 @@ fn climb(id: i64, edges: &HashMap<i64, Vec<i64>>, depth: usize) -> Vec<Vec<i64>>
   }
   paths
 }
-
-#[cfg(test)]
-#[path = "paths.test.rs"]
-mod tests;

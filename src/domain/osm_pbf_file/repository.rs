@@ -509,7 +509,3 @@ pub fn update_house_numbers_count(conn: &Connection) {
     .execute(SQL_UPDATE_HOUSE_NUMBERS_COUNT, [])
     .expect("failed to update osm_pbf_files house_numbers_count");
 }
-
-#[cfg(test)]
-#[path = "repository.test.rs"]
-mod tests;

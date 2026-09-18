@@ -25,7 +25,3 @@ impl query_input {
     }
   }
 }
-
-#[cfg(test)]
-#[path = "input.test.rs"]
-mod tests;

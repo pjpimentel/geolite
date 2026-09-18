@@ -233,7 +233,3 @@ pub(super) fn post_code_of(ancestors: &[&admin_meta_row]) -> Option<String> {
     .max_by_key(|a| a.admin_level)
     .and_then(|a| a.post_code.clone())
 }
-
-#[cfg(test)]
-#[path = "entity.test.rs"]
-mod tests;

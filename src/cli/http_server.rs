@@ -16,7 +16,3 @@ pub fn command_handler_http_server(
     house_numbers,
   );
 }
-
-#[cfg(test)]
-#[path = "http_server.test.rs"]
-mod tests;

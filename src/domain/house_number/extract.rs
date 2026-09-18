@@ -143,7 +143,3 @@ fn link_in_parallel(tiles: Vec<tile_data>) -> Vec<house_number_link> {
     .flat_map(|h| h.join().expect("worker thread panicked"))
     .collect()
 }
-
-#[cfg(test)]
-#[path = "extract.test.rs"]
-mod tests;

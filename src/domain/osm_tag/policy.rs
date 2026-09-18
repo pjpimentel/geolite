@@ -33,7 +33,3 @@ impl tag_policy {
       .collect()
   }
 }
-
-#[cfg(test)]
-#[path = "policy.test.rs"]
-mod tests;

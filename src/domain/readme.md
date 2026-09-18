@@ -846,5 +846,5 @@ and values, so the vocabulary and its translation are separate and the translati
 `osm_relation::repository` answers which relations of a level are still to index and
 `osm_way::repository` which ways; both anti-join `main.admin_levels`. the relation queries filter
 on the `admin_level` tag through the expression index `osm_relations_search_by_admin_level` and
-keep that expression as a bare literal, for the reason given under `osm_tag`; a unit test reads the
-query plan so a rewrite cannot lose the index quietly.
+keep that expression as a bare literal, for the reason given under `osm_tag`: wrapping it makes
+sqlite drop the index and scan every relation of the file.

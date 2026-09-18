@@ -17,21 +17,6 @@ impl bounding_geometry {
   pub fn contains(&self, lat: f64, lon: f64) -> bool {
     self.geometry.contains(&Point::new(lon, lat))
   }
-
-  #[cfg(test)]
-  pub(crate) fn from_rect(b: bounding_box) -> Self {
-    let ring = geo::LineString(vec![
-      geo::Coord { x: b.min_lon, y: b.min_lat },
-      geo::Coord { x: b.max_lon, y: b.min_lat },
-      geo::Coord { x: b.max_lon, y: b.max_lat },
-      geo::Coord { x: b.min_lon, y: b.max_lat },
-      geo::Coord { x: b.min_lon, y: b.min_lat },
-    ]);
-    Self {
-      geometry: geo::Geometry::Polygon(geo::Polygon::new(ring, vec![])),
-      envelope: b,
-    }
-  }
 }
 
 // the cut at MAX_RESULTS comes after every filter, so no filter discards a match that would have
@@ -79,7 +64,3 @@ fn match_quality(m: &query_match) -> f64 {
   }
   coordinate_quality(m.coordinates_distance_in_meters)
 }
-
-#[cfg(test)]
-#[path = "filter.test.rs"]
-mod tests;

@@ -126,7 +126,7 @@ fn _10_reverses_way_when_joining_tail_to_tail() {
   assert_eq!(rings[0].0.len(), 3);
   assert!(
     approx_eq(rings[0].0[2], Coord { x: 1.0, y: 1.0 }),
-    "o way invertido deve terminar no seu ponto inicial original"
+    "the reversed way must end on its original first point"
   );
 }
 
@@ -144,7 +144,7 @@ fn _11_chained_segments_close_into_a_ring() {
   assert!(approx_eq(rings[0].0[0], *rings[0].0.last().unwrap()));
 }
 
-// 12: segmentos que nao se tocam viram aneis separados
+// 12: segments that do not touch become separate rings
 #[test]
 fn _12_disjoint_ways_become_separate_rings() {
   let rings = assemble_rings(&[

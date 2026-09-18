@@ -48,7 +48,3 @@ pub fn is_null(payload_expr: &str, tag: osm_tag) -> String {
 pub fn is_not_null(payload_expr: &str, tag: osm_tag) -> String {
   format!("{} IS NOT NULL", extract(payload_expr, tag))
 }
-
-#[cfg(test)]
-#[path = "select.test.rs"]
-mod tests;

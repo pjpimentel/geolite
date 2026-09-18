@@ -299,7 +299,3 @@ pub fn run() {
     }
   }
 }
-
-#[cfg(test)]
-#[path = "cli.test.rs"]
-mod tests;

@@ -103,7 +103,3 @@ impl admin_level {
     }
   }
 }
-
-#[cfg(test)]
-#[path = "extract.test.rs"]
-mod tests;

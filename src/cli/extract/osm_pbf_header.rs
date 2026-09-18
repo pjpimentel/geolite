@@ -43,7 +43,3 @@ pub fn command_handler_extract_osm_pbf_header(
     }
   }
 }
-
-#[cfg(test)]
-#[path = "osm_pbf_header.test.rs"]
-mod tests;

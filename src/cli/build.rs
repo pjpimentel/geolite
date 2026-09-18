@@ -111,7 +111,3 @@ pub fn command_handler_build(
   println!("\x1b[2m── optimize\x1b[0m");
   command_handler_optimize(data_path, sqlite_path, index_path, None);
 }
-
-#[cfg(test)]
-#[path = "build.test.rs"]
-mod tests;

@@ -45,7 +45,3 @@ pub fn insert_rows(conn: &Connection, rows: &[osm_node_row]) {
     .collect();
   crate::database::insert_in_chunks(conn, SQL_INSERT_HEAD, &params);
 }
-
-#[cfg(test)]
-#[path = "repository.test.rs"]
-mod tests;

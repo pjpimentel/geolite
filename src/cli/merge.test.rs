@@ -252,13 +252,23 @@ fn _04_merges_into_an_existing_compatible_base_in_place() {
 
 // ---- process::exit paths, asserted from a respawned child ----
 
+fn respawn(helper: &str) -> std::process::Output {
+  let mut cmd = std::process::Command::new(std::env::current_exe().expect("current_exe"));
+  cmd.args(["--exact", helper, "--ignored", "--nocapture"]);
+  cmd.output().expect("failed to respawn test binary")
+}
+
+fn stderr_of(out: &std::process::Output) -> String {
+  String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
 fn assert_merge_child_exits_one(helper: &str, expected_stderr: &str) {
-  let out = crate::cli::tests::respawn(helper, &[], &[]);
-  assert_eq!(out.status.code(), Some(1), "stderr: {}", crate::cli::tests::stderr_of(&out));
+  let out = respawn(helper);
+  assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr_of(&out));
   assert!(
-    crate::cli::tests::stderr_of(&out).contains(expected_stderr),
+    stderr_of(&out).contains(expected_stderr),
     "stderr must contain '{expected_stderr}', got: {}",
-    crate::cli::tests::stderr_of(&out)
+    stderr_of(&out)
   );
 }
 

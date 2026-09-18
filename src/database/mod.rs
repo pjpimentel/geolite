@@ -281,7 +281,3 @@ pub fn read_user_version(path: &str) -> u32 {
     .map(|v| v as u32)
     .unwrap_or(0)
 }
-
-#[cfg(test)]
-#[path = "mod.test.rs"]
-mod tests;

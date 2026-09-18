@@ -2,7 +2,7 @@
 
 ## **2026-XX-XX** - 0.0.11
 
-1. REMOVED unit tests.
+1. REMOVED the unit tests that the e2e battery already covers.
 1. REMOVED the columns of `admin_levels_hierarchy` that the edges already derive.
 1. MODIFIED `admin_levels_hierarchy` to one edge per row, with every parent that contains an area.
 1. MODIFIED `query`, `/geocode` and the search index to answer one match per path.

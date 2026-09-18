@@ -137,10 +137,6 @@ impl<'a> osm_pbf_file<'a> {
 }
 
 #[cfg(test)]
-#[path = "http_stubs.test.rs"]
-pub(crate) mod http_stubs;
-
-#[cfg(test)]
 #[path = "osm_pbf_file.test.rs"]
 mod tests;
 

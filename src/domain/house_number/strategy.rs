@@ -12,7 +12,3 @@ impl link_strategy {
     }
   }
 }
-
-#[cfg(test)]
-#[path = "strategy.test.rs"]
-mod tests;

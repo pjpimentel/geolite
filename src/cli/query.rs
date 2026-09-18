@@ -34,7 +34,3 @@ pub fn command_handler_query(
   };
   println!("{}", serde_json::to_string_pretty(&result).unwrap());
 }
-
-#[cfg(test)]
-#[path = "query.test.rs"]
-mod tests;

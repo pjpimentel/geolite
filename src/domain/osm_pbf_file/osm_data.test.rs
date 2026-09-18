@@ -4,10 +4,6 @@ use crate::domain::pbf_fixtures::{
   self, blob_compression, block_spec, data_chunk, header_chunk, node,
 };
 
-/////////////////////////////////////////////////////////////////////////////////
-// harness
-/////////////////////////////////////////////////////////////////////////////////
-
 fn default_opts() -> data_opts {
   data_opts {
     include_nodes: true,
@@ -15,8 +11,8 @@ fn default_opts() -> data_opts {
     include_relations: true,
     ignore_info: true,
     tags: tag_policy::default(),
-    // nunca use buffer_bytes < 2: soft_threshold = buffer_bytes * 4 / 5 viraria 0
-    // e o writer entraria em laco de flush vazio sem nunca checar decoders_done
+    // never use buffer_bytes < 2: soft_threshold = buffer_bytes * 4 / 5 would turn 0
+    // and the writer would loop on empty flushes without ever checking decoders_done
     buffer_bytes: 1_073_741_824,
   }
 }
@@ -60,7 +56,7 @@ impl outcome {
         |r| r.get(0),
       )
       .unwrap_or_else(|e| panic!("failed to read {table} id {id}: {e}"));
-    serde_json::from_str(&text).expect("payload deve ser json valido")
+    serde_json::from_str(&text).expect("payload must be valid json")
   }
 
   fn last_progress(&self) -> progress_snapshot {
@@ -68,7 +64,6 @@ impl outcome {
   }
 }
 
-// indexa os chunks, roda o pipeline e devolve tudo o que os testes precisam observar
 fn run_scene(tag: &str, chunks: &[Vec<u8>], opts: data_opts, threads: u8) -> outcome {
   let (scene, file_id) = pbf_fixtures::indexed_scene(tag, chunks);
 
@@ -110,11 +105,7 @@ fn tiny_scene(tag: &str) -> outcome {
   run_scene(tag, &pbf_fixtures::tiny_pbf(), default_opts(), 1)
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-// 00 — pipeline ponta a ponta
-/////////////////////////////////////////////////////////////////////////////////
-
-// 00.00: node, way e relation sao decodificados e persistidos com payload jsonb legivel
+// 00.00: node, way and relation are decoded and persisted with a readable jsonb payload
 #[test]
 fn _00_00_persists_nodes_ways_and_relations() {
   let out = tiny_scene("od_00_00");
@@ -140,7 +131,7 @@ fn _00_00_persists_nodes_ways_and_relations() {
   assert_eq!(r["members"][0]["role"], "outer");
 }
 
-// 00.01: lista de chunks vazia encerra o writer sem escrever nada
+// 00.01: an empty chunk list ends the writer without writing anything
 #[test]
 fn _00_01_returns_zero_counts_for_empty_chunk_list() {
   let scene = pbf_fixtures::temp_scene("od_00_01");
@@ -159,7 +150,7 @@ fn _00_01_returns_zero_counts_for_empty_chunk_list() {
   assert_eq!(counts, (0, 0, 0));
 }
 
-// 00.02: chunk de header aparece na lista mas nao gera linha nenhuma
+// 00.02: a header chunk shows up in the list but produces no row
 #[test]
 fn _00_02_skips_header_chunks_without_emitting_rows() {
   let out = run_scene("od_00_02", &[header_chunk()], default_opts(), 1);
@@ -170,7 +161,7 @@ fn _00_02_skips_header_chunks_without_emitting_rows() {
   assert_eq!(out.row_count("osm_relations"), 0);
 }
 
-// 00.03: os tres flags include_* filtram cada tipo de elemento independentemente
+// 00.03: the three include_* flags filter each element type independently
 #[test]
 fn _00_03_honors_include_nodes_ways_and_relations_flags() {
   let only_nodes = run_scene(
@@ -210,7 +201,7 @@ fn _00_03_honors_include_nodes_ways_and_relations_flags() {
   assert_eq!(only_relations.counts, (0, 0, 1));
 }
 
-// 00.04: nodes planos e dense nodes coexistindo no mesmo grupo sao ambos decodificados
+// 00.04: plain nodes and dense nodes in the same group are both decoded
 #[test]
 fn _00_04_decodes_plain_nodes_alongside_dense_nodes() {
   let chunk = data_chunk(
@@ -228,7 +219,7 @@ fn _00_04_decodes_plain_nodes_alongside_dense_nodes() {
   assert_eq!(out.payload("osm_nodes", 2)["tags"]["name"], "Plano");
 }
 
-// 00.05: granularity e offsets nao-default sao aplicados na conversao de coordenadas
+// 00.05: non-default granularity and offsets are applied to the coordinates
 #[test]
 fn _00_05_applies_granularity_and_lat_lon_offsets() {
   let chunk = data_chunk(
@@ -248,7 +239,7 @@ fn _00_05_applies_granularity_and_lat_lon_offsets() {
   assert!((n["lon"].as_f64().expect("lon") - -3.25).abs() < 1e-6);
 }
 
-// 00.06: bloco que omite granularity/offsets cai nos defaults (100 / 0 / 0)
+// 00.06: a block that omits granularity/offsets falls back to the defaults (100 / 0 / 0)
 #[test]
 fn _00_06_falls_back_to_defaults_when_block_omits_options() {
   let chunk = data_chunk(
@@ -264,11 +255,11 @@ fn _00_06_falls_back_to_defaults_when_block_omits_options() {
   let n = out.payload("osm_nodes", 1);
   assert!(
     (n["lat"].as_f64().expect("lat") - 38.7).abs() < 1e-7,
-    "granularity default de 100 deve reproduzir a coordenada original"
+    "the default granularity of 100 must reproduce the original coordinate"
   );
 }
 
-// 00.07: tags_include mantem apenas as chaves listadas
+// 00.07: tags_include keeps only the listed keys
 #[test]
 fn _00_07_filters_tags_with_tags_include() {
   let chunk = data_chunk(
@@ -296,7 +287,7 @@ fn _00_07_filters_tags_with_tags_include() {
   assert!(tags.get("amenity").is_none(), "amenity deveria ser filtrada");
 }
 
-// 00.08: tags_ignore descarta apenas as chaves listadas
+// 00.08: tags_ignore drops only the listed keys
 #[test]
 fn _00_08_filters_tags_with_tags_ignore() {
   let chunk = data_chunk(
@@ -324,7 +315,7 @@ fn _00_08_filters_tags_with_tags_ignore() {
   assert!(tags.get("amenity").is_none());
 }
 
-// 00.09: blob sem compressao percorre o pipeline igual ao blob zlib
+// 00.09: an uncompressed blob goes through the pipeline like a zlib one
 #[test]
 fn _00_09_decodes_uncompressed_data_blob() {
   let chunk = data_chunk(
@@ -348,7 +339,7 @@ fn _00_10_reports_progress_for_decode_and_flush() {
   let last = out.last_progress();
 
   assert!(!out.progress.is_empty());
-  assert_eq!(last.chunks_done, 4, "3 blobs de dados + 1 header");
+  assert_eq!(last.chunks_done, 4, "3 data blobs + 1 header");
   assert_eq!(last.worker_chunks, 4);
   assert_eq!(last.nodes_written, 1);
   assert_eq!(last.ways_written, 1);
@@ -387,7 +378,7 @@ fn _00_12_flushes_repeatedly_with_a_small_buffer() {
           i + 1,
           38.0 + i as f64 / 100.0,
           -9.0,
-          &[("name", "no com um nome razoavelmente longo para ocupar bytes")],
+          &[("name", "a node with a reasonably long name, to take up bytes")],
         )],
         ..Default::default()
       },
@@ -409,11 +400,11 @@ fn _00_12_flushes_repeatedly_with_a_small_buffer() {
   assert_eq!(out.row_count("osm_nodes"), 30);
   assert!(
     out.last_progress().flushes_done > 1,
-    "buffer pequeno deveria gerar mais de um flush"
+    "a small buffer must produce more than one flush"
   );
 }
 
-// 00.13: rodar duas vezes nao duplica linhas (id e chave primaria)
+// 00.13: running twice does not duplicate rows (the id is the primary key)
 #[test]
 fn _00_13_second_run_does_not_duplicate_rows() {
   let out = tiny_scene("od_00_13");
@@ -438,13 +429,9 @@ fn _00_13_second_run_does_not_duplicate_rows() {
   assert_eq!(out.row_count("osm_relations"), 1);
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-// 01 — funcoes de thread chamadas diretamente
-//
-// os caminhos de condvar sao inalcancaveis de forma deterministica atraves de
-// `run`, porque dependem de qual thread ganha a corrida. chamando as funcoes
-// diretamente com filas montadas a mao cada bloqueio vira deterministico.
-/////////////////////////////////////////////////////////////////////////////////
+// the condvar paths are not reachable deterministically through `run`, because they
+// depend on which thread wins the race. calling the functions directly, over queues
+// built by hand, makes every block deterministic.
 
 fn empty_queue(reader_done: bool) -> Arc<raw_queue> {
   Arc::new(raw_queue {
@@ -469,7 +456,7 @@ fn dummy_chunk(id: u32) -> osm_pbf_blob_chunk {
   }
 }
 
-// blob de dados cru, pronto para ser decodificado sem passar por arquivo
+// a raw data blob, ready to be decoded without going through a file
 fn raw_data_blob(id: i64) -> raw_blob {
   let payload = pbf_fixtures::data_blob(
     &block_spec {
@@ -500,7 +487,7 @@ fn test_write_buffer(hard_limit: usize, soft_threshold: usize) -> Arc<write_buff
   })
 }
 
-// 01.00: fila cheia bloqueia o reader ate alguem consumir
+// 01.00: a full queue blocks the reader until someone consumes
 #[test]
 fn _01_00_reader_blocks_while_the_queue_is_full() {
   let scene = pbf_fixtures::temp_scene("od_01_00");
@@ -540,7 +527,7 @@ fn _01_00_reader_blocks_while_the_queue_is_full() {
     })
     .collect();
 
-  // fila ja cheia (cap 1) antes do reader comecar: o primeiro push bloqueia
+  // the queue is full (cap 1) before the reader starts: the first push blocks
   let queue = Arc::new(raw_queue {
     inner: Mutex::new(raw_queue_state {
       items: VecDeque::from(vec![raw_data_blob(99)]),
@@ -552,7 +539,7 @@ fn _01_00_reader_blocks_while_the_queue_is_full() {
 
   let handle = reader_thread(scene.pbf_path.clone(), blob_chunks, queue.clone(), 1);
 
-  // drena continuamente ate o reader sinalizar que terminou
+  // drains continuously until the reader signals it is done
   loop {
     {
       let mut state = queue.inner.lock().expect("queue mutex");
@@ -565,10 +552,10 @@ fn _01_00_reader_blocks_while_the_queue_is_full() {
     std::thread::sleep(std::time::Duration::from_millis(1));
   }
 
-  handle.join().expect("reader nao deve entrar em panico");
+  handle.join().expect("the reader must not panic");
 }
 
-// devolve (first_byte de cada chunk, (data_first_byte, data_size))
+// returns (the first byte of each chunk, (data_first_byte, data_size))
 fn chunk_offsets(chunks: &[Vec<u8>]) -> (Vec<u64>, Vec<(u64, u64)>) {
   let mut firsts = Vec::new();
   let mut data = Vec::new();
@@ -585,7 +572,7 @@ fn chunk_offsets(chunks: &[Vec<u8>]) -> (Vec<u64>, Vec<(u64, u64)>) {
   (firsts, data)
 }
 
-// 01.01: decoder que encontra a fila vazia aguarda ate o reader sinalizar o fim
+// 01.01: a decoder that finds the queue empty waits until the reader signals the end
 #[test]
 fn _01_01_decoder_waits_while_the_queue_is_empty() {
   let queue = empty_queue(false);
@@ -600,11 +587,11 @@ fn _01_01_decoder_waits_while_the_queue_is_empty() {
   let opts = Arc::new(default_opts());
   let (tx, rx) = std::sync::mpsc::channel::<prog_event>();
 
-  // dois decoders para um unico item: o perdedor obrigatoriamente estaciona no wait
+  // two decoders for a single item: the loser necessarily parks on the wait
   let a = decode_thread(queue.clone(), buffer.clone(), opts.clone(), 0, tx.clone());
   let b = decode_thread(queue.clone(), buffer.clone(), opts, 1, tx);
 
-  // espera o item ser consumido e da tempo do perdedor estacionar
+  // waits for the item to be consumed, giving the loser time to park
   while !queue.inner.lock().expect("queue mutex").items.is_empty() {
     std::thread::sleep(std::time::Duration::from_millis(1));
   }
@@ -617,11 +604,11 @@ fn _01_01_decoder_waits_while_the_queue_is_empty() {
   b.join().expect("decoder b");
 
   let events: Vec<_> = rx.into_iter().collect();
-  assert_eq!(events.len(), 1, "apenas um decoder processou o item");
+  assert_eq!(events.len(), 1, "only one decoder processed the item");
 }
 
-// 01.02: decoder bloqueia quando o buffer ultrapassa hard_limit e so segue
-// depois que alguem drena
+// 01.02: a decoder blocks when the buffer goes past hard_limit and only moves on
+// after someone drains it
 #[test]
 fn _01_02_decoder_blocks_when_the_buffer_exceeds_hard_limit() {
   let queue = empty_queue(true);
@@ -632,29 +619,29 @@ fn _01_02_decoder_blocks_when_the_buffer_exceeds_hard_limit() {
     .items
     .push_back(raw_data_blob(1));
 
-  // hard_limit 1 com o buffer ja "cheio" e sem writer para drenar
+  // hard_limit 1 with the buffer already "full" and no writer to drain it
   let buffer = test_write_buffer(1, 1);
   buffer.inner.lock().expect("buffer mutex").bytes_current = 10_000;
 
   let (tx, _rx) = std::sync::mpsc::channel::<prog_event>();
   let handle = decode_thread(queue, buffer.clone(), Arc::new(default_opts()), 0, tx);
 
-  // deixa o decoder chegar no wait antes de liberar
+  // lets the decoder reach the wait before releasing it
   std::thread::sleep(std::time::Duration::from_millis(50));
   buffer.inner.lock().expect("buffer mutex").bytes_current = 0;
   buffer.not_too_full.notify_all();
 
-  handle.join().expect("decoder nao deve entrar em panico");
+  handle.join().expect("the decoder must not panic");
 
   let state = buffer.inner.lock().expect("buffer mutex");
   assert_eq!(
     state.current.nodes.len(),
     1,
-    "o decoder deve empurrar a linha depois de destravar"
+    "the decoder must push the row after it unblocks"
   );
 }
 
-// 01.03: ao drenar um buffer que estava cheio, o writer avisa os decoders parados
+// 01.03: draining a buffer that was full, the writer notifies the parked decoders
 #[test]
 fn _01_03_writer_notifies_decoders_after_draining_a_full_buffer() {
   let scene = pbf_fixtures::temp_scene("od_01_03");
@@ -675,20 +662,20 @@ fn _01_03_writer_notifies_decoders_after_draining_a_full_buffer() {
   let (tx, rx) = std::sync::mpsc::channel::<prog_event>();
   writer_thread(conn, buffer.clone(), tx)
     .join()
-    .expect("writer nao deve entrar em panico");
+    .expect("the writer must not panic");
 
   let state = buffer.inner.lock().expect("buffer mutex");
-  assert_eq!(state.bytes_current, 0, "o buffer deve terminar drenado");
+  assert_eq!(state.bytes_current, 0, "the buffer must end drained");
   assert!(state.current.nodes.is_empty());
 
   let flushed = rx
     .into_iter()
     .filter(|e| matches!(e, prog_event::flushed(_)))
     .count();
-  assert_eq!(flushed, 1, "deve reportar exatamente um flush");
+  assert_eq!(flushed, 1, "exactly one flush must be reported");
 }
 
-// 01.04: writer sem trabalho aguarda ate os decoders sinalizarem o fim
+// 01.04: a writer with no work waits until the decoders signal the end
 #[test]
 fn _01_04_writer_waits_until_decoders_signal_completion() {
   let scene = pbf_fixtures::temp_scene("od_01_04");
@@ -703,28 +690,28 @@ fn _01_04_writer_waits_until_decoders_signal_completion() {
   buffer.inner.lock().expect("buffer mutex").decoders_done = true;
   buffer.has_work.notify_all();
 
-  handle.join().expect("writer nao deve entrar em panico");
+  handle.join().expect("the writer must not panic");
   assert_eq!(
     rx.into_iter().count(),
     0,
-    "sem linhas no buffer nao ha flush a reportar"
+    "with no rows in the buffer there is no flush to report"
   );
 }
 
-// 01.05: reader falha ao abrir um pbf inexistente
+// 01.05: the reader fails to open a pbf that does not exist
 #[test]
 fn _01_05_reader_thread_fails_for_a_missing_pbf() {
   let handle = reader_thread(
-    "/caminho/que/nao/existe.osm.pbf".to_string(),
+    "/path/that/does/not/exist.osm.pbf".to_string(),
     vec![dummy_chunk(1)],
     empty_queue(false),
     4,
   );
 
-  assert!(handle.join().is_err(), "abrir pbf inexistente deve falhar");
+  assert!(handle.join().is_err(), "opening a pbf that does not exist must fail");
 }
 
-// 01.06: chunk que aponta para alem do fim do arquivo nao pode ser lido
+// 01.06: a chunk pointing past the end of the file cannot be read
 #[test]
 #[should_panic(expected = "failed to read blob data")]
 fn _01_06_read_blob_bytes_fails_when_chunk_runs_past_eof() {
@@ -739,11 +726,7 @@ fn _01_06_read_blob_bytes_fails_when_chunk_runs_past_eof() {
   read_blob_bytes(&mut file, &chunk);
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-// 02 — auxiliares puros
-/////////////////////////////////////////////////////////////////////////////////
-
-// 02.00: o tamanho estimado soma a capacidade dos vetores e dos payloads
+// 02.00: the estimated size sums the capacity of the vectors and of the payloads
 #[test]
 fn _02_00_decoded_blob_bytes_sums_stack_and_heap() {
   let empty = decoded_blob {
@@ -764,11 +747,11 @@ fn _02_00_decoded_blob_bytes_sums_stack_and_heap() {
   };
   assert!(
     decoded_blob_bytes(&filled) >= 64,
-    "deve contar ao menos o payload no heap"
+    "must count at least the payload on the heap"
   );
 }
 
-// 02.01: row_count soma as tres filas do buffer
+// 02.01: row_count sums the three queues of the buffer
 #[test]
 fn _02_01_buffer_row_count_sums_every_queue() {
   let mut data = buffer_data::default();
@@ -795,7 +778,7 @@ fn _02_01_buffer_row_count_sums_every_queue() {
   assert_eq!(data.row_count(), 3);
 }
 
-// 02.02: bloco sem stringtable usa uma tabela vazia em vez de falhar
+// 02.02: a block without a stringtable uses an empty table instead of failing
 #[test]
 fn _02_02_decode_blob_uses_an_empty_string_table_when_absent() {
   use prost::Message;
@@ -833,7 +816,7 @@ fn _02_03_decode_blob_tolerates_invalid_utf8_in_string_table() {
 
   let block = crate::domain::osm_pbf_file::message::primitive_block_msg {
     stringtable: Some(crate::domain::osm_pbf_file::message::string_table_msg {
-      // indice 1 e uma sequencia utf-8 invalida
+      // index 1 is an invalid utf-8 sequence
       s: vec![Vec::new(), vec![0xff, 0xfe], b"Alfa".to_vec()],
     }),
     primitivegroup: vec![crate::domain::osm_pbf_file::message::primitive_group_msg {
@@ -860,6 +843,6 @@ fn _02_03_decode_blob_tolerates_invalid_utf8_in_string_table() {
   assert_eq!(
     out.nodes[0].tags.get(""),
     Some(&"Alfa".to_string()),
-    "a chave invalida vira string vazia"
+    "the invalid key becomes an empty string"
   );
 }

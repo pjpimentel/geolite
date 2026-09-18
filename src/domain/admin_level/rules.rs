@@ -40,7 +40,3 @@ pub(super) fn resolve_rules(
   }
   (default_include(level), default_exclude(level))
 }
-
-#[cfg(test)]
-#[path = "rules.test.rs"]
-mod tests;

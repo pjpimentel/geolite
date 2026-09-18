@@ -94,7 +94,3 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
     matches,
   }
 }
-
-#[cfg(test)]
-#[path = "coordinates.test.rs"]
-mod tests;

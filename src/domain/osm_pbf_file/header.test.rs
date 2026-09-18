@@ -26,7 +26,7 @@ fn setup(tag: &str, spec: &header_spec, compression: blob_compression) -> scene 
 
 fn blob_column_as_text(s: &scene, name: &str) -> Option<String> {
   column::<Vec<u8>>(s, name)
-    .map(|bytes| String::from_utf8(bytes).expect("coluna deve conter utf-8 valido"))
+    .map(|bytes| String::from_utf8(bytes).expect("the column must hold valid utf-8"))
 }
 
 fn column<T: rusqlite::types::FromSql>(s: &scene, name: &str) -> Option<T> {
@@ -48,7 +48,7 @@ fn _00_returns_bbox_converted_from_nanodegrees() {
   );
   let out = run(&s.temp.pbf_path, &s.conn, s.file_id);
 
-  let bbox = out.bbox.expect("o fixture define uma bbox");
+  let bbox = out.bbox.expect("the fixture defines a bbox");
   assert!((bbox.left - -9.5).abs() < 1e-9);
   assert!((bbox.right - -9.0).abs() < 1e-9);
   assert!((bbox.top - 38.75).abs() < 1e-9);
@@ -64,7 +64,7 @@ fn _01_writes_bbox_polygon_wkt_to_osm_pbf_files() {
   );
   run(&s.temp.pbf_path, &s.conn, s.file_id);
 
-  let wkt = blob_column_as_text(&s, "osm_header_bbox_wkt").expect("wkt deve estar preenchido");
+  let wkt = blob_column_as_text(&s, "osm_header_bbox_wkt").expect("the wkt must be filled");
   assert_eq!(
     wkt,
     "POLYGON((-9.5 38.5,-9 38.5,-9 38.75,-9.5 38.75,-9.5 38.5))"
@@ -97,9 +97,9 @@ fn _03_serializes_required_and_optional_features_as_json() {
   run(&s.temp.pbf_path, &s.conn, s.file_id);
 
   let required = blob_column_as_text(&s, "osm_header_required_features")
-    .expect("required deve estar preenchido");
+    .expect("required must be filled");
   let optional = blob_column_as_text(&s, "osm_header_optional_features")
-    .expect("optional deve estar preenchido");
+    .expect("optional must be filled");
 
   assert_eq!(required, r#"["OsmSchema-V0.6","DenseNodes"]"#);
   assert_eq!(optional, r#"["Has_Metadata"]"#);
@@ -172,7 +172,7 @@ fn _06_drops_negative_replication_sequence_number() {
   assert_eq!(
     column::<i64>(&s, "osm_header_osmosis_replication_sequence_number"),
     None,
-    "valor fora do range de u32 deve ser descartado"
+    "a value outside the u32 range must be dropped"
   );
 }
 

@@ -35,7 +35,3 @@ fn name_contains_token(name: &str, token: &str) -> bool {
     .split(|c: char| !c.is_alphanumeric())
     .any(|part| part.eq_ignore_ascii_case(token))
 }
-
-#[cfg(test)]
-#[path = "token.test.rs"]
-mod tests;

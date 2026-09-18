@@ -19,7 +19,3 @@ pub fn render<'a>(
   }
   label
 }
-
-#[cfg(test)]
-#[path = "label.test.rs"]
-mod tests;

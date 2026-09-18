@@ -185,7 +185,3 @@ fn token_coverage(query_tokens: &[String], doc_text: &str) -> f32 {
     .count();
   hits as f32 / query_tokens.len() as f32
 }
-
-#[cfg(test)]
-#[path = "text.test.rs"]
-mod tests;

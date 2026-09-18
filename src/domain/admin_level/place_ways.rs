@@ -136,7 +136,3 @@ fn process_one_way(w: way_work) -> Option<admin_level> {
     wkb: geom.into(),
   })
 }
-
-#[cfg(test)]
-#[path = "place_ways.test.rs"]
-mod tests;

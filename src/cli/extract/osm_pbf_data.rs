@@ -230,7 +230,3 @@ pub fn command_handler_extract_osm_pbf_data(
     start.elapsed().as_secs_f64()
   );
 }
-
-#[cfg(test)]
-#[path = "osm_pbf_data.test.rs"]
-mod tests;

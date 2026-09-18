@@ -52,7 +52,3 @@ fn assemble(file: &str, text_to_address: bool, coordinates_to_address: bool) -> 
 fn probe_coordinates(conn: &rusqlite::Connection) -> bool {
   conn.prepare(SQL_COORDINATES_PROBE).is_ok()
 }
-
-#[cfg(test)]
-#[path = "status.test.rs"]
-mod tests;

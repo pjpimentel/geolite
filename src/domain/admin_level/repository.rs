@@ -411,7 +411,3 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
   tx.commit().expect("failed to commit transaction");
   total_changes
 }
-
-#[cfg(test)]
-#[path = "repository.test.rs"]
-mod tests;

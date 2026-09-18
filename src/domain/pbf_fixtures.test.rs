@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use prost::Message;
 
 use crate::domain::osm_pbf_file::message::{
@@ -8,15 +6,11 @@ use crate::domain::osm_pbf_file::message::{
   way_msg,
 };
 
-/////////////////////////////////////////////////////////////////////////////////
-// compressao e enquadramento
-/////////////////////////////////////////////////////////////////////////////////
-
 #[derive(Clone, Copy)]
 pub(crate) enum blob_compression {
   raw,
   zlib,
-  // nem raw nem zlib_data — atinge o panic!("unsupported blob compression")
+  // neither raw nor zlib_data — reaches the panic!("unsupported blob compression")
   none,
 }
 
@@ -47,7 +41,7 @@ pub(crate) fn make_blob(payload: &[u8], compression: blob_compression) -> Vec<u8
   blob.encode_to_vec()
 }
 
-// enquadra um blob no formato do arquivo: [be_u32(header_len)][blob_header][blob]
+// frames a blob the way the file does: [be_u32(header_len)][blob_header][blob]
 pub(crate) fn make_chunk(kind: &str, blob: &[u8]) -> Vec<u8> {
   let header = blob_header_msg {
     r#type: kind.to_string(),
@@ -65,11 +59,7 @@ pub(crate) fn write_pbf(path: &str, chunks: &[Vec<u8>]) {
   std::fs::write(path, chunks.concat().as_slice()).expect("failed to write fixture pbf");
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-// builders semanticos
-/////////////////////////////////////////////////////////////////////////////////
-
-// tabela de strings do bloco; indice 0 e sempre "" por convencao do formato
+// the block string table; index 0 is always "" by the convention of the format
 struct string_table {
   entries: Vec<String>,
   index: std::collections::HashMap<String, u32>,
@@ -112,11 +102,11 @@ pub(crate) struct header_spec {
 }
 
 impl Default for header_spec {
-  // por padrao popula todos os campos, para que cada um seja exercitado no decoder
+  // every field is filled by default, so the decoder exercises each of them
   fn default() -> Self {
     Self {
-      // fracoes exatas em binario, para que o round-trip graus -> nanograus -> graus
-      // seja exato e os testes possam comparar o wkt literalmente
+      // binary-exact fractions, so the degrees -> nanodegrees -> degrees round trip is exact
+      // and the tests can compare the wkt literally
       bbox: Some((-9.5, -9.0, 38.75, 38.5)),
       required_features: vec!["OsmSchema-V0.6".to_string(), "DenseNodes".to_string()],
       optional_features: vec!["Has_Metadata".to_string()],
@@ -171,7 +161,7 @@ pub(crate) struct way_spec {
   pub tags: Vec<(String, String)>,
 }
 
-// membro de relation: (tipo 0=node/1=way/2=relation, id, role)
+// a relation member: (type 0=node/1=way/2=relation, id, role)
 #[derive(Clone)]
 pub(crate) struct relation_spec {
   pub id: i64,
@@ -227,9 +217,9 @@ pub(crate) struct block_spec {
   pub date_granularity: i32,
   pub lat_offset: i64,
   pub lon_offset: i64,
-  // quando true emite info/denseinfo, exercitando esses campos no decoder
+  // true emits info/denseinfo, exercising those fields in the decoder
   pub with_info: bool,
-  // quando false omite granularity/offsets, exercitando os defaults do decoder
+  // false omits granularity/offsets, exercising the defaults of the decoder
   pub emit_block_options: bool,
 }
 
@@ -284,7 +274,7 @@ pub(crate) fn data_blob(spec: &block_spec, compression: blob_compression) -> Vec
         keys_vals.push(st.intern(k) as i32);
         keys_vals.push(st.intern(v) as i32);
       }
-      // 0 encerra a lista de tags deste node
+      // 0 ends the tag list of this node
       keys_vals.push(0);
     }
 
@@ -417,11 +407,6 @@ pub(crate) fn data_chunk(spec: &block_spec, compression: blob_compression) -> Ve
   make_chunk("OSMData", &data_blob(spec, compression))
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-// cenas prontas
-/////////////////////////////////////////////////////////////////////////////////
-
-// header + 1 dense node + 1 way + 1 relation, cada um em seu proprio blob
 pub(crate) fn tiny_pbf() -> Vec<Vec<u8>> {
   vec![
     header_chunk(),
@@ -457,10 +442,6 @@ pub(crate) fn tiny_pbf() -> Vec<Vec<u8>> {
   ]
 }
 
-/////////////////////////////////////////////////////////////////////////////////
-// sistema de arquivos temporario
-/////////////////////////////////////////////////////////////////////////////////
-
 pub(crate) struct tempdir_guard {
   pub path: std::path::PathBuf,
 }
@@ -488,8 +469,8 @@ impl Drop for tempdir_guard {
   }
 }
 
-// cena em disco: o guard limpa o diretorio inteiro (pbf + sqlite principal +
-// sqlite osm_data + arquivos -wal/-shm) ao sair de escopo
+// a scene on disk: the guard wipes the whole directory (pbf + the main sqlite + the
+// osm_data sqlite + the -wal/-shm files) when it goes out of scope
 pub(crate) struct temp_scene {
   pub guard: tempdir_guard,
   pub pbf_path: String,
@@ -506,14 +487,6 @@ pub(crate) fn temp_scene(tag: &str) -> temp_scene {
     db_path,
   }
 }
-
-/////////////////////////////////////////////////////////////////////////////////
-// povoamento direto do banco
-//
-// os estagios de admin_levels leem osm_nodes/osm_ways/osm_relations ja
-// decodificados. montar essas linhas com o encoder jsonb e muito mais direto do
-// que faze-las atravessar o pipeline de pbf.
-/////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) fn memory_db() -> rusqlite::Connection {
   crate::database::open_write(":memory:")
@@ -566,7 +539,7 @@ pub(crate) fn insert_way(
   crate::domain::osm_way::repository::insert_rows(conn, &[row]);
 }
 
-// membros: (tipo 0=node/1=way/2=relation, id, role)
+// members: (type 0=node/1=way/2=relation, id, role)
 pub(crate) fn insert_relation(
   conn: &rusqlite::Connection,
   id: u64,
@@ -600,148 +573,9 @@ pub(crate) fn insert_relation(
 }
 
 // cria um way fechado (quadrado) com os nodes correspondentes, retornando o way_id
-pub(crate) fn insert_closed_way(
-  conn: &rusqlite::Connection,
-  way_id: u64,
-  first_node_id: u64,
-  origin: (f64, f64),
-  size: f64,
-  tags: &[(&str, &str)],
-) {
-  let (x, y) = origin;
-  let corners = [
-    (x, y),
-    (x + size, y),
-    (x + size, y + size),
-    (x, y + size),
-    (x, y),
-  ];
-  // the last point reuses the first node, closing the ring
-  for (i, &(cx, cy)) in corners[..4].iter().enumerate() {
-    insert_node(conn, first_node_id + i as u64, cx, cy, &[]);
-  }
-  let refs: Vec<i64> = (0..4)
-    .map(|i| (first_node_id + i) as i64)
-    .chain(std::iter::once(first_node_id as i64))
-    .collect();
-  insert_way(conn, way_id, &refs, tags);
-}
-
-// cria um node por ponto, a partir de first_node_id, e amarra todos em um way
-pub(crate) fn insert_way_at(
-  conn: &rusqlite::Connection,
-  way_id: u64,
-  first_node_id: u64,
-  points: &[(f64, f64)],
-  tags: &[(&str, &str)],
-) {
-  let refs: Vec<i64> = points
-    .iter()
-    .enumerate()
-    .map(|(i, &(x, y))| {
-      let node_id = first_node_id + i as u64;
-      insert_node(conn, node_id, x, y, &[]);
-      node_id as i64
-    })
-    .collect();
-  insert_way(conn, way_id, &refs, tags);
-}
-
-// quadrado unitario na origem — a forma fechada usada pelos testes de nivel
-pub(crate) fn insert_unit_square_way(
-  conn: &rusqlite::Connection,
-  way_id: u64,
-  first_node_id: u64,
-  tags: &[(&str, &str)],
-) {
-  insert_closed_way(conn, way_id, first_node_id, (0.0, 0.0), 1.0, tags);
-}
-
-// prioridade de nome usada pelos estagios de admin_levels nos testes
-pub(crate) const NAME_PRIORITY: &[&str] = &["name"];
-
-// override de regras de um nivel so, no formato que o run dos estagios aceita
-pub(crate) fn level_rules(
-  level: crate::domain::admin_level::level,
-  include: &'static [crate::domain::osm_way::way_filter],
-  exclude: &'static [crate::domain::osm_way::way_filter],
-) -> [crate::domain::admin_level::extraction_rules; 1] {
-  [crate::domain::admin_level::extraction_rules {
-    level,
-    include,
-    exclude,
-  }]
-}
-
-pub(crate) fn coords(points: &[(f64, f64)]) -> Vec<geo::Coord<f64>> {
-  points.iter().map(|&(x, y)| geo::Coord { x, y }).collect()
-}
 
 // runs a level stage and returns the progress events it emitted
-pub(crate) fn progress_events(
-  stage: impl FnOnce(&dyn Fn(crate::domain::admin_level::extract::progress_report)),
-) -> Vec<(Option<u64>, u64)> {
-  let seen = std::cell::RefCell::new(Vec::new());
-  stage(&|p| seen.borrow_mut().push((p.total, p.processed)));
-  seen.into_inner()
-}
 
-// os campos que os testes de nivel checam em uma linha recem-montada
-pub(crate) fn assert_admin_row(
-  row: &crate::domain::admin_level::admin_level,
-  way_id: u64,
-  level: crate::domain::admin_level::level,
-  name: &str,
-  post_code: Option<&str>,
-) {
-  assert_eq!(row.way_id, Some(way_id));
-  assert_eq!(row.relation_id, None);
-  assert_eq!(row.level, level);
-  assert_eq!(row.name, name);
-  assert_eq!(row.post_code.as_deref(), post_code);
-  assert_eq!(
-    row.country_iso_code, None,
-    "way nunca carrega codigo de pais"
-  );
-}
-
-const SQL_SELECT_STORED_ADMIN_LEVELS: &str = "
-  SELECT
-    way_id,
-    admin_level,
-    name
-  FROM admin_levels
-  ORDER BY way_id
-";
-
-const SQL_SELECT_ADMIN_LEVEL_GEOMETRY: &str = "
-  SELECT wkb
-  FROM admin_levels
-  WHERE way_id = ?1
-";
-
-// as linhas gravadas por um estagio de nivel, reduzidas ao que os testes comparam
-pub(crate) fn stored_admin_levels(conn: &rusqlite::Connection) -> Vec<(Option<u64>, u8, String)> {
-  let mut stmt = conn
-    .prepare(SQL_SELECT_STORED_ADMIN_LEVELS)
-    .expect("failed to prepare");
-  stmt
-    .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-    .expect("failed to query")
-    .map(|r| r.expect("failed to read row"))
-    .collect()
-}
-
-pub(crate) fn stored_geometry(
-  conn: &rusqlite::Connection,
-  way_id: u64,
-) -> crate::domain::admin_level::geometry::admin_geometry {
-  conn
-    .query_row(SQL_SELECT_ADMIN_LEVEL_GEOMETRY, [way_id], |r| r.get(0))
-    .expect("failed to read geometry")
-}
-
-// escreve o pbf, indexa os blob chunks e devolve a cena pronta para os testes
 pub(crate) fn indexed_scene(tag: &str, chunks: &[Vec<u8>]) -> (temp_scene, u32) {
   let scene = temp_scene(tag);
   write_pbf(&scene.pbf_path, chunks);
