@@ -20,6 +20,7 @@ pub(crate) fn world() -> &'static world {
 
 const ANY_TEXT: &str = "rua";
 const ANY_POINT: &str = "-23.970949,-46.318730";
+const UNPARSEABLE_WKT: &str = "POLYGON((0 0, 1 1";
 
 // 00.00. pipeline integrity
 #[test]
@@ -731,6 +732,20 @@ fn _01_22_the_input_is_a_coordinate_only_when_it_parses_as_lat_lon() {
   }
 }
 
+// 01.23. contract: the post code is documented on every level and on the attributes
+#[test]
+#[ignore]
+fn _01_23_the_response_schemas_document_the_post_code() {
+  let s = world().start_server();
+  let spec = get(s.port, "/openapi.json").json();
+  for schema in ["admin_level", "query_match_attributes"] {
+    assert!(
+      spec["components"]["schemas"][schema]["properties"]["post_code"].is_object(),
+      "{schema} must document post_code"
+    );
+  }
+}
+
 // 02.00. dead case
 #[test]
 #[ignore]
@@ -916,6 +931,38 @@ fn _02_13_a_level_outside_the_scale_in_last_admin_levels_is_rejected_by_clap() {
     out.stderr.contains("level 11 is not supported"),
     "stderr: {}",
     out.stderr
+  );
+}
+
+// 02.14. dead case
+#[test]
+#[ignore]
+fn _02_14_an_unparseable_bounding_wkt_is_rejected_by_clap() {
+  let out = world().geolite(&["query", ANY_TEXT, "--bounding-wkt", UNPARSEABLE_WKT]);
+  assert_eq!(out.status, 2);
+  assert!(
+    out.stderr.contains("bounding_wkt: invalid wkt"),
+    "stderr: {}",
+    out.stderr
+  );
+}
+
+// 02.15. dead case
+#[test]
+#[ignore]
+fn _02_15_an_unparseable_bounding_wkt_returns_bad_request() {
+  let s = world().start_server();
+  let path = format!(
+    "/geocode?query={}&bounding_wkt={}",
+    encode(ANY_TEXT),
+    encode(UNPARSEABLE_WKT)
+  );
+  let r = get(s.port, &path);
+  assert_eq!(r.status, 400);
+  assert!(
+    r.text().contains("bounding_wkt: invalid wkt"),
+    "body: {}",
+    r.text()
   );
 }
 
