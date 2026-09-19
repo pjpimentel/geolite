@@ -2,8 +2,7 @@ use geo::{Geometry, HaversineDistance, Point};
 use rusqlite::Connection;
 use std::collections::HashMap;
 
-use super::entity::{house_number_match, query_house_number, query_match, round5};
-use crate::admin_level::level;
+use super::entity::{house_number_match, query_house_number};
 use crate::house_number::{
   house_number, house_number_policy, house_number_resolution, resolution, token,
 };
@@ -35,107 +34,76 @@ fn numbers_by_street(
   by_street
 }
 
-fn place_on_house_number(
-  m: &mut query_match,
-  point: Point<f64>,
-  number: &house_number,
-  friendly_name_format: Option<&str>,
-) {
-  m.latitude = round5(point.y());
-  m.longitude = round5(point.x());
-  m.append_house_number_level(number.stored_form(), friendly_name_format);
-  // nudge similarity so a match with the house number resolved outranks the bare street
-  if let Some(s) = m.similarity {
-    m.similarity = Some(round5(s as f64 + 0.01) as f32);
+pub(super) struct resolved_number {
+  number: house_number,
+  resolution: house_number_resolution,
+}
+
+impl resolved_number {
+  pub(super) fn placed(&self) -> Option<(&str, Point<f64>)> {
+    match self.resolution {
+      house_number_resolution::exact(point) | house_number_resolution::interpolated(point) => {
+        Some((self.number.stored_form(), point))
+      }
+      house_number_resolution::absent => None,
+    }
+  }
+
+  pub(super) fn reported(&self) -> query_house_number {
+    query_house_number {
+      number: self.number.stored_form().to_string(),
+      kind: match self.resolution {
+        house_number_resolution::exact(_) => house_number_match::exact,
+        house_number_resolution::interpolated(_) => house_number_match::interpolated,
+        house_number_resolution::absent => house_number_match::absent,
+      },
+    }
   }
 }
 
-pub(super) fn enrich_house_number_from_query(
+pub(super) fn from_query(
   conn: &Connection,
   query: &str,
-  matches: &mut [query_match],
-  friendly_name_format: Option<&str>,
+  streets: &[(i64, &str)],
   policy: &house_number_policy,
-) {
-  if !token::has_house_number(query, policy) {
-    return;
+) -> HashMap<i64, resolved_number> {
+  if streets.is_empty() || !token::has_house_number(query, policy) {
+    return HashMap::new();
   }
-
-  let admin_level_ids: Vec<i64> = matches.iter().filter_map(|m| m.admin_level_id).collect();
-  if admin_level_ids.is_empty() {
-    return;
-  }
-  let by_street = numbers_by_street(conn, &admin_level_ids);
+  let street_ids: Vec<i64> = streets.iter().map(|(id, _)| *id).collect();
+  let by_street = numbers_by_street(conn, &street_ids);
   let no_numbers: Vec<(house_number, Point<f64>)> = Vec::new();
 
-  for m in matches.iter_mut() {
-    let Some(admin_level_id) = m.admin_level_id else {
-      continue;
-    };
-    let street_name = street_name_of(m);
-    let Some(number) = token::first_house_number(query, &street_name, policy) else {
-      continue;
-    };
-
-    let known = by_street.get(&admin_level_id).unwrap_or(&no_numbers);
-    let kind = match resolution::resolve(&number, known) {
-      house_number_resolution::exact(point) => {
-        place_on_house_number(m, point, &number, friendly_name_format);
-        house_number_match::exact
-      }
-      house_number_resolution::interpolated(point) => {
-        place_on_house_number(m, point, &number, friendly_name_format);
-        house_number_match::interpolated
-      }
-      house_number_resolution::absent => house_number_match::absent,
-    };
-
-    m.house_number = Some(query_house_number {
-      number: number.stored_form().to_string(),
-      kind,
-    });
-  }
-}
-
-fn street_name_of(m: &query_match) -> String {
-  let street = level::street.value();
-  m.admin_levels
+  streets
     .iter()
-    .find(|a| a.level == street)
-    .map(|a| a.name.clone())
-    .unwrap_or_default()
+    .filter_map(|&(id, name)| {
+      let number = token::first_house_number(query, name, policy)?;
+      let known = by_street.get(&id).unwrap_or(&no_numbers);
+      let resolution = resolution::resolve(&number, known);
+      Some((id, resolved_number { number, resolution }))
+    })
+    .collect()
 }
 
-pub(super) fn enrich_house_numbers(
+pub(super) fn nearest_to(
   conn: &Connection,
   input_pt: Point<f64>,
-  matches: &mut [query_match],
-  friendly_name_format: Option<&str>,
-) {
-  let admin_level_ids: Vec<i64> = matches.iter().filter_map(|m| m.admin_level_id).collect();
-  if admin_level_ids.is_empty() {
-    return;
+  street_ids: &[i64],
+) -> HashMap<i64, house_number> {
+  if street_ids.is_empty() {
+    return HashMap::new();
   }
-  let by_street = numbers_by_street(conn, &admin_level_ids);
-
-  for m in matches.iter_mut() {
-    let Some(admin_level_id) = m.admin_level_id else {
-      continue;
-    };
-
-    let closest = by_street.get(&admin_level_id).and_then(|numbers| {
+  numbers_by_street(conn, street_ids)
+    .into_iter()
+    .filter_map(|(id, numbers)| {
       numbers
-        .iter()
+        .into_iter()
         .filter_map(|(number, point)| {
-          let distance = input_pt.haversine_distance(point);
+          let distance = input_pt.haversine_distance(&point);
           (distance <= MATCH_MAX_DISTANCE_IN_METERS).then_some((number, distance))
         })
         .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-    });
-
-    if let Some((number, _)) = closest {
-      let name = number.stored_form().to_string();
-      m.append_house_number_level(&name, friendly_name_format);
-    }
-  }
+        .map(|(number, _)| (id, number))
+    })
+    .collect()
 }

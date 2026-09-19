@@ -38,6 +38,9 @@ const APARECIDA_POLYGON: &str = "POLYGON((-46.3110 -23.9830,-46.3090 -23.9830,-4
 const FAR_POLYGON: &str = "POLYGON((-46.3040 -23.9830,-46.3020 -23.9830,-46.3020 -23.9810,-46.3040 -23.9810,-46.3040 -23.9830))";
 const POST_CODED_STREET: &str = "Ateneu São Vicente";
 const POST_CODED_POINT: &str = "-23.96675,-46.37675";
+// rua deputado emilio justo carries its own post code and the numbers 23 and 259; the point is 23's
+const POST_CODED_NUMBERED_QUERY: &str = "rua deputado emilio justo 23, 11725-440";
+const POST_CODED_NUMBERED_POINT: &str = "-23.99429,-46.41588";
 // rua aureliano coutinho lies inside conjunto habitacional jaú, which lies inside aparecida: two
 // ancestors of level 10
 const NESTED_POINT: &str = "-23.973439,-46.309747";
@@ -355,6 +358,23 @@ fn _00_07_the_house_number_alias_renders_on_the_coordinate_path() {
       ]
     }),
   );
+}
+
+// 00.08. result quality: the label with a house number follows the same rule as the label
+// without one — the names outward, the number after the street, the post codes at the end
+#[test]
+#[ignore]
+fn _00_08_a_house_number_label_keeps_the_post_code_on_both_paths() {
+  for input in [POST_CODED_NUMBERED_QUERY, POST_CODED_NUMBERED_POINT] {
+    world().assert_cli(
+      &ask(input),
+      &json!({
+        "matches": [{
+          "friendly_name": "Rua Deputado Emilio Justo, 23, Sítio do Campo, São Paulo, Brasil, 11725-440",
+        }]
+      }),
+    );
+  }
 }
 
 // 01.00. precision guarantee

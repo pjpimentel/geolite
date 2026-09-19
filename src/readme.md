@@ -25,7 +25,6 @@ admin_level/    a named administrative area — the `admin_levels` table
 admin_level_hierarchy/  which area contains which — the `admin_levels_hierarchy` table
   entity            the row as it is written: one edge, child to parent
   paths             the paths of an area up to the roots, enumerated from the edges
-  label             the label rule: the names outward, then the post codes inward
   repository        the ddl, the pending queries, the reads of the tree and the insert
   resolver          the pass that finds every parent of every area and writes the edges
   search_index      the tantivy index, one document per path, and the search over it
@@ -42,11 +41,11 @@ house_number/   a door number placed on a street — the `house_numbers` table
 address/        an address resolved from a text or from a coordinate — not a table
   entity            the response as the api renders it: the match, its level ladder, its attributes, built from one set of loads
   input             what the user typed: a `lat,lon` pair or a text
-  label             the friendly-name template: parse, validate, render, and the default order
+  label             the friendly-name template: parse, validate, render; and `place_label`, the one label without a template
   filter            the shared last pass: quality, region, last levels, the cut at ten
   text              `address::query_by_text`: the search, the matches, the house number, the sort
   coordinates       `address::query_by_coordinates`: the nearest streets, the matches, the nearest number
-  house_number      the house-number step of both services; the rule itself is `house_number`
+  house_number      the number of each street, resolved before its match is built; the rule itself is `house_number`
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the ten writes and reads
   catalog           the `source` enum, the endpoint it resolves, and the listing of each source

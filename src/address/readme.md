@@ -31,8 +31,8 @@ fts cut, so a match of the region ranked below the global cap of fifty is not lo
 one match: the level ladder from `match_sources`, the centroid of the geometry as the point, `score`
 as the raw bm25 and `similarity` as the token coverage — the fraction of the query's tokens found
 exactly in the document's text, a house number counting as uncovered, so `rua x 100` scores below
-1.0. the house-number step comes next, then the sort by score with similarity breaking the tie,
-then the filters.
+1.0. the house number of each street is resolved before its matches are built, then comes the sort
+by score with similarity breaking the tie, then the filters.
 
 `query_by_coordinates` asks the rtree for the streets around the point (`RTREE_DELTA_DEG`), keeps
 the lines only, projects the point onto each one (`ClosestPoint`, haversine) and sorts by level and
@@ -43,13 +43,15 @@ level 30.
 
 ## the house-number step — `house_number`
 
-the adapter between a match and `house_number`. on the text path `token::first_house_number`
-picks the number left after the street's own name tokens are removed, `resolution::resolve` places
-it, and on `exact` and `interpolated` the point moves to the number, level 30 is appended, the label
-is re-rendered and `similarity` gains +0.01: a street split into several osm segments shares one
-score, and the nudge is what lifts the segment that placed the number above the bare ones. on the
-coordinate path only the nearest stored number within 50 m is appended — tighter than the 100 m of
-the street quality on purpose, since a number is a point and a street is a line.
+the adapter between a street and `house_number`, run once per street before any match is built, so
+a match is composed once and nothing is re-rendered afterwards. on the text path `from_query` has
+`token::first_house_number` pick the number left after the street's own name tokens are removed and
+`resolution::resolve` place it; on `exact` and `interpolated` the match is built on the number's
+point, with level 30 on the ladder and in the label, and `similarity` gains +0.01: a street split
+into several osm segments shares one score, and the nudge is what lifts the segment that placed the
+number above the bare ones. on the coordinate path `nearest_to` keeps only the nearest stored
+number within 50 m — tighter than the 100 m of the street quality on purpose, since a number is a
+point and a street is a line.
 
 ## the response — `entity`
 
@@ -85,11 +87,10 @@ one or a level that is not a `u8` is an error — and it runs at the boundary
 (`validate_friendly_name_format` is the cli `value_parser` and the http check), so `render` never
 sees a bad template. a placeholder without a level swallows the literal that follows it
 (`"{a}, {b}, {c}"` with `b` missing renders `a, c`) and the result is trimmed of commas and
-whitespace. without a template the label is composed from the match's own path by
-`admin_level_hierarchy::label::render`, and once a house number is appended it is rebuilt in the
-default order: the street, the number, then the rest from the most specific to the least. this
-renderer and `admin_level_hierarchy::label::render` are the two label rules the `place_label` item
-in the backlog reconciles.
+whitespace. without a template the label is `place_label` over the match's own path: the names from
+the area outward, the house number right after the area's own name, then the post codes from the
+root inward — one rule with or without a number, following the path rather than the ladder, so both
+services write the same label for the same path.
 
 ## the filters — `filter`
 

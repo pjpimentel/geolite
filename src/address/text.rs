@@ -7,7 +7,8 @@ use super::entity::{
   self, leaf, match_sources, query_match, query_match_attributes, query_output, query_service,
   round5,
 };
-use super::{filter, house_number, query_opts};
+use super::house_number::{self, resolved_number};
+use super::{filter, query_opts};
 use crate::admin_level::level;
 use crate::admin_level::repository::{admin_area_row, admin_meta_row};
 use crate::admin_level_hierarchy::search_index::{
@@ -58,6 +59,12 @@ pub(super) fn run(
   let sources = match_sources::load(conn, &ids, opts.include_wkt);
   let records = crate::admin_level::repository::load_full_by_ids(conn, &ids);
   let record_map: HashMap<i64, &admin_area_row> = records.iter().map(|r| (r.id, r)).collect();
+  let streets: Vec<(i64, &str)> = records
+    .iter()
+    .filter(|r| r.admin_level == level::street)
+    .map(|r| (r.id, r.name.as_str()))
+    .collect();
+  let numbers = house_number::from_query(conn, text, &streets, house_numbers);
 
   // one match per hit: a hit is one path of an area, and its ordinal names the path
   let mut matches: Vec<query_match> = hits
@@ -72,18 +79,9 @@ pub(super) fn run(
         );
         return None;
       };
-      build_match(record, &sources, &query_tokens, hit, path, opts)
+      build_match(record, &sources, &query_tokens, hit, path, numbers.get(&record.id), opts)
     })
     .collect();
-
-  // the house number moves the point and nudges the similarity that the filters read
-  house_number::enrich_house_number_from_query(
-    conn,
-    text,
-    &mut matches,
-    opts.friendly_name_format,
-    house_numbers,
-  );
 
   // bm25 first; among the segments of one street, which share a score, the one that placed the
   // number wins the tie through the similarity nudge, and the rest keep the collector's order,
@@ -113,10 +111,14 @@ fn build_match(
   query_tokens: &[String],
   hit: &search_hit,
   path: &[i64],
+  number: Option<&resolved_number>,
   opts: &query_opts,
 ) -> Option<query_match> {
   let geom = record.wkb.as_ref()?.geometry();
   let centroid = geom.centroid()?;
+  let placed = number.and_then(resolved_number::placed);
+  let placed_number = placed.map(|(n, _)| n);
+  let point = placed.map_or(centroid, |(_, p)| p);
 
   let ancestors = sources.ancestors_of(path.iter());
   let leaf = leaf {
@@ -126,13 +128,14 @@ fn build_match(
     relation_id: record.relation_id,
     way_id: record.way_id,
   };
-  let admin_levels = sources.level_ladder(&ancestors, &leaf);
+  let admin_levels = sources.level_ladder(&ancestors, &leaf, placed_number);
   let friendly_name = entity::friendly_name_of(
     opts.friendly_name_format,
     &admin_levels,
     sources,
     record.id,
     &record.name,
+    placed_number,
     path,
   );
   let own_meta = sources.meta.get(&record.id);
@@ -145,21 +148,26 @@ fn build_match(
     ),
   );
 
+  let mut similarity = round5(coverage as f64) as f32;
+  // nudge similarity so a match with the house number resolved outranks the bare street
+  if placed.is_some() {
+    similarity = round5(similarity as f64 + 0.01) as f32;
+  }
+
   Some(query_match {
     admin_levels,
-    latitude: round5(centroid.y()),
-    longitude: round5(centroid.x()),
+    latitude: round5(point.y()),
+    longitude: round5(point.x()),
     coordinates_distance_in_meters: None,
-    similarity: Some(round5(coverage as f64) as f32),
+    similarity: Some(similarity),
     score: Some(hit.score),
     friendly_name,
     attributes: query_match_attributes {
       country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
       post_code: entity::post_code_of(&ancestors),
     },
-    house_number: None,
+    house_number: number.map(resolved_number::reported),
     id: entity::path_id(record.id, path),
-    admin_level_id: (record.admin_level == level::street).then_some(record.id),
   })
 }
 

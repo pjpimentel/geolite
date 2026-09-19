@@ -57,30 +57,12 @@ pub struct query_match {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub house_number: Option<query_house_number>,
   pub id: String,
-  #[serde(skip)]
-  pub admin_level_id: Option<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct query_output {
   pub service: query_service,
   pub matches: Vec<query_match>,
-}
-
-impl query_match {
-  pub(super) fn append_house_number_level(&mut self, number: &str, friendly_name_format: Option<&str>) {
-    self.admin_levels.push(admin_level {
-      level: level::house_number.value(),
-      name: number.to_string(),
-      osm_relation_id: None,
-      osm_way_id: None,
-      wkt: None,
-    });
-    self.friendly_name = match friendly_name_format {
-      Some(fmt) => label::render_friendly_name(fmt, &self.admin_levels),
-      None => label::default_friendly_name(&self.admin_levels),
-    };
-  }
 }
 
 pub(super) fn round5(v: f64) -> f64 {
@@ -167,10 +149,17 @@ impl match_sources {
 
   // the label without a template follows the chain's own order, not the ladder's: the ladder
   // sorts by level and the two services order a level differently, while the label is one
-  pub(super) fn default_label(&self, own_id: i64, own_name: &str, chain: &[i64]) -> String {
+  pub(super) fn default_label(
+    &self,
+    own_id: i64,
+    own_name: &str,
+    house_number: Option<&str>,
+    chain: &[i64],
+  ) -> String {
     let own_post_code = self.meta.get(&own_id).and_then(|m| m.post_code.as_deref());
-    crate::admin_level_hierarchy::label::render(
+    label::place_label(
       (own_name, own_post_code),
+      house_number,
       chain
         .iter()
         .filter_map(|id| self.meta.get(id))
@@ -178,7 +167,12 @@ impl match_sources {
     )
   }
 
-  pub(super) fn level_ladder(&self, ancestors: &[&admin_meta_row], leaf: &leaf) -> Vec<admin_level> {
+  pub(super) fn level_ladder(
+    &self,
+    ancestors: &[&admin_meta_row],
+    leaf: &leaf,
+    house_number: Option<&str>,
+  ) -> Vec<admin_level> {
     let mut admin_levels: Vec<admin_level> = ancestors
       .iter()
       .map(|a| admin_level {
@@ -196,6 +190,15 @@ impl match_sources {
       osm_way_id: leaf.way_id,
       wkt: self.wkt.get(&leaf.id).cloned(),
     });
+    if let Some(number) = house_number {
+      admin_levels.push(admin_level {
+        level: level::house_number.value(),
+        name: number.to_string(),
+        osm_relation_id: None,
+        osm_way_id: None,
+        wkt: None,
+      });
+    }
     admin_levels
   }
 }
@@ -206,11 +209,12 @@ pub(super) fn friendly_name_of(
   sources: &match_sources,
   own_id: i64,
   own_name: &str,
+  house_number: Option<&str>,
   chain: &[i64],
 ) -> String {
   match format {
     Some(fmt) => label::render_friendly_name(fmt, admin_levels),
-    None => sources.default_label(own_id, own_name, chain),
+    None => sources.default_label(own_id, own_name, house_number, chain),
   }
 }
 

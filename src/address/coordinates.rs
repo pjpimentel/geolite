@@ -38,11 +38,13 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
   crate::debug!("debug: candidates={}", candidates.len());
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
   let sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);
+  let numbers = house_number::nearest_to(conn, input_pt, &candidate_ids);
 
   let mut matches: Vec<query_match> = Vec::new();
   for c in &candidates {
     let own_meta = sources.meta.get(&c.id);
     let own_name = own_meta.map(|m| m.name.as_str()).unwrap_or_default();
+    let number = numbers.get(&c.id).map(|n| n.stored_form());
     // a street inside two neighbourhoods is two answers, in the order the paths are enumerated
     for path in sources.paths_of(c.id) {
       // the path comes most-specific first; reversed before the stable sort so that, within one
@@ -55,13 +57,14 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
         relation_id: own_meta.and_then(|m| m.relation_id),
         way_id: own_meta.and_then(|m| m.way_id),
       };
-      let admin_levels = sources.level_ladder(&ancestors, &leaf);
+      let admin_levels = sources.level_ladder(&ancestors, &leaf, number);
       let friendly_name = entity::friendly_name_of(
         opts.friendly_name_format,
         &admin_levels,
         &sources,
         c.id,
         own_name,
+        number,
         path,
       );
 
@@ -80,12 +83,9 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
         },
         house_number: None,
         id: entity::path_id(c.id, path),
-        admin_level_id: Some(c.id),
       });
     }
   }
-
-  house_number::enrich_house_numbers(conn, input_pt, &mut matches, opts.friendly_name_format);
 
   filter::apply_filters_and_truncate(&mut matches, opts);
 

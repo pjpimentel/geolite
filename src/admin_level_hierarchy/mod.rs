@@ -1,5 +1,4 @@
 pub mod entity;
-pub mod label;
 pub mod paths;
 pub mod repository;
 pub mod resolver;

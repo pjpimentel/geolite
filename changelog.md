@@ -3,6 +3,7 @@
 ## **2026-XX-XX** - 0.0.12
 
 1. MODIFIED the friendly name to one rule for the path and for the label rebuilt around a house number, which diverge today on where the post codes go.
+1. MODIFIED the house number to resolve before the match is built, so the api dto carries no pipeline state.
 1. MODIFIED `attributes.post_code` to one rule in both services, so the same street answers the same post code by text and by coordinate.
 1. MODIFIED an `admin_levels` row to carry its origin as one value instead of a pair of optionals, removing the panic on an empty pair.
 1. MODIFIED domains folder to top level src/

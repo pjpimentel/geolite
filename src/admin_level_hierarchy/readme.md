@@ -44,16 +44,6 @@ index build reads the whole table once with `load_all_edges`.
 the tree is **sparse and not strictly ranked**: a street inside no neighbourhood attaches straight
 to its city, and an area may sit inside another at the same level when that one is larger.
 
-## the label — `label`
-
-`render` composes the label from a path: the names from the area outward, then the post codes from
-the root inward, which is the string the table used to store. it runs at query time, so nothing
-derived can fall out of step with the areas it was rendered from.
-
-it is not the same thing as `address::label::render_friendly_name`, which renders a user-supplied
-template (`{admin_level_8_name}`) over the resolved areas. the two diverge, and reconciling them is
-the open `place_label` task in the backlog.
-
 ## the resolver — `resolver`
 
 `run` answers "who contains whom" for every area the table does not know yet. it loads every area
