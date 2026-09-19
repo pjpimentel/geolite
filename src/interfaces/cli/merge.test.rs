@@ -79,8 +79,7 @@ fn _01_end_to_end_merge_into_a_fresh_base_rebuilds_indexes() {
 // coordinate queries tell streets apart (make_way puts everything at the same point).
 fn make_street_at(name: &str, way_id: u64, lon: f64, lat: f64) -> admin_levels_row {
   admin_levels_row {
-    relation_id: None,
-    way_id: Some(way_id),
+    id: admin_level_id::from_way(way_id),
     level: level::street,
     wkb: Geometry::LineString(LineString(vec![
       Coord { x: lon, y: lat },

@@ -1,9 +1,9 @@
 use super::geometry::admin_geometry;
+use super::id::admin_level_id;
 use super::scale::level;
 
 pub struct admin_level {
-  pub relation_id: Option<u64>,
-  pub way_id: Option<u64>,
+  pub id: admin_level_id,
   pub level: level,
   pub wkb: admin_geometry,
   pub name: String,

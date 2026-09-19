@@ -24,7 +24,6 @@ impl admin_level_id {
     self.0
   }
 
-  #[allow(dead_code)]
   pub fn kind(self) -> osm_element_kind {
     if self.0 & 1 == 1 {
       osm_element_kind::relation
@@ -33,7 +32,6 @@ impl admin_level_id {
     }
   }
 
-  #[allow(dead_code)]
   pub fn osm_id(self) -> u64 {
     self.0 >> 1
   }

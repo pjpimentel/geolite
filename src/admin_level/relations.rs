@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, mpsc};
 use super::entity::admin_level;
 use super::extract::{CHUNK_SIZE, progress_report};
 use super::geometry::{approx_eq, assemble_rings};
+use super::id::admin_level_id;
 use super::scale::level;
 
 struct rel_meta {
@@ -178,8 +179,7 @@ fn process_one_relation(
   };
 
   Some(admin_level {
-    relation_id: Some(relation_id),
-    way_id: None,
+    id: admin_level_id::from_relation(relation_id),
     level,
     name: meta.name.clone(),
     country_iso_code: meta.country_iso_code.clone(),

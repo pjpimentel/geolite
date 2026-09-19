@@ -15,8 +15,7 @@ pub(crate) fn ring(min: f64, max: f64) -> LineString<f64> {
 
 pub(crate) fn area(relation_id: u64, level: level, name: &str, min: f64, max: f64) -> admin_level {
   admin_level {
-    relation_id: Some(relation_id),
-    way_id: None,
+    id: admin_level_id::from_relation(relation_id),
     level,
     wkb: Geometry::MultiPolygon(MultiPolygon(vec![Polygon::new(ring(min, max), vec![])])).into(),
     name: name.to_string(),
@@ -27,8 +26,7 @@ pub(crate) fn area(relation_id: u64, level: level, name: &str, min: f64, max: f6
 
 pub(crate) fn street(way_id: u64, name: &str, at: f64) -> admin_level {
   admin_level {
-    relation_id: None,
-    way_id: Some(way_id),
+    id: admin_level_id::from_way(way_id),
     level: level::street,
     wkb: Geometry::LineString(LineString(vec![
       Coord { x: at, y: at },
@@ -67,8 +65,7 @@ pub(crate) fn area_at(
   max: [f64; 2],
 ) -> admin_level {
   admin_level {
-    relation_id: Some(relation_id),
-    way_id: None,
+    id: admin_level_id::from_relation(relation_id),
     level,
     wkb: Geometry::MultiPolygon(MultiPolygon(vec![Polygon::new(rect(min, max), vec![])])).into(),
     name: name.to_string(),
@@ -79,8 +76,7 @@ pub(crate) fn area_at(
 
 pub(crate) fn street_between(way_id: u64, name: &str, from: [f64; 2], to: [f64; 2]) -> admin_level {
   admin_level {
-    relation_id: None,
-    way_id: Some(way_id),
+    id: admin_level_id::from_way(way_id),
     level: level::street,
     wkb: Geometry::LineString(LineString(vec![
       Coord { x: from[0], y: from[1] },

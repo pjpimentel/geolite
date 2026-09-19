@@ -4,7 +4,7 @@ use super::entity::admin_level;
 use geozero::ToWkt;
 
 use super::geometry::{admin_geometry, mbr_center};
-use super::id::admin_level_id;
+use super::id::osm_element_kind;
 use super::scale::level;
 use crate::database::table;
 
@@ -382,22 +382,16 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
   {
     let mut stmt = tx.prepare(SQL_UPSERT).expect("failed to prepare upsert");
     for row in rows {
-      let id: u64 = match (row.relation_id, row.way_id) {
-        (Some(rel), _) => admin_level_id::from_relation(rel).raw(),
-        (None, Some(w)) => admin_level_id::from_way(w).raw(),
-        // the message carries no field of the row itself: a name on its way to stderr is read as
-        // cleartext logging of user data (codeql rust/cleartext-logging)
-        (None, None) => panic!(
-          "admin_levels row at level {} has neither way_id nor relation_id; \
-           cannot derive a stable id",
-          row.level.value(),
-        ),
+      let osm_id = Some(row.id.osm_id());
+      let (relation_id, way_id) = match row.id.kind() {
+        osm_element_kind::relation => (osm_id, None),
+        osm_element_kind::way => (None, osm_id),
       };
       let changes = stmt
         .execute(rusqlite::params![
-          id,
-          row.relation_id,
-          row.way_id,
+          row.id.raw(),
+          relation_id,
+          way_id,
           row.level.value(),
           row.name,
           row.country_iso_code,

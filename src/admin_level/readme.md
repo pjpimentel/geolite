@@ -47,8 +47,9 @@ cannot silently change it.
 an area's id is the osm id of the way or relation it came from, shifted left one bit, with the
 low bit set for relations: a way and a relation that share an osm id stay distinct, the id is a
 pure function of the source and never an insert-order rowid, and `osm_id()` and `kind()` read it
-back. `batch_upsert` derives it, and a row with neither a way nor a relation is a programming
-error that panics.
+back. the row carries it from the stage that builds it (`from_way` or `from_relation`), so a row
+without an origin cannot be built; `batch_upsert` writes the `relation_id`/`way_id` columns back
+from `kind()` and `osm_id()`.
 
 ## the shape — `geometry`
 

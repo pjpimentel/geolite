@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use super::entity::admin_level;
 use super::extract::{CHUNK_SIZE, progress_report};
 use super::geometry::approx_eq;
+use super::id::admin_level_id;
 use super::rules::{extraction_rules, resolve_rules};
 use super::scale::level;
 
@@ -127,8 +128,7 @@ fn process_one_way(w: way_work) -> Option<admin_level> {
     };
 
   Some(admin_level {
-    relation_id: None,
-    way_id: Some(w.way_id),
+    id: admin_level_id::from_way(w.way_id),
     level: w.level,
     name: w.meta.name,
     country_iso_code: None,

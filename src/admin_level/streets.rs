@@ -3,6 +3,7 @@ use rusqlite::Connection;
 
 use super::entity::admin_level;
 use super::extract::{CHUNK_SIZE, progress_report};
+use super::id::admin_level_id;
 use super::rules::{extraction_rules, resolve_rules};
 use super::scale::level;
 
@@ -103,8 +104,7 @@ fn process_one_way(
   let ls = LineString(coords.to_vec());
 
   Some(admin_level {
-    relation_id: None,
-    way_id: Some(way_id),
+    id: admin_level_id::from_way(way_id),
     level: level::street,
     name: name.to_owned(),
     country_iso_code: None,
