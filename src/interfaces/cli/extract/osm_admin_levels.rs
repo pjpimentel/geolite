@@ -1,11 +1,13 @@
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::ProgressBar;
 use std::time::Instant;
 
-use crate::admin_level::extract::{progress_report, source, stage};
+use crate::admin_level::extract::{source, stage};
 use crate::admin_level::{
   admin_level, extract_event, extract_opts, extract_step, extraction_rules, level,
 };
 use crate::database::table;
+use crate::interfaces::cli::progress;
+use crate::progress_report;
 
 struct running_stage {
   label: String,
@@ -58,16 +60,12 @@ impl stage_renderer {
     };
     if running.bar.is_none() {
       running.started_at = Some(Instant::now());
-      running.bar = Some(progress_bar(&running.label));
+      running.bar = Some(progress::bar("extracting", &running.label));
     }
-    let bar = running.bar.as_ref().unwrap();
     if let Some(total) = report.total {
-      if bar.length().is_none() {
-        bar.set_length(total);
-      }
       running.total = total;
     }
-    bar.set_position(report.processed);
+    progress::advance(running.bar.as_ref().unwrap(), &report);
   }
 
   fn finish(&mut self) {
@@ -108,21 +106,6 @@ fn label_of(stage: stage) -> String {
     source::place_ways => "neighborhood ways".to_string(),
     source::streets => "street".to_string(),
   }
-}
-
-fn progress_bar(label: &str) -> ProgressBar {
-  let bar = ProgressBar::new_spinner();
-  bar.set_draw_target(crate::interfaces::cli::progress_draw_target());
-  bar.set_style(
-    ProgressStyle::with_template(
-      "{prefix:.bold.green} {msg:<16}  [{bar:20.green/white}] {percent:>3}%  {pos:>6}/{len:<6}  {per_sec}  eta {eta}",
-    )
-    .unwrap()
-    .progress_chars("=> "),
-  );
-  bar.set_prefix("extracting");
-  bar.set_message(label.to_string());
-  bar
 }
 
 pub fn command_handler_extract_osm_admin_levels(

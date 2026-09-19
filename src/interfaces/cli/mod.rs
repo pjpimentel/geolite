@@ -5,6 +5,7 @@ pub mod index;
 pub mod merge;
 pub mod optimize;
 pub mod osm_pbf_file;
+mod progress;
 pub mod query;
 
 pub(crate) fn require_sqlite(path: &str) {
@@ -263,16 +264,14 @@ pub fn run() {
         last_admin_levels,
         include_wkt,
       },
-      preset.index_user_friendly_name.boosts,
-      preset.house_numbers,
+      &preset,
     ),
     commands::http_server { host, port } => http_server::command_handler_http_server(
       &sqlite_path,
       &index_path,
       crate::interfaces::http::bind(&format!("{host}:{port}")),
       args.threads,
-      preset.index_user_friendly_name.boosts,
-      preset.house_numbers,
+      &preset,
     ),
     commands::build { source } => {
       let preset = crate::presets::resolve(args.preset.or(Some(source.clone())));

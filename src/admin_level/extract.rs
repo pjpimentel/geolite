@@ -4,16 +4,12 @@ use super::entity::admin_level;
 use super::rules::extraction_rules;
 use super::scale::level;
 use super::{place_ways, relations, streets};
+use crate::progress_report;
 
 pub struct extract_opts<'a> {
   pub threads: usize,
   pub name_priority: &'a [&'a str],
   pub rules: &'a [extraction_rules],
-}
-
-pub struct progress_report {
-  pub total: Option<u64>,
-  pub processed: u64,
 }
 
 pub(super) const CHUNK_SIZE: usize = 500;

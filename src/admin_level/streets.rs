@@ -2,10 +2,11 @@ use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 
 use super::entity::admin_level;
-use super::extract::{CHUNK_SIZE, progress_report};
+use super::extract::CHUNK_SIZE;
 use super::id::admin_level_id;
 use super::rules::{extraction_rules, resolve_rules};
 use super::scale::level;
+use crate::progress_report;
 
 struct way_work {
   way_id: u64,

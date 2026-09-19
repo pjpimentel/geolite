@@ -12,10 +12,12 @@ way, and an interface added later reuses the domain instead of repeating it.
 
 the cli is the entry point: `main` calls `cli::run`, which resolves the preset and the paths once
 and dispatches; `http-server` is a subcommand that binds the port and hands over to `http::serve`.
-any other interface is launched the same way, as a subcommand of the cli.
+any other interface is launched the same way, as a subcommand of the cli. the preset travels whole,
+so a new policy of it reaches the domain without widening a signature on the way.
+
+every long pass of the domain reports a `progress_report`, and `cli/progress` draws all
+of them with one bar: `bar(prefix, label)` and `advance`.
 
 ## what still belongs elsewhere
 
-`cli/build.rs` chains the stages of a build, and each stage draws its own progress bar in
-`cli/extract` and `cli/index`. that sequencing is the domain's, not the cli's, and one progress
-report shared by every stage is an item in the backlog.
+`cli/build.rs` chains the stages of a build. that sequencing is the domain's, not the cli's.

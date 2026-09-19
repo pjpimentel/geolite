@@ -27,14 +27,14 @@ admin_level_hierarchy/  which area contains which — the `admin_levels_hierarch
   paths             the paths of an area up to the roots, enumerated from the edges
   repository        the ddl, the pending queries, the reads of the tree and the insert
   resolver          the pass that finds every parent of every area and writes the edges
-  search_index      the tantivy index, one document per path, and the search over it
+  search_index      the tantivy index, one document per path, the search over it, and the coverage of a query over a document
 house_number/   a door number placed on a street — the `house_numbers` table
   entity            the row as it is written: node, street id, number, point, strategy
   value             the number itself: `normalize` (extraction), `recognize` (query), one comparison key
   policy            per-region rules: tags, non-values, digit cap, written forms, `#` prefix
   strategy          how the number was attached to its street: by_proximity | by_name, and the stored codes
   token             finding the number inside a free-text query, skipping the street's own name
-  resolution        placing a wanted number on a street: exact | interpolated | absent
+  resolution        placing a wanted number on a street: exact | interpolated | absent; and the nearest stored number to a point, within 50 m
   repository        the ddl, the index, the candidate scan, the street reads, the numbers of a street and the insert
   extract           `house_number_link::extract(policy)`: candidates, tiles of 2°, the fan-out and the batches it reports
   linker            the pass over one tile: by name first, then the nearest street within 0.15°, projected onto it
@@ -121,5 +121,6 @@ take their persistence out of `src/database`, which owns no table any more.
   scenario names are in english.
 
 what stays outside the concept folders is what belongs to no concept in particular: the sqlite
-connection lifecycle with the `table` trait, and the interfaces — the cli and the http server —
-grouped in `interfaces/`.
+connection lifecycle with the `table` trait, the presets, the `progress_report` every long pass
+emits — four lines in the crate root, beside the `debug!` macro — and the interfaces, the cli and
+the http server, grouped in `interfaces/`.

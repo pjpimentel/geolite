@@ -1,5 +1,5 @@
 use rusqlite::Connection;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use tantivy::{
@@ -16,6 +16,7 @@ use tantivy::{
 
 use super::{paths, repository};
 use crate::admin_level::level;
+use crate::progress_report;
 
 const TOKENIZER_NAME: &str = "geolite_ascii";
 const TOKENIZER_STRICT_NAME: &str = "geolite_strict";
@@ -92,7 +93,7 @@ fn schema() -> (Schema, Field, Field, Field, Field, Field, Field, Field, Field, 
   )
 }
 
-pub(crate) fn build_entity_text(name: &str, post_code: Option<&str>) -> String {
+fn build_entity_text(name: &str, post_code: Option<&str>) -> String {
   match post_code.map(str::trim).filter(|s| !s.is_empty()) {
     Some(pc) => {
       let digits: String = pc.chars().filter(char::is_ascii_digit).collect();
@@ -171,11 +172,6 @@ fn expand_abbreviations(text: &str, abbreviations: &[(&str, &str)]) -> String {
     }
   }
   variants.join(" ")
-}
-
-pub struct progress_report {
-  pub total: Option<u64>,
-  pub processed: u64,
 }
 
 pub fn run(
@@ -323,6 +319,28 @@ pub fn load(index_path: &Path, boosts: tantivy_boosts) -> Option<tantivy_index> 
     hier_lower_field,
     boosts,
   })
+}
+
+pub fn coverage<'a>(
+  query_tokens: &[String],
+  own: (&'a str, Option<&'a str>),
+  ancestors: impl Iterator<Item = (&'a str, Option<&'a str>)>,
+) -> f32 {
+  if query_tokens.is_empty() {
+    return 0.0;
+  }
+  // one text, tokenized once: every call to `tokenize` builds an analyzer
+  let mut text = build_entity_text(own.0, own.1);
+  for (name, post_code) in ancestors {
+    text.push(' ');
+    text.push_str(&build_entity_text(name, post_code));
+  }
+  let doc_tokens: HashSet<String> = tokenize(&text).into_iter().collect();
+  let hits = query_tokens
+    .iter()
+    .filter(|t| doc_tokens.contains(t.as_str()))
+    .count();
+  hits as f32 / query_tokens.len() as f32
 }
 
 // the same pipeline the build runs (lower case, ascii folding), so query and document tokens

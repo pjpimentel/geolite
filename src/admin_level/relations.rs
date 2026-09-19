@@ -3,10 +3,11 @@ use rusqlite::Connection;
 use std::sync::{Arc, Mutex, mpsc};
 
 use super::entity::admin_level;
-use super::extract::{CHUNK_SIZE, progress_report};
+use super::extract::CHUNK_SIZE;
 use super::geometry::{approx_eq, assemble_rings};
 use super::id::admin_level_id;
 use super::scale::level;
+use crate::progress_report;
 
 struct rel_meta {
   name: String,

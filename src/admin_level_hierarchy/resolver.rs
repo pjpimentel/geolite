@@ -12,11 +12,7 @@ use crate::admin_level::level;
 use crate::admin_level::repository as admin_level_repository;
 use crate::admin_level::repository::admin_level_geom_row;
 use crate::database::table;
-
-pub struct progress_report {
-  pub total: Option<u64>,
-  pub processed: u64,
-}
+use crate::progress_report;
 
 const BATCH_SIZE: usize = 10_000;
 const READ_SIZE: usize = 5_000;

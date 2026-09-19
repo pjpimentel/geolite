@@ -7,14 +7,13 @@ pub fn command_handler_query(
   index_path: &str,
   text: &str,
   opts: query_opts,
-  boosts: crate::admin_level_hierarchy::tantivy_boosts,
-  house_numbers: crate::house_number::house_number_policy,
+  preset: &crate::presets::preset,
 ) {
   crate::interfaces::cli::require_sqlite(sqlite_path);
   let conn = crate::database::open_readonly(sqlite_path);
   let index = match crate::admin_level_hierarchy::search_index::load(
     Path::new(index_path),
-    boosts,
+    preset.index_user_friendly_name.boosts,
   ) {
     Some(i) => i,
     None => {
@@ -24,7 +23,7 @@ pub fn command_handler_query(
       std::process::exit(1);
     }
   };
-  let address = address::open(&conn, Some(&index), &house_numbers);
+  let address = address::open(&conn, Some(&index), &preset.house_numbers);
   let result = match query_input::parse(text) {
     query_input::coordinates {
       latitude,

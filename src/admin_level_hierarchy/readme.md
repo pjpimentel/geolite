@@ -100,6 +100,11 @@ one document per path, so the two paths of a street crossing two neighbourhoods 
 documents, and naming one of the neighbourhoods ranks its path first. a hit answers the area id
 and the ordinal of the path, which is what the query needs to rebuild the same path.
 
+`coverage(query_tokens, own, ancestors)` is the similarity the text service reports: the share of
+the query's tokens found in a document's text, the text rebuilt through the same pipeline the build
+runs (the name with its post code in both forms, then `tokenize`), so the similarity and the index
+agree token for token.
+
 two documents with the same score rank by area id, then by ordinal, ascending. the tie-break is
 the collector's own sort key, read from the `admin_level_id` and `ordinal` fast fields inside
 tantivy: the multi-threaded writer lays the documents out differently on every build, and the

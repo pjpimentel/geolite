@@ -1,5 +1,6 @@
-use geo::Geometry;
+use geo::{Geometry, Point};
 use rusqlite::Connection;
+use std::collections::HashMap;
 
 use super::entity::house_number_link;
 use super::policy::house_number_policy;
@@ -103,13 +104,13 @@ pub fn load_all_candidates(conn: &Connection, policy: &house_number_policy) -> V
     .collect()
 }
 
-pub struct hn_for_street {
-  pub admin_level_id: i64,
-  pub number: house_number,
-  pub wkb: Option<admin_geometry>,
+struct hn_for_street {
+  admin_level_id: i64,
+  number: house_number,
+  wkb: Option<admin_geometry>,
 }
 
-pub fn by_admin_level_ids(conn: &Connection, ids: &[i64]) -> Vec<hn_for_street> {
+fn by_admin_level_ids(conn: &Connection, ids: &[i64]) -> Vec<hn_for_street> {
   const SQL_BY_ADMIN_LEVEL_IDS: &str = "
     SELECT admin_level_id, number, wkb
     FROM house_numbers
@@ -131,6 +132,22 @@ pub fn by_admin_level_ids(conn: &Connection, ids: &[i64]) -> Vec<hn_for_street> 
       wkb: row.get(2)?,
     })
   })
+}
+
+pub fn numbers_by_street(
+  conn: &Connection,
+  admin_level_ids: &[i64],
+) -> HashMap<i64, Vec<(house_number, Point<f64>)>> {
+  let mut by_street: HashMap<i64, Vec<(house_number, Point<f64>)>> = HashMap::new();
+  for row in by_admin_level_ids(conn, admin_level_ids) {
+    if let Some(Geometry::Point(point)) = row.wkb.as_ref().map(admin_geometry::geometry) {
+      by_street
+        .entry(row.admin_level_id)
+        .or_default()
+        .push((row.number, *point));
+    }
+  }
+  by_street
 }
 
 pub fn batch_insert_links(conn: &Connection, links: &[house_number_link]) -> i64 {

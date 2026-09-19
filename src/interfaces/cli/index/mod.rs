@@ -3,13 +3,6 @@ pub mod coordinates;
 pub mod user_friendly_name;
 
 use clap::Subcommand;
-use indicatif::ProgressBar;
-
-fn progress_bar() -> ProgressBar {
-  let bar = ProgressBar::new_spinner();
-  bar.set_draw_target(crate::interfaces::cli::progress_draw_target());
-  bar
-}
 
 #[derive(Subcommand)]
 pub enum index_commands {
