@@ -746,6 +746,31 @@ fn _01_23_the_response_schemas_document_the_post_code() {
   }
 }
 
+// 01.24. contract: the preset the server was started with is the policy its queries read
+#[test]
+#[ignore]
+fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
+  let w = world();
+  let path = format!(
+    "/geocode?query={}",
+    encode("rua januario dos santos, santos #197")
+  );
+
+  let colombia = w.start_server_with_preset("colombia");
+  let read = get(colombia.port, &path).json();
+  assert_eq!(
+    first(&read)["house_number"],
+    json!({ "number": "197", "kind": "exact" }),
+  );
+
+  let brazil = w.start_server_with_preset("brazil");
+  let unread = get(brazil.port, &path).json();
+  assert!(
+    first(&unread).get("house_number").is_none(),
+    "brazil reads no number in '#197'"
+  );
+}
+
 // 02.00. dead case
 #[test]
 #[ignore]

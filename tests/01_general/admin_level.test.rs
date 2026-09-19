@@ -271,6 +271,31 @@ fn _02_00_the_hierarchy_stage_is_deterministic() {
   );
 }
 
+// 02.02. the index run names every stage it finished, in order
+#[test]
+#[ignore]
+fn _02_02_the_index_run_names_every_stage_it_finished() {
+  let w = world();
+  let s = extracted(w, "index_every_stage", "2", &[]);
+  admin_levels_at(w, &s.dir, "2,4,8", &[]);
+
+  let stdout = plain(&index_at(w, &s.dir, &[]).stdout);
+  let mut at = 0;
+  for line in [
+    "clearing hierarchy",
+    "indexed hierarchy in",
+    "clearing user-friendly-name",
+    "indexed user-friendly-name in",
+    "clearing coordinates",
+    "indexed coordinates in",
+  ] {
+    let found = stdout[at..]
+      .find(line)
+      .unwrap_or_else(|| panic!("{line:?} is missing or out of order:\n{stdout}"));
+    at += found + line.len();
+  }
+}
+
 // 02.01. the hierarchy row, not the area, is the unit of search
 #[test]
 #[ignore]

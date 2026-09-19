@@ -41,6 +41,10 @@ const POST_CODED_POINT: &str = "-23.96675,-46.37675";
 // rua deputado emilio justo carries its own post code and the numbers 23 and 259; the point is 23's
 const POST_CODED_NUMBERED_QUERY: &str = "rua deputado emilio justo 23, 11725-440";
 const POST_CODED_NUMBERED_POINT: &str = "-23.99429,-46.41588";
+// avenida washington luiz carries 565; the far point is on the avenue, beyond 50 m of every number
+const NUMBERED_AVENUE_QUERY: &str = "avenida washington luiz 565, boqueirao";
+const AVENUE_NUMBER_POINT: &str = "-23.96974,-46.32906";
+const AVENUE_FAR_POINT: &str = "-23.96805,-46.32883";
 // rua prefeito antenor bué lies inside conjunto habitacional jaú, inside aparecida, and carries 4
 const NESTED_NUMBERED_QUERY: &str = "rua prefeito antenor bue 4";
 const NESTED_NUMBERED_POINT: &str = "-23.97214,-46.30811";
@@ -474,6 +478,51 @@ fn _00_12_the_template_renders_the_house_number_without_the_post_code() {
   );
 }
 
+// 00.13. result quality: a stored number is appended only within 50 m of the point; beyond it the
+// same street answers bare
+#[test]
+#[ignore]
+fn _00_13_a_point_beyond_fifty_metres_answers_the_bare_street() {
+  let w = world();
+  let near = first(&w.run(&[AVENUE_NUMBER_POINT])).clone();
+  assert_eq!(
+    name_at(&near, 12).as_deref(),
+    Some("Avenida Washington Luiz")
+  );
+  assert_eq!(name_at(&near, 30).as_deref(), Some("565"));
+
+  let far = first(&w.run(&[AVENUE_FAR_POINT])).clone();
+  assert_eq!(
+    name_at(&far, 12).as_deref(),
+    Some("Avenida Washington Luiz")
+  );
+  assert_eq!(
+    far["coordinates_distance_in_meters"], 0,
+    "the point is on the avenue"
+  );
+  assert_eq!(levels_of(&far), [2, 4, 8, 10, 12], "no number within 50 m");
+}
+
+// 00.14. result quality: the text path and the coordinate path read the same stored numbers
+#[test]
+#[ignore]
+fn _00_14_both_paths_read_the_same_stored_number() {
+  let w = world();
+  w.assert_cli(
+    &ask(NUMBERED_AVENUE_QUERY),
+    &json!({
+      "matches": [{
+        "friendly_name": "Avenida Washington Luiz, 565, Boqueirão, Santos, São Paulo, Brasil",
+        "house_number": { "number": "565", "kind": "exact" },
+      }]
+    }),
+  );
+  assert_eq!(
+    name_at(first(&w.run(&[AVENUE_NUMBER_POINT])), 30).as_deref(),
+    Some("565"),
+  );
+}
+
 // 01.00. precision guarantee
 #[test]
 #[ignore]
@@ -610,6 +659,37 @@ fn _01_06_a_multipolygon_bounding_keeps_what_its_polygons_keep() {
   assert_eq!(
     way_ids(&joined),
     way_ids(&world().run(&[TEXT_QUERY, "--bounding-wkt", INSIDE_POLYGON])),
+  );
+}
+
+// 01.07. precision guarantee: the similarity counts the query's tokens against the text of each
+// document, so a name that exists elsewhere in the database covers nothing here
+#[test]
+#[ignore]
+fn _01_07_min_quality_one_reads_the_coverage_of_each_document() {
+  let w = world();
+  for (query, answers) in [
+    ("rua castro alves, embare, santos", true),
+    ("rua castro alves, embare, guaruja", false),
+    ("rua castro alves, embare, santos, sao paulo, xyzzy", false),
+  ] {
+    assert_eq!(
+      !matches(&w.run(&[query, "--min-quality", "1.0"])).is_empty(),
+      answers,
+      "query {query:?}"
+    );
+  }
+}
+
+// 01.08. precision guarantee: the document's text carries the post code in both forms, so the
+// digits-only one covers it whole
+#[test]
+#[ignore]
+fn _01_08_a_digits_only_post_code_covers_the_document() {
+  let result = world().run(&["rua deputado emilio justo 11725440", "--min-quality", "1.0"]);
+  assert_eq!(
+    name_at(first(&result), 12).as_deref(),
+    Some("Rua Deputado Emilio Justo"),
   );
 }
 

@@ -296,6 +296,26 @@ fn _00_06_the_rows_are_inserted_in_node_id_order() {
   assert_eq!(by_rowid, node_ids(&conn), "{REGENERATE}");
 }
 
+// 00.07. a stage with no candidate at all reports zero and writes nothing
+#[test]
+#[ignore]
+fn _00_07_a_stage_without_candidates_reports_zero() {
+  let w = world();
+  let s = extracted(
+    w,
+    "house_number_no_candidates",
+    "2",
+    &["--tags-ignore-list", "addr:housenumber"],
+  );
+  let out = house_numbers_at(w, &s.dir, &[]);
+  assert!(
+    extracted_line(&out.stdout, 0),
+    "a stage without candidates reports zero:\n{}",
+    out.stdout
+  );
+  assert_eq!(count(&s.ledger(), "SELECT COUNT(*) FROM house_numbers"), 0);
+}
+
 // 01.00. the `#` prefix is a number only where the preset allows it
 #[test]
 #[ignore]

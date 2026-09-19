@@ -412,15 +412,19 @@ impl server {
 
 impl world {
   pub fn start_server(&self) -> server {
-    self.spawn_server(&self.index_path.to_string_lossy(), "healthy")
+    self.spawn_server(&self.index_path.to_string_lossy(), "healthy", None)
   }
 
   pub fn start_degraded_server(&self) -> server {
     let missing = self.root.join("absent.tantivy");
-    self.spawn_server(&missing.to_string_lossy(), "degraded")
+    self.spawn_server(&missing.to_string_lossy(), "degraded", None)
   }
 
-  fn spawn_server(&self, index_path: &str, tag: &str) -> server {
+  pub fn start_server_with_preset(&self, preset: &str) -> server {
+    self.spawn_server(&self.index_path.to_string_lossy(), preset, Some(preset))
+  }
+
+  fn spawn_server(&self, index_path: &str, tag: &str, preset: Option<&str>) -> server {
     // the os picks the port (`--port 0`) and the child names it on stdout: nothing to probe
     let seq = SPAWN_SEQ.fetch_add(1, Ordering::Relaxed);
     let stdout_path = self.root.join(format!("server-{tag}-{seq}.stdout"));
@@ -433,6 +437,7 @@ impl world {
       .arg(&self.data_path)
       .arg("--index-path")
       .arg(index_path)
+      .args(preset.map_or(vec![], |p| vec!["--preset", p]))
       .arg("http-server")
       .arg("--host")
       .arg("127.0.0.1")
