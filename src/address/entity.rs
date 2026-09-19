@@ -19,6 +19,7 @@ pub enum query_service {
 pub struct admin_level {
   pub level: u8,
   pub name: String,
+  pub post_code: Option<String>,
   pub osm_relation_id: Option<u64>,
   pub osm_way_id: Option<u64>,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,6 +168,13 @@ impl match_sources {
     )
   }
 
+  pub(super) fn post_code_of(&self, own_id: i64, chain: &[i64]) -> Option<String> {
+    std::iter::once(&own_id)
+      .chain(chain)
+      .filter_map(|id| self.meta.get(id))
+      .find_map(|m| m.post_code.clone())
+  }
+
   pub(super) fn level_ladder(
     &self,
     ancestors: &[&admin_meta_row],
@@ -178,6 +186,7 @@ impl match_sources {
       .map(|a| admin_level {
         level: a.admin_level.value(),
         name: a.name.clone(),
+        post_code: a.post_code.clone(),
         osm_relation_id: a.relation_id,
         osm_way_id: a.way_id,
         wkt: self.wkt.get(&a.id).cloned(),
@@ -186,6 +195,7 @@ impl match_sources {
     admin_levels.push(admin_level {
       level: leaf.level.value(),
       name: leaf.name.to_string(),
+      post_code: self.meta.get(&leaf.id).and_then(|m| m.post_code.clone()),
       osm_relation_id: leaf.relation_id,
       osm_way_id: leaf.way_id,
       wkt: self.wkt.get(&leaf.id).cloned(),
@@ -194,6 +204,7 @@ impl match_sources {
       admin_levels.push(admin_level {
         level: level::house_number.value(),
         name: number.to_string(),
+        post_code: None,
         osm_relation_id: None,
         osm_way_id: None,
         wkt: None,
@@ -228,12 +239,4 @@ pub(super) fn country_iso_of(
     .chain(leaf)
     .find(|a| a.admin_level == level::country)
     .and_then(|a| a.country_iso_code.clone())
-}
-
-pub(super) fn post_code_of(ancestors: &[&admin_meta_row]) -> Option<String> {
-  ancestors
-    .iter()
-    .filter(|a| a.post_code.is_some())
-    .max_by_key(|a| a.admin_level)
-    .and_then(|a| a.post_code.clone())
 }

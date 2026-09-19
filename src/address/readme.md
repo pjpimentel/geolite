@@ -60,7 +60,8 @@ the seven types of the json (`query_output`, `query_service`, `query_match`, `ad
 keep their names; coordinates are rounded to five decimals (`round5`). the ladder of a match is
 built once, in `match_sources`: the paths of the ids climbed from the edges, the metadata of the
 ids and their ancestors, and the wkt only when `include_wkt` asks for it (the polygons of countries
-and states are megabytes).
+and states are megabytes). every level of the ladder carries its own `post_code`, `null` when the
+area has none, the house number included.
 
 **one answer is one path, not one area.** a street inside two neighbourhoods answers twice, once
 per path, and `matches[].id` is the uuid v5 of that path — the area ids from the root down to the
@@ -68,16 +69,16 @@ leaf, joined the way a directory path reads. it is stable while the path is, dis
 paths of the same area, and the same on both services. an area the hierarchy never saw still
 answers once, with an empty path.
 
-the two services still differ in three deliberate places, each at its call site rather than inside
+the two services still differ in two deliberate places, each at its call site rather than inside
 the shared code:
 
 | | text | coordinates |
 |---|---|---|
 | ancestors of one level | the chain's order | the chain reversed, so general → specific |
-| `attributes.post_code` | the most specific ancestor with one | the same, then the street's own |
 | the point | the centroid | the closest point on the street |
 
-the post code rule is an open item in the backlog; the other two are the behaviour the tests pin.
+both are the behaviour the tests pin. `attributes.post_code` is one rule on both: the first post
+code met walking the path outward from the area itself, the order the label follows.
 
 ## the label — `label`
 

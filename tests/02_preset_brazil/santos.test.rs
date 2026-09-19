@@ -165,30 +165,35 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
           {
             "level": 2,
             "name": "Brasil",
+            "post_code": null,
             "osm_relation_id": 59470,
             "osm_way_id": null,
           },
           {
             "level": 4,
             "name": "São Paulo",
+            "post_code": null,
             "osm_relation_id": 298204,
             "osm_way_id": null,
           },
           {
             "level": 8,
             "name": "Santos",
+            "post_code": null,
             "osm_relation_id": 298442,
             "osm_way_id": null,
           },
           {
             "level": 10,
             "name": "Embaré",
+            "post_code": null,
             "osm_relation_id": 4282882,
             "osm_way_id": null,
           },
           {
             "level": 12,
             "name": "Rua Castro Alves",
+            "post_code": null,
             "osm_relation_id": null,
             "osm_way_id": 255710390,
           },
@@ -210,30 +215,35 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
           {
             "level": 2,
             "name": "Brasil",
+            "post_code": null,
             "osm_relation_id": 59470,
             "osm_way_id": null,
           },
           {
             "level": 4,
             "name": "São Paulo",
+            "post_code": null,
             "osm_relation_id": 298204,
             "osm_way_id": null,
           },
           {
             "level": 8,
             "name": "Santos",
+            "post_code": null,
             "osm_relation_id": 298442,
             "osm_way_id": null,
           },
           {
             "level": 10,
             "name": "Embaré",
+            "post_code": null,
             "osm_relation_id": 4282882,
             "osm_way_id": null,
           },
           {
             "level": 12,
             "name": "Rua Castro Alves",
+            "post_code": null,
             "osm_relation_id": null,
             "osm_way_id": 729205713,
           },
@@ -266,36 +276,42 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
         {
           "level": 2,
           "name": "Brasil",
+          "post_code": null,
           "osm_relation_id": 59470,
           "osm_way_id": null,
         },
         {
           "level": 4,
           "name": "São Paulo",
+          "post_code": null,
           "osm_relation_id": 298204,
           "osm_way_id": null,
         },
         {
           "level": 8,
           "name": "Santos",
+          "post_code": null,
           "osm_relation_id": 298442,
           "osm_way_id": null,
         },
         {
           "level": 10,
           "name": "Embaré",
+          "post_code": null,
           "osm_relation_id": 4282882,
           "osm_way_id": null,
         },
         {
           "level": 12,
           "name": "Rua Castro Alves",
+          "post_code": null,
           "osm_relation_id": null,
           "osm_way_id": 729205713,
         },
         {
           "level": 30,
           "name": "35",
+          "post_code": null,
           "osm_relation_id": null,
           "osm_way_id": null,
         },
@@ -682,22 +698,24 @@ fn _03_05_last_admin_levels_on_coordinates_reads_the_leaf_after_the_house_number
   assert_eq!(leaves(&both), [30], "the filters apply as an and");
 }
 
-// 03.06. regression guard: the two services disagree on the street's own post code; the readme
-// documents the divergence and the backlog item that unifies the rule flips this pin
+// 03.06. regression guard: every level answers its own post code, and the attributes the most
+// specific of the path, on both services
 #[test]
 #[ignore]
-fn _03_06_the_two_services_disagree_on_the_street_post_code() {
-  for (input, post_code) in [
-    (POST_CODED_STREET, Value::Null),
-    (POST_CODED_POINT, json!("11320-060")),
-  ] {
+fn _03_06_both_services_answer_the_street_post_code() {
+  for input in [POST_CODED_STREET, POST_CODED_POINT] {
     world().assert_cli(
       &ask(input),
       &json!({
         "matches": [{
           "id": "c8e841fc-db3a-5bc8-ab40-019e7ef4b4d5",
           "friendly_name": "Ateneu São Vicente, São Paulo, Brasil, 11320-060",
-          "attributes": { "post_code": post_code },
+          "admin_levels": [
+            { "level": 2, "post_code": null },
+            { "level": 4, "post_code": null },
+            { "level": 12, "post_code": "11320-060" },
+          ],
+          "attributes": { "post_code": "11320-060" },
         }]
       }),
     );

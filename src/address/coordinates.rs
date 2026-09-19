@@ -78,8 +78,7 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
         friendly_name,
         attributes: query_match_attributes {
           country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
-          post_code: entity::post_code_of(&ancestors)
-            .or_else(|| own_meta.and_then(|m| m.post_code.clone())),
+          post_code: sources.post_code_of(c.id, path),
         },
         house_number: None,
         id: entity::path_id(c.id, path),

@@ -164,7 +164,7 @@ fn build_match(
     friendly_name,
     attributes: query_match_attributes {
       country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
-      post_code: entity::post_code_of(&ancestors),
+      post_code: sources.post_code_of(record.id, path),
     },
     house_number: number.map(resolved_number::reported),
     id: entity::path_id(record.id, path),
