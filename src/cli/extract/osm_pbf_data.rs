@@ -1,7 +1,7 @@
 use super::resolved_input;
-use crate::domain::osm_pbf_file::data_opts;
-use crate::domain::osm_tag::tag_policy;
-use crate::domain::table;
+use crate::osm_pbf_file::data_opts;
+use crate::osm_tag::tag_policy;
+use crate::database::table;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::time::Instant;
@@ -70,7 +70,7 @@ pub fn command_handler_extract_osm_pbf_data(
   }
 
   let conn = crate::database::open_write(sqlite_path);
-  let file = crate::domain::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
+  let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved_input {
@@ -85,7 +85,7 @@ pub fn command_handler_extract_osm_pbf_data(
 
     print!("\x1b[1;32mloading\x1b[0m blob-chunks index...");
     let _ = std::io::stdout().flush();
-    let chunk_count = crate::domain::osm_pbf_file::blob_index::count_by_file_id(&conn, file_id);
+    let chunk_count = crate::osm_pbf_file::blob_index::count_by_file_id(&conn, file_id);
 
     if chunk_count == 0 {
       println!();
@@ -203,7 +203,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_nodes");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::domain::osm_node::osm_nodes::create_indexes(&conn);
+  crate::osm_node::osm_nodes::create_indexes(&conn);
   bar.disable_steady_tick();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_nodes in {:.1}s",
@@ -213,7 +213,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_ways");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::domain::osm_way::osm_ways::create_indexes(&conn);
+  crate::osm_way::osm_ways::create_indexes(&conn);
   bar.disable_steady_tick();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_ways in {:.1}s",
@@ -223,7 +223,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_relations");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::domain::osm_relation::osm_relations::create_indexes(&conn);
+  crate::osm_relation::osm_relations::create_indexes(&conn);
   bar.finish_and_clear();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_relations in {:.1}s",

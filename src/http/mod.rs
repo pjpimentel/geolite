@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Response, Server, StatusCode};
 
-use crate::domain::admin_level::{level, level_error};
-use crate::domain::admin_level_hierarchy::tantivy_index;
+use crate::admin_level::{level, level_error};
+use crate::admin_level_hierarchy::tantivy_index;
 
 mod openapi;
 mod status;
@@ -56,8 +56,8 @@ pub fn serve(
   sqlite_path: &str,
   index_path: &str,
   threads: u8,
-  boosts: crate::domain::admin_level_hierarchy::tantivy_boosts,
-  house_numbers: crate::domain::house_number::house_number_policy,
+  boosts: crate::admin_level_hierarchy::tantivy_boosts,
+  house_numbers: crate::house_number::house_number_policy,
 ) {
   let addr = bound.addr();
   let server = bound.server;
@@ -66,7 +66,7 @@ pub fn serve(
   // degraded boot: a missing index disables text_to_address (reported via /status) instead of
   // refusing to start, so the server keeps serving coordinate queries and the health endpoint.
   let index: Option<Arc<tantivy_index>> =
-    crate::domain::admin_level_hierarchy::search_index::load(Path::new(index_path), boosts).map(Arc::new);
+    crate::admin_level_hierarchy::search_index::load(Path::new(index_path), boosts).map(Arc::new);
   if index.is_none() {
     eprintln!(
       "\x1b[1;33mwarn\x1b[0m: tantivy index not found at {index_path} — text_to_address disabled; run `geolite index user-friendly-name` to enable"
@@ -122,7 +122,7 @@ fn handle(
   conn: &rusqlite::Connection,
   index: Option<&tantivy_index>,
   db_file: &str,
-  house_numbers: &crate::domain::house_number::house_number_policy,
+  house_numbers: &crate::house_number::house_number_policy,
 ) {
   let start = Instant::now();
   let url = request.url().to_string();
@@ -184,10 +184,10 @@ fn handle(
     "/geocode" => {
       let q = query_param(&query_string, "query");
       let friendly_name_format = query_param(&query_string, "friendly_name_format")
-        .map(|s| crate::domain::address::validate_friendly_name_format(&s))
+        .map(|s| crate::address::validate_friendly_name_format(&s))
         .transpose();
       let min_quality = query_param(&query_string, "quality")
-        .map(|s| crate::domain::address::parse_min_quality(&s))
+        .map(|s| crate::address::parse_min_quality(&s))
         .transpose();
       let bounding_wkt = query_param(&query_string, "bounding_wkt")
         .map(|s| parse_bounding_wkt(&s))
@@ -225,8 +225,8 @@ fn handle(
           Ok(bounding),
           Ok(last_admin_levels),
         ) => {
-          let input = crate::domain::address::query_input::parse(&raw);
-          if index.is_none() && input == crate::domain::address::query_input::text {
+          let input = crate::address::query_input::parse(&raw);
+          if index.is_none() && input == crate::address::query_input::text {
             // degraded boot: text search needs the tantivy index; coordinate queries still work.
             respond_json(
               request,
@@ -234,20 +234,20 @@ fn handle(
               r#"{"error":"text_to_address service unavailable"}"#,
             )
           } else {
-            let opts = crate::domain::address::query_opts {
+            let opts = crate::address::query_opts {
               friendly_name_format: friendly_name_format.as_deref(),
               min_quality,
               bounding,
               last_admin_levels,
               include_wkt,
             };
-            let address = crate::domain::address::address::open(conn, index, house_numbers);
+            let address = crate::address::address::open(conn, index, house_numbers);
             let result = match input {
-              crate::domain::address::query_input::coordinates {
+              crate::address::query_input::coordinates {
                 latitude,
                 longitude,
               } => address.query_by_coordinates(latitude, longitude, &opts),
-              crate::domain::address::query_input::text => address.query_by_text(&raw, &opts),
+              crate::address::query_input::text => address.query_by_text(&raw, &opts),
             };
             match serde_json::to_string(&result) {
               Ok(body) => respond_json(request, StatusCode(200), &body),
@@ -339,7 +339,7 @@ fn url_decode(s: &str) -> String {
 
 // wkt orders "x y" = "lon lat". only an area (polygon/multipolygon) is accepted: the exact
 // containment runs in the address domain; the envelope derived here feeds the rtree pre-filter
-pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::domain::address::bounding_geometry, String> {
+pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::address::bounding_geometry, String> {
   use geo::BoundingRect;
   use geozero::ToGeo;
 
@@ -355,13 +355,13 @@ pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::domain::address::boun
   let rect = geometry
     .bounding_rect()
     .ok_or("bounding_wkt: empty geometry")?;
-  let envelope = crate::domain::admin_level::geometry::bounding_box {
+  let envelope = crate::admin_level::geometry::bounding_box {
     min_lat: rect.min().y,
     max_lat: rect.max().y,
     min_lon: rect.min().x,
     max_lon: rect.max().x,
   };
-  Ok(crate::domain::address::bounding_geometry { geometry, envelope })
+  Ok(crate::address::bounding_geometry { geometry, envelope })
 }
 
 fn parse_last_admin_levels(s: &str) -> Result<Vec<level>, String> {

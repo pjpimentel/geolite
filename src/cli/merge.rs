@@ -1,4 +1,4 @@
-use crate::domain::table;
+use crate::database::table;
 use crate::cli::index::command_handler_index;
 
 fn require_compatible_version(label: &str, path: &str) {
@@ -48,21 +48,21 @@ pub fn command_handler_merge(
   // merge the raw extracted data (admin_levels + house_numbers), source by source.
   {
     let conn = crate::database::open_write_main(base);
-    crate::domain::admin_level::repository::drop_indexes(&conn);
-    crate::domain::house_number::repository::drop_indexes(&conn);
+    crate::admin_level::repository::drop_indexes(&conn);
+    crate::house_number::repository::drop_indexes(&conn);
 
     for db in databases {
       let (admins, houses) = crate::database::merge::merge_source(&conn, db);
       println!("\x1b[1;32mmerged\x1b[0m {db}  admin_levels: {admins}  house_numbers: {houses}");
     }
 
-    if crate::domain::admin_level::repository::count_with_geometry(&conn) == 0 {
+    if crate::admin_level::repository::count_with_geometry(&conn) == 0 {
       eprintln!("\x1b[1;31merror\x1b[0m: admin_levels is empty after merge — aborting");
       std::process::exit(1);
     }
 
-    crate::domain::admin_level::admin_levels::create_indexes(&conn);
-    crate::domain::house_number::house_numbers::create_indexes(&conn);
+    crate::admin_level::admin_levels::create_indexes(&conn);
+    crate::house_number::house_numbers::create_indexes(&conn);
   }
 
   // rebuild every derived artifact (hierarchy + rtree + tantivy) from the unified set; each index

@@ -1,5 +1,5 @@
 use super::osm_pbf_file_ls_source;
-use crate::domain::osm_pbf_file::{listing, osm_pbf_file};
+use crate::osm_pbf_file::{listing, osm_pbf_file};
 
 pub fn command_handler_osm_pbf_file_ls(
   data_path: &str,

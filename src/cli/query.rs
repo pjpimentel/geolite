@@ -1,18 +1,18 @@
 use std::path::Path;
 
-use crate::domain::address::{address, query_input, query_opts};
+use crate::address::{address, query_input, query_opts};
 
 pub fn command_handler_query(
   sqlite_path: &str,
   index_path: &str,
   text: &str,
   opts: query_opts,
-  boosts: crate::domain::admin_level_hierarchy::tantivy_boosts,
-  house_numbers: crate::domain::house_number::house_number_policy,
+  boosts: crate::admin_level_hierarchy::tantivy_boosts,
+  house_numbers: crate::house_number::house_number_policy,
 ) {
   crate::cli::require_sqlite(sqlite_path);
   let conn = crate::database::open_readonly(sqlite_path);
-  let index = match crate::domain::admin_level_hierarchy::search_index::load(
+  let index = match crate::admin_level_hierarchy::search_index::load(
     Path::new(index_path),
     boosts,
   ) {

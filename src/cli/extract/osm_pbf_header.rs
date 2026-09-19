@@ -7,7 +7,7 @@ pub fn command_handler_extract_osm_pbf_header(
   inputs: &[String],
 ) {
   let conn = crate::database::open_write(sqlite_path);
-  let file = crate::domain::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
+  let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved_input {

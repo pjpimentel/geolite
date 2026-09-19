@@ -9,7 +9,7 @@ use std::io::Write;
 use clap::Subcommand;
 use rusqlite::Connection;
 
-use crate::domain::admin_level::level;
+use crate::admin_level::level;
 
 #[derive(Subcommand)]
 pub enum extract_commands {
@@ -90,7 +90,7 @@ fn parse_name_priority(raw: &str) -> Result<Vec<&str>, String> {
     return Err("at least one tag required".to_string());
   }
   for tag in &tags {
-    if !crate::domain::osm_tag::key::is_valid_key(tag) {
+    if !crate::osm_tag::key::is_valid_key(tag) {
       return Err(format!("invalid characters in tag '{tag}'"));
     }
   }
@@ -126,7 +126,7 @@ pub(super) fn resolve_input(
     println!();
   }
 
-  let file = crate::domain::osm_pbf_file::osm_pbf_file::open(Some(conn), data_path);
+  let file = crate::osm_pbf_file::osm_pbf_file::open(Some(conn), data_path);
   let is_path = file.local_file(input).is_some();
 
   if !is_path {
@@ -150,7 +150,7 @@ pub(super) fn resolve_input(
     .unwrap_or_default()
     .to_string_lossy()
     .into_owned();
-  let id = crate::domain::osm_pbf_file::repository::ensure_by_file_path(conn, &path);
+  let id = crate::osm_pbf_file::repository::ensure_by_file_path(conn, &path);
   Some(resolved_input { path, name, id })
 }
 

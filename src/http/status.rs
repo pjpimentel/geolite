@@ -1,7 +1,7 @@
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::domain::admin_level_hierarchy::tantivy_index;
+use crate::admin_level_hierarchy::tantivy_index;
 
 const SQL_COORDINATES_PROBE: &str = "
   SELECT 1

@@ -24,7 +24,7 @@ pub enum osm_pbf_file_ls_source {
   local,
 }
 
-impl From<osm_pbf_file_ls_source> for crate::domain::osm_pbf_file::source {
+impl From<osm_pbf_file_ls_source> for crate::osm_pbf_file::source {
   fn from(value: osm_pbf_file_ls_source) -> Self {
     match value {
       osm_pbf_file_ls_source::geofabrik => Self::geofabrik,

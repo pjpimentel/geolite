@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::domain::osm_pbf_file::{listing, osm_pbf_file, source};
+use crate::osm_pbf_file::{listing, osm_pbf_file, source};
 
 pub fn command_handler_optimize_delete_intermediary_data(data_path: &str, sqlite_path: &str) -> bool {
   crate::cli::require_sqlite(sqlite_path);
@@ -8,11 +8,11 @@ pub fn command_handler_optimize_delete_intermediary_data(data_path: &str, sqlite
   let mut deleted = 0u32;
   {
     let conn = crate::database::open_write(sqlite_path);
-    if crate::domain::admin_level::repository::count_with_geometry(&conn) == 0 {
+    if crate::admin_level::repository::count_with_geometry(&conn) == 0 {
       eprintln!("\x1b[1;31merror\x1b[0m: admin_levels is empty — run extract first");
       return false;
     }
-    if crate::domain::admin_level_hierarchy::repository::count(&conn) == 0 {
+    if crate::admin_level_hierarchy::repository::count(&conn) == 0 {
       eprintln!("\x1b[1;31merror\x1b[0m: admin_levels_hierarchy is empty — run index first");
       return false;
     }

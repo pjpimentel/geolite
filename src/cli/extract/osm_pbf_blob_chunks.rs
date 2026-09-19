@@ -1,5 +1,5 @@
 use super::resolved_input;
-use crate::domain::table;
+use crate::database::table;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
@@ -14,7 +14,7 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
   }
 
   let conn = crate::database::open_write(sqlite_path);
-  let file = crate::domain::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
+  let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved_input {
@@ -53,5 +53,5 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
     println!("\x1b[1;32mextracted\x1b[0m {count} chunks from {fname} in {elapsed:.1}s");
   }
 
-  crate::domain::osm_pbf_file::osm_pbf_blob_chunks::create_indexes(&conn);
+  crate::osm_pbf_file::osm_pbf_blob_chunks::create_indexes(&conn);
 }

@@ -2,7 +2,7 @@ use crate::database::merge_fixtures::{
   build_source, cleanup, count, make_house, make_way, temp_path,
 };
 use crate::database::open_write_main;
-use crate::domain::admin_level::id::admin_level_id;
+use crate::admin_level::id::admin_level_id;
 
 #[test]
 fn _00_merge_combines_admin_levels_without_id_collision() {

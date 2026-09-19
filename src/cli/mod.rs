@@ -108,14 +108,14 @@ enum commands {
   query {
     #[arg(allow_hyphen_values = true)]
     input: String,
-    #[arg(long, value_parser = crate::domain::address::validate_friendly_name_format)]
+    #[arg(long, value_parser = crate::address::validate_friendly_name_format)]
     friendly_name_format: Option<String>,
-    #[arg(long, value_parser = crate::domain::address::parse_min_quality)]
+    #[arg(long, value_parser = crate::address::parse_min_quality)]
     min_quality: Option<f64>,
     #[arg(long, allow_hyphen_values = true, value_parser = crate::http::parse_bounding_wkt)]
-    bounding_wkt: Option<crate::domain::address::bounding_geometry>,
-    #[arg(long, value_delimiter = ',', value_parser = crate::domain::admin_level::level::parse)]
-    last_admin_levels: Option<Vec<crate::domain::admin_level::level>>,
+    bounding_wkt: Option<crate::address::bounding_geometry>,
+    #[arg(long, value_delimiter = ',', value_parser = crate::admin_level::level::parse)]
+    last_admin_levels: Option<Vec<crate::admin_level::level>>,
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_wkt: bool,
   },
@@ -193,7 +193,7 @@ pub fn run() {
   let index_path: String = args
     .index_path
     .or_else(|| {
-      crate::domain::admin_level_hierarchy::search_index::default_path_for(&sqlite_path)
+      crate::admin_level_hierarchy::search_index::default_path_for(&sqlite_path)
         .map(|p| p.to_string_lossy().into_owned())
     })
     .unwrap_or_else(|| format!("{}/database.tantivy", args.data_path));
@@ -256,7 +256,7 @@ pub fn run() {
       &sqlite_path,
       &index_path,
       &input,
-      crate::domain::address::query_opts {
+      crate::address::query_opts {
         friendly_name_format: friendly_name_format.as_deref(),
         min_quality,
         bounding: bounding_wkt,
@@ -291,7 +291,7 @@ pub fn run() {
       // the tantivy index belongs to the base (positional), not the global --sqlite-path default.
       let merge_index_path = explicit_index_path
         .or_else(|| {
-          crate::domain::admin_level_hierarchy::search_index::default_path_for(&base)
+          crate::admin_level_hierarchy::search_index::default_path_for(&base)
             .map(|p| p.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| format!("{}/database.tantivy", args.data_path));

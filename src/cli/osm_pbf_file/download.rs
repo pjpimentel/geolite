@@ -1,5 +1,5 @@
-use crate::domain::osm_pbf_file::download::{download_event, md5_status};
-use crate::domain::osm_pbf_file::{input_kind, origin, osm_pbf_file};
+use crate::osm_pbf_file::download::{download_event, md5_status};
+use crate::osm_pbf_file::{input_kind, origin, osm_pbf_file};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::Write;
 use std::sync::{Arc, OnceLock};

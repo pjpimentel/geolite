@@ -8,7 +8,7 @@ use crate::cli::extract::{
 use crate::cli::index::command_handler_index;
 use crate::cli::optimize::command_handler_optimize;
 use crate::cli::osm_pbf_file::download::command_handler_osm_pbf_file_download;
-use crate::domain::osm_pbf_file::{input_kind, osm_pbf_file};
+use crate::osm_pbf_file::{input_kind, osm_pbf_file};
 
 #[allow(clippy::too_many_arguments)]
 pub fn command_handler_build(

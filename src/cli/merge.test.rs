@@ -2,16 +2,16 @@ use crate::database::merge_fixtures::{
   build_source, cleanup, count, make_house, make_way, temp_path,
 };
 use crate::database::{open_write_main, read_user_version};
-use crate::domain::admin_level::id::admin_level_id;
-use crate::domain::admin_level::{admin_level as admin_levels_row, level};
-use crate::domain::admin_level_hierarchy::search_index as tantivy;
+use crate::admin_level::id::admin_level_id;
+use crate::admin_level::{admin_level as admin_levels_row, level};
+use crate::admin_level_hierarchy::search_index as tantivy;
 use crate::presets::DEFAULT;
-use crate::domain::address::{address, query_opts, query_output};
+use crate::address::{address, query_opts, query_output};
 use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 use std::path::Path;
 
-const POLICY: crate::domain::house_number::house_number_policy = DEFAULT.house_numbers;
+const POLICY: crate::house_number::house_number_policy = DEFAULT.house_numbers;
 
 #[test]
 fn _00_open_write_main_stamps_schema_version() {

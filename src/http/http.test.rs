@@ -1,5 +1,5 @@
 use super::{bind, parse_bounding_wkt, parse_last_admin_levels, query_param, url_decode};
-use crate::domain::admin_level::level;
+use crate::admin_level::level;
 
 #[test]
 fn _01_00_pure_ascii_string_returns_unchanged() {

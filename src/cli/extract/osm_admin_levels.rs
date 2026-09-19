@@ -1,11 +1,11 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
-use crate::domain::admin_level::extract::{progress_report, source, stage};
-use crate::domain::admin_level::{
+use crate::admin_level::extract::{progress_report, source, stage};
+use crate::admin_level::{
   admin_level, extract_event, extract_opts, extract_step, extraction_rules, level,
 };
-use crate::domain::table;
+use crate::database::table;
 
 struct running_stage {
   label: String,
@@ -159,7 +159,7 @@ pub fn command_handler_extract_osm_admin_levels(
     admin_level::extract(&conn, level, &opts, |event| renderer.on(event));
   }
 
-  crate::domain::admin_level::admin_levels::create_indexes(&conn);
+  crate::admin_level::admin_levels::create_indexes(&conn);
 
-  crate::domain::osm_pbf_file::repository::update_admin_levels_count(&conn);
+  crate::osm_pbf_file::repository::update_admin_levels_count(&conn);
 }

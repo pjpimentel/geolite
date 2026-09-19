@@ -1,7 +1,5 @@
 use rusqlite::{Connection, OpenFlags};
 
-use crate::domain::table;
-
 // bumped whenever the on-disk schema changes in a way that makes builds incompatible;
 // stamped into every writable database via PRAGMA user_version. open_write_main refuses a
 // database stamped with another version, and `geolite merge` refuses to combine one.
@@ -16,6 +14,23 @@ pub(crate) mod merge_fixtures;
 #[cfg(test)]
 #[path = "jsonb_fixtures.test.rs"]
 pub(crate) mod jsonb_fixtures;
+
+pub(crate) trait table {
+  const CREATE: &str;
+  const INDEXES: &str;
+
+  fn create_table(conn: &rusqlite::Connection) {
+    conn
+      .execute_batch(Self::CREATE)
+      .expect("failed to create table");
+  }
+
+  fn create_indexes(conn: &rusqlite::Connection) {
+    conn
+      .execute_batch(Self::INDEXES)
+      .expect("failed to create indexes");
+  }
+}
 
 pub(crate) fn placeholders_for(count: usize) -> String {
   vec!["?"; count].join(",")
@@ -147,21 +162,21 @@ pub fn destroy_data(
   }
   let conn = if osm_data && !osm_pbf_blob_chunks {
     let conn = open_write(path);
-    crate::domain::osm_node::repository::drop_table(&conn);
-    crate::domain::osm_way::repository::drop_table(&conn);
-    crate::domain::osm_relation::repository::drop_table(&conn);
+    crate::osm_node::repository::drop_table(&conn);
+    crate::osm_way::repository::drop_table(&conn);
+    crate::osm_relation::repository::drop_table(&conn);
     conn
   } else {
     open_write_main(path)
   };
   if house_numbers {
-    crate::domain::house_number::repository::drop_table(&conn);
+    crate::house_number::repository::drop_table(&conn);
   }
   if admin_levels {
-    crate::domain::admin_level_hierarchy::repository::drop_table(&conn);
-    crate::domain::admin_level::spatial_index::drop_table(&conn);
-    crate::domain::admin_level::repository::drop_table(&conn);
-    crate::domain::house_number::repository::drop_table(&conn);
+    crate::admin_level_hierarchy::repository::drop_table(&conn);
+    crate::admin_level::spatial_index::drop_table(&conn);
+    crate::admin_level::repository::drop_table(&conn);
+    crate::house_number::repository::drop_table(&conn);
   }
   conn.execute_batch("VACUUM;").expect("failed to vacuum");
 }
@@ -204,12 +219,12 @@ pub fn open_write_main(path: &str) -> Connection {
   conn
     .pragma_update(None, "user_version", SCHEMA_VERSION)
     .expect("failed to set user_version");
-  crate::domain::osm_pbf_file::osm_pbf_files::create_table(&conn);
-  crate::domain::osm_pbf_file::repository::add_origin_wkt(&conn);
-  crate::domain::admin_level::admin_levels::create_table(&conn);
-  crate::domain::admin_level_hierarchy::admin_levels_hierarchy::create_table(&conn);
-  crate::domain::admin_level::spatial_index::create_table(&conn);
-  crate::domain::house_number::house_numbers::create_table(&conn);
+  crate::osm_pbf_file::osm_pbf_files::create_table(&conn);
+  crate::osm_pbf_file::repository::add_origin_wkt(&conn);
+  crate::admin_level::admin_levels::create_table(&conn);
+  crate::admin_level_hierarchy::admin_levels_hierarchy::create_table(&conn);
+  crate::admin_level::spatial_index::create_table(&conn);
+  crate::house_number::house_numbers::create_table(&conn);
   conn
 }
 
@@ -226,10 +241,10 @@ pub fn open_write(path: &str) -> Connection {
        PRAGMA osm_data.cache_size=-32768;",
     )
     .expect("failed to set osm_data pragmas");
-  crate::domain::osm_pbf_file::osm_pbf_blob_chunks::create_table(&conn);
-  crate::domain::osm_node::osm_nodes::create_table(&conn);
-  crate::domain::osm_way::osm_ways::create_table(&conn);
-  crate::domain::osm_relation::osm_relations::create_table(&conn);
+  crate::osm_pbf_file::osm_pbf_blob_chunks::create_table(&conn);
+  crate::osm_node::osm_nodes::create_table(&conn);
+  crate::osm_way::osm_ways::create_table(&conn);
+  crate::osm_relation::osm_relations::create_table(&conn);
   conn
 }
 

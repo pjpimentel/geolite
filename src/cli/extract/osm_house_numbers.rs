@@ -1,8 +1,8 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
-use crate::domain::house_number::{house_number_link, house_number_policy, house_numbers};
-use crate::domain::table;
+use crate::house_number::{house_number_link, house_number_policy, house_numbers};
+use crate::database::table;
 
 pub fn command_handler_extract_osm_house_numbers(
   sqlite_path: &str,
@@ -43,5 +43,5 @@ pub fn command_handler_extract_osm_house_numbers(
   let elapsed = start.elapsed().as_secs_f64();
   println!("\x1b[1;32mextracted\x1b[0m {count} house numbers in {elapsed:.1}s");
 
-  crate::domain::osm_pbf_file::repository::update_house_numbers_count(&conn);
+  crate::osm_pbf_file::repository::update_house_numbers_count(&conn);
 }
