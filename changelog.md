@@ -10,7 +10,7 @@
 1. MODIFIED domains folder to top level src/
 1. MODIFIED `cli` and `http` into `src/interfaces/`.
 1. MODIFIED `bounding_geometry` and the wkt parse to one owner, `admin_level::geometry`.
-1. MODIFIED crates publish to sue Trusted Publishing
+1. MODIFIED crates publish to use Trusted Publishing
 
 ## **2026-09-17** - 0.0.11
 
