@@ -1,16 +1,23 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.12
+## **2026-XX-XX** - 0.0.13
 
-1. MODIFIED the friendly name to one rule for the path and for the label rebuilt around a house number, which diverge today on where the post codes go.
+1. MODIFIED `doc_text` and `token_coverage` into `admin_level_hierarchy::search_index::coverage`, so the similarity replicates the index pipeline where it is defined.
+1. MODIFIED the 50 m house-number rule into `house_number::resolution::nearest` and `numbers_by_street` into `house_number::repository`, so the number's domain also resolves the coordinate path.
+1. MODIFIED `query`, `http-server` and `http::serve` to take the whole preset instead of `boosts` and `house_numbers` one by one, so a new preset policy no longer crosses the whole stack.
+1. MODIFIED the five `progress_report` types into one shared domain type, so one progress renderer in the cli serves every stage.
+
+## **2026-09-19** - 0.0.12
+
+1. MODIFIED the friendly name to one rule with or without a house number, so a label with a number keeps the post codes at the end.
 1. MODIFIED the house number to resolve before the match is built, so the api dto carries no pipeline state.
 1. MODIFIED `attributes.post_code` to one rule in both services, the most specific post code of the path, so the same street answers the same post code by text and by coordinate.
 1. ADDED `post_code` to every item of `admin_levels` in the response, so each area answers its own post code.
 1. MODIFIED an `admin_levels` row to carry its origin as one value instead of a pair of optionals, removing the panic on an empty pair.
-1. MODIFIED domains folder to top level src/
+1. MODIFIED the domain folders to the top level of `src/`.
 1. MODIFIED `cli` and `http` into `src/interfaces/`.
 1. MODIFIED `bounding_geometry` and the wkt parse to one owner, `admin_level::geometry`.
-1. MODIFIED crates publish to use Trusted Publishing
+1. MODIFIED the crates.io publish to use Trusted Publishing on the `crates.io` environment, so no long-lived registry token is stored.
 
 ## **2026-09-17** - 0.0.11
 
