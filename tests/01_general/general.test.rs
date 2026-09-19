@@ -20,7 +20,7 @@ pub(crate) fn world() -> &'static world {
 
 const ANY_TEXT: &str = "rua";
 const ANY_POINT: &str = "-23.970949,-46.318730";
-const UNPARSEABLE_WKT: &str = "POLYGON((0 0, 1 1";
+const UNPARSABLE_WKT: &str = "POLYGON((0 0, 1 1";
 
 // 00.00. pipeline integrity
 #[test]
@@ -937,8 +937,8 @@ fn _02_13_a_level_outside_the_scale_in_last_admin_levels_is_rejected_by_clap() {
 // 02.14. dead case
 #[test]
 #[ignore]
-fn _02_14_an_unparseable_bounding_wkt_is_rejected_by_clap() {
-  let out = world().geolite(&["query", ANY_TEXT, "--bounding-wkt", UNPARSEABLE_WKT]);
+fn _02_14_an_unparsable_bounding_wkt_is_rejected_by_clap() {
+  let out = world().geolite(&["query", ANY_TEXT, "--bounding-wkt", UNPARSABLE_WKT]);
   assert_eq!(out.status, 2);
   assert!(
     out.stderr.contains("bounding_wkt: invalid wkt"),
@@ -950,12 +950,12 @@ fn _02_14_an_unparseable_bounding_wkt_is_rejected_by_clap() {
 // 02.15. dead case
 #[test]
 #[ignore]
-fn _02_15_an_unparseable_bounding_wkt_returns_bad_request() {
+fn _02_15_an_unparsable_bounding_wkt_returns_bad_request() {
   let s = world().start_server();
   let path = format!(
     "/geocode?query={}&bounding_wkt={}",
     encode(ANY_TEXT),
-    encode(UNPARSEABLE_WKT)
+    encode(UNPARSABLE_WKT)
   );
   let r = get(s.port, &path);
   assert_eq!(r.status, 400);
