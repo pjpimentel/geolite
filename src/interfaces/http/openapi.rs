@@ -73,8 +73,8 @@ fn geocode() {}
   get,
   path = "/status",
   responses(
-    (status = 200, description = "all services available", body = crate::http::status::status_output),
-    (status = 503, description = "one or more services unavailable", body = crate::http::status::status_output),
+    (status = 200, description = "all services available", body = crate::interfaces::http::status::status_output),
+    (status = 503, description = "one or more services unavailable", body = crate::interfaces::http::status::status_output),
   ),
 )]
 #[allow(dead_code)]
@@ -95,8 +95,8 @@ fn status() {}
     crate::address::query_match_attributes,
     crate::address::query_house_number,
     crate::address::house_number_match,
-    crate::http::status::status_output,
-    crate::http::status::database_status,
+    crate::interfaces::http::status::status_output,
+    crate::interfaces::http::status::database_status,
     ApiError,
   )),
 )]

@@ -7,7 +7,7 @@ use indicatif::ProgressBar;
 
 fn progress_bar() -> ProgressBar {
   let bar = ProgressBar::new_spinner();
-  bar.set_draw_target(crate::cli::progress_draw_target());
+  bar.set_draw_target(crate::interfaces::cli::progress_draw_target());
   bar
 }
 

@@ -3,7 +3,7 @@
 > one folder per concept, each owning everything that concept needs
 
 the domain is organised as vertical slices, one folder per concept directly in `src/`, beside
-`cli`, `database` and `http`: the domain is the program itself, not one module among the others.
+`database` and `interfaces`: the domain is the program itself, not one module among the others.
 a concept's folder holds its model and methods, its policy, its services and its own persistence.
 the technical modules that came before (`extract`, `index`, `query`, `optimize`) were emptied into
 these folders one patch release at a time and are gone; `database` is what a driver layer is — the connection lifecycle, the schema version, the
@@ -14,7 +14,7 @@ admin_level/    a named administrative area — the `admin_levels` table
   entity            the row as it is written: osm element, level, shape, name, codes
   scale             the closed set of levels, their names and their order
   id                stable identity, packed from the osm way or relation it came from
-  geometry          the wkb column codec, its mbr shortcut, the bounding box and the ring assembly
+  geometry          the wkb column codec, its mbr shortcut, the bounding box, the region of `--bounding-wkt` and its parse, and the ring assembly
   repository        the ddl, the index, the reads every consumer of the table goes through, and the upsert
   spatial_index     the rtree of every level's bounding box, the pass that fills it, and the nearest streets to a point
   rules             which ways each level includes or excludes, and the preset override
@@ -43,7 +43,7 @@ address/        an address resolved from a text or from a coordinate — not a t
   entity            the response as the api renders it: the match, its level ladder, its attributes, built from one set of loads
   input             what the user typed: a `lat,lon` pair or a text
   label             the friendly-name template: parse, validate, render, and the default order
-  filter            the region of `--bounding-wkt`, and the shared last pass: quality, region, last levels, the cut at ten
+  filter            the shared last pass: quality, region, last levels, the cut at ten
   text              `address::query_by_text`: the search, the matches, the house number, the sort
   coordinates       `address::query_by_coordinates`: the nearest streets, the matches, the nearest number
   house_number      the house-number step of both services; the rule itself is `house_number`
@@ -122,4 +122,5 @@ take their persistence out of `src/database`, which owns no table any more.
   scenario names are in english.
 
 what stays outside the concept folders is what belongs to no concept in particular: the sqlite
-connection lifecycle with the `table` trait, the cli and the http server.
+connection lifecycle with the `table` trait, and the interfaces — the cli and the http server —
+grouped in `interfaces/`.

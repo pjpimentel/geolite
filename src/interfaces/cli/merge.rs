@@ -1,5 +1,5 @@
 use crate::database::table;
-use crate::cli::index::command_handler_index;
+use crate::interfaces::cli::index::command_handler_index;
 
 fn require_compatible_version(label: &str, path: &str) {
   let version = crate::database::read_user_version(path);

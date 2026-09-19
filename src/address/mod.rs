@@ -10,6 +10,7 @@ mod text;
 #[path = "fixtures.test.rs"]
 pub(crate) mod fixtures;
 
+use crate::admin_level::geometry::bounding_geometry;
 use crate::admin_level::level;
 use crate::admin_level_hierarchy::tantivy_index;
 use crate::house_number::house_number_policy;
@@ -18,7 +19,7 @@ pub use entity::{
   admin_level, house_number_match, query_house_number, query_match, query_match_attributes,
   query_output, query_service,
 };
-pub use filter::{bounding_geometry, parse_min_quality};
+pub use filter::parse_min_quality;
 pub use input::query_input;
 pub use label::validate_friendly_name_format;
 

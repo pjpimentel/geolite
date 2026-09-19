@@ -1,13 +1,13 @@
-use crate::cli::extract::{
+use crate::interfaces::cli::extract::{
   osm_admin_levels::command_handler_extract_osm_admin_levels,
   osm_house_numbers::command_handler_extract_osm_house_numbers,
   osm_pbf_blob_chunks::command_handler_extract_osm_pbf_blob_chunks,
   osm_pbf_data::command_handler_extract_osm_pbf_data,
   osm_pbf_header::command_handler_extract_osm_pbf_header,
 };
-use crate::cli::index::command_handler_index;
-use crate::cli::optimize::command_handler_optimize;
-use crate::cli::osm_pbf_file::download::command_handler_osm_pbf_file_download;
+use crate::interfaces::cli::index::command_handler_index;
+use crate::interfaces::cli::optimize::command_handler_optimize;
+use crate::interfaces::cli::osm_pbf_file::download::command_handler_osm_pbf_file_download;
 use crate::osm_pbf_file::{input_kind, osm_pbf_file};
 
 #[allow(clippy::too_many_arguments)]

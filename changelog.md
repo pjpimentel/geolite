@@ -6,6 +6,8 @@
 1. MODIFIED `attributes.post_code` to one rule in both services, so the same street answers the same post code by text and by coordinate.
 1. MODIFIED an `admin_levels` row to carry its origin as one value instead of a pair of optionals, removing the panic on an empty pair.
 1. MODIFIED domains folder to top level src/
+1. MODIFIED `cli` and `http` into `src/interfaces/`.
+1. MODIFIED `bounding_geometry` and the wkt parse to one owner, `admin_level::geometry`.
 1. MODIFIED crates publish to sue Trusted Publishing
 
 ## **2026-09-17** - 0.0.11

@@ -1,23 +1,8 @@
-use geo::{Contains, Point};
-
 use super::entity::query_match;
 use super::query_opts;
-use crate::admin_level::geometry::bounding_box;
 
 pub(super) const MAX_RESULTS: u8 = 10;
 const COORDINATE_QUALITY_REFERENCE_M: f64 = 100.0;
-
-#[derive(Clone)]
-pub struct bounding_geometry {
-  pub geometry: geo::Geometry<f64>,
-  pub envelope: bounding_box,
-}
-
-impl bounding_geometry {
-  pub fn contains(&self, lat: f64, lon: f64) -> bool {
-    self.geometry.contains(&Point::new(lon, lat))
-  }
-}
 
 // the cut at MAX_RESULTS comes after every filter, so no filter discards a match that would have
 // made the cut

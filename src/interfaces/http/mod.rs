@@ -190,7 +190,7 @@ fn handle(
         .map(|s| crate::address::parse_min_quality(&s))
         .transpose();
       let bounding_wkt = query_param(&query_string, "bounding_wkt")
-        .map(|s| parse_bounding_wkt(&s))
+        .map(|s| crate::admin_level::geometry::parse_bounding_wkt(&s))
         .transpose();
       let last_admin_levels = query_param(&query_string, "last_admin_levels")
         .map(|s| parse_last_admin_levels(&s))
@@ -335,33 +335,6 @@ fn url_decode(s: &str) -> String {
     }
   }
   String::from_utf8_lossy(&out).into_owned()
-}
-
-// wkt orders "x y" = "lon lat". only an area (polygon/multipolygon) is accepted: the exact
-// containment runs in the address domain; the envelope derived here feeds the rtree pre-filter
-pub(crate) fn parse_bounding_wkt(s: &str) -> Result<crate::address::bounding_geometry, String> {
-  use geo::BoundingRect;
-  use geozero::ToGeo;
-
-  let geometry = geozero::wkt::Wkt(s)
-    .to_geo()
-    .map_err(|e| format!("bounding_wkt: invalid wkt: {e}"))?;
-  if !matches!(
-    geometry,
-    geo::Geometry::Polygon(_) | geo::Geometry::MultiPolygon(_)
-  ) {
-    return Err("bounding_wkt: must be a POLYGON or MULTIPOLYGON".to_string());
-  }
-  let rect = geometry
-    .bounding_rect()
-    .ok_or("bounding_wkt: empty geometry")?;
-  let envelope = crate::admin_level::geometry::bounding_box {
-    min_lat: rect.min().y,
-    max_lat: rect.max().y,
-    min_lon: rect.min().x,
-    max_lon: rect.max().x,
-  };
-  Ok(crate::address::bounding_geometry { geometry, envelope })
 }
 
 fn parse_last_admin_levels(s: &str) -> Result<Vec<level>, String> {

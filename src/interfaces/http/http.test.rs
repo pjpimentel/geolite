@@ -1,4 +1,4 @@
-use super::{bind, parse_bounding_wkt, parse_last_admin_levels, query_param, url_decode};
+use super::{bind, parse_last_admin_levels, query_param, url_decode};
 use crate::admin_level::level;
 
 #[test]
@@ -59,54 +59,12 @@ fn _02_04_empty_query_string_returns_none() {
 }
 
 #[test]
-fn _03_00_valid_polygon_returns_geometry_with_envelope() {
-  let b =
-    parse_bounding_wkt("POLYGON((-47.0 -24.0, -46.0 -24.0, -46.0 -23.0, -47.0 -23.0, -47.0 -24.0))")
-      .unwrap();
-  assert_eq!(b.envelope.min_lon, -47.0);
-  assert_eq!(b.envelope.max_lon, -46.0);
-  assert_eq!(b.envelope.min_lat, -24.0);
-  assert_eq!(b.envelope.max_lat, -23.0);
-}
-
-#[test]
-fn _03_01_multipolygon_is_accepted() {
-  let b = parse_bounding_wkt(
-    "MULTIPOLYGON(((0 0, 1 0, 1 1, 0 1, 0 0)), ((10 10, 11 10, 11 11, 10 11, 10 10)))",
-  )
-  .unwrap();
-  assert_eq!(b.envelope.min_lon, 0.0);
-  assert_eq!(b.envelope.max_lon, 11.0);
-  assert_eq!(b.envelope.min_lat, 0.0);
-  assert_eq!(b.envelope.max_lat, 11.0);
-}
-
-#[test]
-fn _03_02_invalid_wkt_returns_error() {
-  assert!(parse_bounding_wkt("not a wkt").is_err());
-  assert!(parse_bounding_wkt("POLYGON((0 0, 1 1").is_err());
-}
-
-#[test]
-fn _03_03_non_area_geometry_returns_error() {
-  assert!(parse_bounding_wkt("POINT(0 0)").is_err());
-  assert!(parse_bounding_wkt("LINESTRING(0 0, 1 1)").is_err());
-}
-
-#[test]
-fn _03_04_contains_inner_point_and_excludes_outer_point() {
-  let b = parse_bounding_wkt("POLYGON((-1 -1, 1 -1, 1 1, -1 1, -1 -1))").unwrap();
-  assert!(b.contains(0.0, 0.0));
-  assert!(!b.contains(5.0, 5.0));
-}
-
-#[test]
-fn _04_00_single_level_parses() {
+fn _03_00_single_level_parses() {
   assert_eq!(parse_last_admin_levels("10").unwrap(), vec![level::neighborhood]);
 }
 
 #[test]
-fn _04_01_multiple_levels_parse() {
+fn _03_01_multiple_levels_parse() {
   assert_eq!(
     parse_last_admin_levels("8,10,12").unwrap(),
     vec![level::city, level::neighborhood, level::street]
@@ -114,24 +72,24 @@ fn _04_01_multiple_levels_parse() {
 }
 
 #[test]
-fn _04_02_empty_value_errors() {
+fn _03_02_empty_value_errors() {
   assert!(parse_last_admin_levels("").is_err());
   assert!(parse_last_admin_levels(" , ").is_err());
 }
 
 #[test]
-fn _04_03_non_numeric_level_errors() {
+fn _03_03_non_numeric_level_errors() {
   assert!(parse_last_admin_levels("abc").is_err());
   assert!(parse_last_admin_levels("8,abc").is_err());
 }
 
 #[test]
-fn _04_04_level_above_u8_range_errors() {
+fn _03_04_level_above_u8_range_errors() {
   assert!(parse_last_admin_levels("300").is_err());
 }
 
 #[test]
-fn _04_05_whitespace_around_values_is_tolerated() {
+fn _03_05_whitespace_around_values_is_tolerated() {
   assert_eq!(
     parse_last_admin_levels(" 8 , 10 ").unwrap(),
     vec![level::city, level::neighborhood]
@@ -139,7 +97,7 @@ fn _04_05_whitespace_around_values_is_tolerated() {
 }
 
 #[test]
-fn _04_06_a_level_outside_the_scale_errors_with_its_value() {
+fn _03_06_a_level_outside_the_scale_errors_with_its_value() {
   assert_eq!(
     parse_last_admin_levels("8,11").unwrap_err(),
     "last_admin_levels: level 11 is not supported"
@@ -151,7 +109,7 @@ fn _04_06_a_level_outside_the_scale_errors_with_its_value() {
 }
 
 #[test]
-fn _05_00_bind_on_port_zero_reports_the_port_the_os_chose() {
+fn _04_00_bind_on_port_zero_reports_the_port_the_os_chose() {
   let server = bind("127.0.0.1:0");
 
   assert_ne!(server.addr().port(), 0);

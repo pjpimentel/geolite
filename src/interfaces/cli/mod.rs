@@ -112,8 +112,8 @@ enum commands {
     friendly_name_format: Option<String>,
     #[arg(long, value_parser = crate::address::parse_min_quality)]
     min_quality: Option<f64>,
-    #[arg(long, allow_hyphen_values = true, value_parser = crate::http::parse_bounding_wkt)]
-    bounding_wkt: Option<crate::address::bounding_geometry>,
+    #[arg(long, allow_hyphen_values = true, value_parser = crate::admin_level::geometry::parse_bounding_wkt)]
+    bounding_wkt: Option<crate::admin_level::geometry::bounding_geometry>,
     #[arg(long, value_delimiter = ',', value_parser = crate::admin_level::level::parse)]
     last_admin_levels: Option<Vec<crate::admin_level::level>>,
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
@@ -269,7 +269,7 @@ pub fn run() {
     commands::http_server { host, port } => http_server::command_handler_http_server(
       &sqlite_path,
       &index_path,
-      crate::http::bind(&format!("{host}:{port}")),
+      crate::interfaces::http::bind(&format!("{host}:{port}")),
       args.threads,
       preset.index_user_friendly_name.boosts,
       preset.house_numbers,

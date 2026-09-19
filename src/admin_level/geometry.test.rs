@@ -1,7 +1,7 @@
 use geo::{Coord, Geometry, LineString};
 use rusqlite::types::{FromSql, ToSql, ToSqlOutput, Value, ValueRef};
 
-use super::{admin_geometry, approx_eq, assemble_rings, mbr_center};
+use super::{admin_geometry, approx_eq, assemble_rings, mbr_center, parse_bounding_wkt};
 
 fn line(from: (f64, f64), to: (f64, f64)) -> admin_geometry {
   Geometry::LineString(LineString(vec![
@@ -152,4 +152,46 @@ fn _12_disjoint_ways_become_separate_rings() {
     ls(&[(10.0, 10.0), (11.0, 10.0)]),
   ]);
   assert_eq!(rings.len(), 2);
+}
+
+#[test]
+fn _13_valid_polygon_returns_geometry_with_envelope() {
+  let b =
+    parse_bounding_wkt("POLYGON((-47.0 -24.0, -46.0 -24.0, -46.0 -23.0, -47.0 -23.0, -47.0 -24.0))")
+      .unwrap();
+  assert_eq!(b.envelope.min_lon, -47.0);
+  assert_eq!(b.envelope.max_lon, -46.0);
+  assert_eq!(b.envelope.min_lat, -24.0);
+  assert_eq!(b.envelope.max_lat, -23.0);
+}
+
+#[test]
+fn _14_multipolygon_is_accepted() {
+  let b = parse_bounding_wkt(
+    "MULTIPOLYGON(((0 0, 1 0, 1 1, 0 1, 0 0)), ((10 10, 11 10, 11 11, 10 11, 10 10)))",
+  )
+  .unwrap();
+  assert_eq!(b.envelope.min_lon, 0.0);
+  assert_eq!(b.envelope.max_lon, 11.0);
+  assert_eq!(b.envelope.min_lat, 0.0);
+  assert_eq!(b.envelope.max_lat, 11.0);
+}
+
+#[test]
+fn _15_invalid_wkt_returns_error() {
+  assert!(parse_bounding_wkt("not a wkt").is_err());
+  assert!(parse_bounding_wkt("POLYGON((0 0, 1 1").is_err());
+}
+
+#[test]
+fn _16_non_area_geometry_returns_error() {
+  assert!(parse_bounding_wkt("POINT(0 0)").is_err());
+  assert!(parse_bounding_wkt("LINESTRING(0 0, 1 1)").is_err());
+}
+
+#[test]
+fn _17_contains_inner_point_and_excludes_outer_point() {
+  let b = parse_bounding_wkt("POLYGON((-1 -1, 1 -1, 1 1, -1 1, -1 -1))").unwrap();
+  assert!(b.contains(0.0, 0.0));
+  assert!(!b.contains(5.0, 5.0));
 }

@@ -8,9 +8,8 @@
 #[rustfmt::skip] mod osm_relation;
 #[rustfmt::skip] mod osm_tag;
 #[rustfmt::skip] mod osm_way;
-#[rustfmt::skip] mod cli; // 0
 #[rustfmt::skip] mod database; // 1
-#[rustfmt::skip] mod http; // 6
+#[rustfmt::skip] mod interfaces;
 #[rustfmt::skip] mod presets; // 7
 
 #[macro_export]
@@ -23,5 +22,5 @@ macro_rules! debug {
 }
 
 fn main() {
-  cli::run();
+  interfaces::cli::run();
 }

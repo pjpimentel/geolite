@@ -97,8 +97,8 @@ in the backlog reconciles.
 `--min-quality` and the http check of `quality`, like `validate_friendly_name_format` — so the
 filter never sees a value outside `[0, 1]`, which would silently empty or bypass the cut.
 
-`bounding_geometry` is the region of `--bounding-wkt`: the polygon for the exact containment and
-its envelope for the rtree. the last pass of both services runs in one order — quality (the
+the region of `--bounding-wkt` is `admin_level::geometry::bounding_geometry`: the polygon for the
+exact containment and its envelope for the rtree. the last pass of both services runs in one order — quality (the
 similarity, or `1 - distance / 100 m` for a coordinate), the exact containment in the polygon (the
 rtree tested the envelope only), the leaf level against `last_admin_levels` — and cuts at
 `MAX_RESULTS` (ten) only after every filter, so no filter discards a match that would have made the
@@ -106,9 +106,8 @@ cut.
 
 ## what still belongs elsewhere
 
-the move was pure, and three pieces sit here until their owners take them, each an item in the
-backlog: `bounding_geometry` and the wkt parse the http module still owns belong to
-`admin_level::geometry`; `doc_text` and `token_coverage` replicate the index pipeline and belong to
+the move was pure, and two pieces sit here until their owners take them, each an item in the
+backlog: `doc_text` and `token_coverage` replicate the index pipeline and belong to
 `admin_level_hierarchy::search_index`; the 50 m rule and `numbers_by_street` belong to
 `house_number`. the rtree read behind the coordinate service is `admin_level::spatial_index::nearest`
 now, and the wkt of a match comes from `admin_level::repository::wkt_by_ids`.

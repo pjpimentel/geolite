@@ -1,4 +1,4 @@
-use geo::{BoundingRect, Coord, Geometry, LineString};
+use geo::{BoundingRect, Contains, Coord, Geometry, LineString, Point};
 use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
 use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
@@ -141,6 +141,39 @@ pub struct bounding_box {
   pub max_lat: f64,
   pub min_lon: f64,
   pub max_lon: f64,
+}
+
+#[derive(Clone)]
+pub struct bounding_geometry {
+  pub geometry: Geometry<f64>,
+  pub envelope: bounding_box,
+}
+
+impl bounding_geometry {
+  pub fn contains(&self, lat: f64, lon: f64) -> bool {
+    self.geometry.contains(&Point::new(lon, lat))
+  }
+}
+
+// wkt orders "x y" = "lon lat". only an area (polygon/multipolygon) is accepted: the envelope only
+// feeds the rtree pre-filter, and `contains` is the exact test
+pub fn parse_bounding_wkt(s: &str) -> Result<bounding_geometry, String> {
+  let geometry = geozero::wkt::Wkt(s)
+    .to_geo()
+    .map_err(|e| format!("bounding_wkt: invalid wkt: {e}"))?;
+  if !matches!(geometry, Geometry::Polygon(_) | Geometry::MultiPolygon(_)) {
+    return Err("bounding_wkt: must be a POLYGON or MULTIPOLYGON".to_string());
+  }
+  let rect = geometry
+    .bounding_rect()
+    .ok_or("bounding_wkt: empty geometry")?;
+  let envelope = bounding_box {
+    min_lat: rect.min().y,
+    max_lat: rect.max().y,
+    min_lon: rect.min().x,
+    max_lon: rect.max().x,
+  };
+  Ok(bounding_geometry { geometry, envelope })
 }
 
 #[cfg(test)]

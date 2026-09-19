@@ -59,6 +59,9 @@ empty geometry with a warning instead of failing the query. `mbr_center` reads t
 blob's MBR header without decoding the geometry, the shortcut the house-number stage snaps with.
 `bounding_box` is the envelope the rtree indexes; it moved here from `query` because the
 persistence imported it, and a repository importing from the query layer is the wrong direction.
+`bounding_geometry` is the region of `--bounding-wkt` and of the http `bounding_wkt`: the polygon
+for the exact test and its `bounding_box` for the rtree. `parse_bounding_wkt` is its one parse,
+the cli `value_parser` and the http check alike, and it takes only a polygon or a multipolygon.
 
 ## the rtree — `spatial_index`
 

@@ -163,7 +163,7 @@ fn _02_merge_matches_single_combined_build_query_parity() {
     ],
     &[make_house(100, alpha, "10"), make_house(200, gamma, "20")],
   );
-  crate::cli::index::command_handler_index(
+  crate::interfaces::cli::index::command_handler_index(
     &combined,
     &combined_index,
     None,
@@ -281,7 +281,7 @@ fn _90_merge_with_no_databases() {
 
 #[test]
 fn _05_merge_without_databases_exits_one() {
-  assert_merge_child_exits_one("cli::merge::tests::_90_merge_with_no_databases", "no databases to merge");
+  assert_merge_child_exits_one("interfaces::cli::merge::tests::_90_merge_with_no_databases", "no databases to merge");
 }
 
 #[test]
@@ -294,7 +294,7 @@ fn _90_merge_with_missing_database() {
 
 #[test]
 fn _06_merge_with_a_missing_database_exits_one() {
-  assert_merge_child_exits_one("cli::merge::tests::_90_merge_with_missing_database", "database not found");
+  assert_merge_child_exits_one("interfaces::cli::merge::tests::_90_merge_with_missing_database", "database not found");
 }
 
 #[test]
@@ -311,7 +311,7 @@ fn _90_merge_with_incompatible_base() {
 #[test]
 fn _07_merge_with_an_incompatible_base_exits_one() {
   assert_merge_child_exits_one(
-    "cli::merge::tests::_90_merge_with_incompatible_base",
+    "interfaces::cli::merge::tests::_90_merge_with_incompatible_base",
     "incompatible schema version on base",
   );
 }
@@ -328,7 +328,7 @@ fn _90_merge_with_incompatible_source() {
 #[test]
 fn _08_merge_with_an_incompatible_source_exits_one() {
   assert_merge_child_exits_one(
-    "cli::merge::tests::_90_merge_with_incompatible_source",
+    "interfaces::cli::merge::tests::_90_merge_with_incompatible_source",
     "incompatible schema version on source",
   );
 }
@@ -346,7 +346,7 @@ fn _90_merge_with_nothing_to_merge() {
 #[test]
 fn _09_merge_that_stays_empty_exits_one() {
   assert_merge_child_exits_one(
-    "cli::merge::tests::_90_merge_with_nothing_to_merge",
+    "interfaces::cli::merge::tests::_90_merge_with_nothing_to_merge",
     "admin_levels is empty after merge",
   );
 }

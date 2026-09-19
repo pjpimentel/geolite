@@ -10,7 +10,7 @@ pub fn command_handler_query(
   boosts: crate::admin_level_hierarchy::tantivy_boosts,
   house_numbers: crate::house_number::house_number_policy,
 ) {
-  crate::cli::require_sqlite(sqlite_path);
+  crate::interfaces::cli::require_sqlite(sqlite_path);
   let conn = crate::database::open_readonly(sqlite_path);
   let index = match crate::admin_level_hierarchy::search_index::load(
     Path::new(index_path),

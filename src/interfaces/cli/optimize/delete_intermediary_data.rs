@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::osm_pbf_file::{listing, osm_pbf_file, source};
 
 pub fn command_handler_optimize_delete_intermediary_data(data_path: &str, sqlite_path: &str) -> bool {
-  crate::cli::require_sqlite(sqlite_path);
+  crate::interfaces::cli::require_sqlite(sqlite_path);
   let start = Instant::now();
   let mut deleted = 0u32;
   {
