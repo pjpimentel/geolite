@@ -1,12 +1,12 @@
 use rusqlite::Connection;
 
-use crate::domain::house_number::fixtures::link;
-use crate::domain::house_number::house_number_link;
-use crate::domain::house_number::repository::batch_insert_links;
+use crate::house_number::fixtures::link;
+use crate::house_number::house_number_link;
+use crate::house_number::repository::batch_insert_links;
 use crate::database::open_write_main;
-use crate::domain::admin_level::geometry::admin_geometry;
-use crate::domain::admin_level::repository::batch_upsert;
-use crate::domain::admin_level::{admin_level as admin_levels_row, level};
+use crate::admin_level::geometry::admin_geometry;
+use crate::admin_level::repository::batch_upsert;
+use crate::admin_level::{admin_level as admin_levels_row, admin_level_id, level};
 use geo::{Coord, Geometry, LineString};
 
 fn make_geometry() -> admin_geometry {
@@ -19,8 +19,7 @@ fn make_geometry() -> admin_geometry {
 
 pub(crate) fn make_way(way_id: u64) -> admin_levels_row {
   admin_levels_row {
-    relation_id: None,
-    way_id: Some(way_id),
+    id: admin_level_id::from_way(way_id),
     level: level::street,
     wkb: make_geometry(),
     name: format!("way_{way_id}"),

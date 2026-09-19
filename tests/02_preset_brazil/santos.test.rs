@@ -38,6 +38,12 @@ const APARECIDA_POLYGON: &str = "POLYGON((-46.3110 -23.9830,-46.3090 -23.9830,-4
 const FAR_POLYGON: &str = "POLYGON((-46.3040 -23.9830,-46.3020 -23.9830,-46.3020 -23.9810,-46.3040 -23.9810,-46.3040 -23.9830))";
 const POST_CODED_STREET: &str = "Ateneu São Vicente";
 const POST_CODED_POINT: &str = "-23.96675,-46.37675";
+// rua deputado emilio justo carries its own post code and the numbers 23 and 259; the point is 23's
+const POST_CODED_NUMBERED_QUERY: &str = "rua deputado emilio justo 23, 11725-440";
+const POST_CODED_NUMBERED_POINT: &str = "-23.99429,-46.41588";
+// rua prefeito antenor bué lies inside conjunto habitacional jaú, inside aparecida, and carries 4
+const NESTED_NUMBERED_QUERY: &str = "rua prefeito antenor bue 4";
+const NESTED_NUMBERED_POINT: &str = "-23.97214,-46.30811";
 // rua aureliano coutinho lies inside conjunto habitacional jaú, which lies inside aparecida: two
 // ancestors of level 10
 const NESTED_POINT: &str = "-23.973439,-46.309747";
@@ -54,6 +60,21 @@ const SQL_SELECT_COUNTRY_ISO_CODE: &str = "
   FROM admin_levels
   WHERE relation_id = 59470
 ";
+
+fn post_coded_street_answer() -> Value {
+  json!({
+    "matches": [{
+      "id": "c8e841fc-db3a-5bc8-ab40-019e7ef4b4d5",
+      "friendly_name": "Ateneu São Vicente, São Paulo, Brasil, 11320-060",
+      "admin_levels": [
+        { "level": 2, "post_code": null },
+        { "level": 4, "post_code": null },
+        { "level": 12, "post_code": "11320-060" },
+      ],
+      "attributes": { "post_code": "11320-060" },
+    }]
+  })
+}
 
 fn assert_boundary(relation_id: u64, level: u8, name: &str) {
   let conn = world().open_sqlite();
@@ -162,30 +183,35 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
           {
             "level": 2,
             "name": "Brasil",
+            "post_code": null,
             "osm_relation_id": 59470,
             "osm_way_id": null,
           },
           {
             "level": 4,
             "name": "São Paulo",
+            "post_code": null,
             "osm_relation_id": 298204,
             "osm_way_id": null,
           },
           {
             "level": 8,
             "name": "Santos",
+            "post_code": null,
             "osm_relation_id": 298442,
             "osm_way_id": null,
           },
           {
             "level": 10,
             "name": "Embaré",
+            "post_code": null,
             "osm_relation_id": 4282882,
             "osm_way_id": null,
           },
           {
             "level": 12,
             "name": "Rua Castro Alves",
+            "post_code": null,
             "osm_relation_id": null,
             "osm_way_id": 255710390,
           },
@@ -207,30 +233,35 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
           {
             "level": 2,
             "name": "Brasil",
+            "post_code": null,
             "osm_relation_id": 59470,
             "osm_way_id": null,
           },
           {
             "level": 4,
             "name": "São Paulo",
+            "post_code": null,
             "osm_relation_id": 298204,
             "osm_way_id": null,
           },
           {
             "level": 8,
             "name": "Santos",
+            "post_code": null,
             "osm_relation_id": 298442,
             "osm_way_id": null,
           },
           {
             "level": 10,
             "name": "Embaré",
+            "post_code": null,
             "osm_relation_id": 4282882,
             "osm_way_id": null,
           },
           {
             "level": 12,
             "name": "Rua Castro Alves",
+            "post_code": null,
             "osm_relation_id": null,
             "osm_way_id": 729205713,
           },
@@ -263,36 +294,42 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
         {
           "level": 2,
           "name": "Brasil",
+          "post_code": null,
           "osm_relation_id": 59470,
           "osm_way_id": null,
         },
         {
           "level": 4,
           "name": "São Paulo",
+          "post_code": null,
           "osm_relation_id": 298204,
           "osm_way_id": null,
         },
         {
           "level": 8,
           "name": "Santos",
+          "post_code": null,
           "osm_relation_id": 298442,
           "osm_way_id": null,
         },
         {
           "level": 10,
           "name": "Embaré",
+          "post_code": null,
           "osm_relation_id": 4282882,
           "osm_way_id": null,
         },
         {
           "level": 12,
           "name": "Rua Castro Alves",
+          "post_code": null,
           "osm_relation_id": null,
           "osm_way_id": 729205713,
         },
         {
           "level": 30,
           "name": "35",
+          "post_code": null,
           "osm_relation_id": null,
           "osm_way_id": null,
         },
@@ -354,6 +391,86 @@ fn _00_07_the_house_number_alias_renders_on_the_coordinate_path() {
         { "friendly_name": "Avenida Bartholomeu de Gusmão Santos" },
       ]
     }),
+  );
+}
+
+// 00.08. result quality: the label with a house number follows the same rule as the label
+// without one — the names outward, the number after the street, the post codes at the end
+#[test]
+#[ignore]
+fn _00_08_a_house_number_label_keeps_the_post_code_on_both_paths() {
+  for input in [POST_CODED_NUMBERED_QUERY, POST_CODED_NUMBERED_POINT] {
+    world().assert_cli(
+      &ask(input),
+      &json!({
+        "matches": [{
+          "friendly_name": "Rua Deputado Emilio Justo, 23, Sítio do Campo, São Paulo, Brasil, 11725-440",
+        }]
+      }),
+    );
+  }
+}
+
+// 00.09. result quality: the numbered label follows the path, not the ladder, so both services
+// write it the same way even where the coordinate ladder lists a level from the general side
+#[test]
+#[ignore]
+fn _00_09_both_services_write_the_numbered_label_along_the_path() {
+  for input in [NESTED_NUMBERED_QUERY, NESTED_NUMBERED_POINT] {
+    world().assert_cli(
+      &ask(input),
+      &json!({
+        "matches": [{
+          "id": "db0e8278-a223-50da-9dff-862ac1016648",
+          "friendly_name": "Rua Prefeito Antenor Bué, 4, Conjunto Habitacional Jaú, Aparecida, Santos, São Paulo, Brasil",
+        }]
+      }),
+    );
+  }
+}
+
+// 00.10. result quality: a number the street does not place is reported, but neither joins the
+// ladder nor the label
+#[test]
+#[ignore]
+fn _00_10_an_absent_number_keeps_the_bare_label_and_no_house_number_level() {
+  let result = world().assert_cli(
+    &ask("rua deputado emilio justo 99999, 11725-440"),
+    &json!({
+      "matches": [{
+        "friendly_name": "Rua Deputado Emilio Justo, Sítio do Campo, São Paulo, Brasil, 11725-440",
+        "house_number": { "number": "99999", "kind": "absent" },
+      }]
+    }),
+  );
+  assert_eq!(levels_of(first(&result)), [2, 4, 10, 12]);
+}
+
+// 00.11. result quality: an interpolated number joins the label like an exact one, before the post
+// code
+#[test]
+#[ignore]
+fn _00_11_an_interpolated_number_keeps_the_post_code_at_the_end() {
+  let result = world().assert_cli(
+    &ask("rua deputado emilio justo 100, 11725-440"),
+    &json!({
+      "matches": [{
+        "friendly_name": "Rua Deputado Emilio Justo, 100, Sítio do Campo, São Paulo, Brasil, 11725-440",
+        "house_number": { "number": "100", "kind": "interpolated" },
+      }]
+    }),
+  );
+  assert_eq!(levels_of(first(&result)).last(), Some(&30));
+}
+
+// 00.12. result quality: a template reads the ladder, number included, and never the post codes the
+// default label ends with
+#[test]
+#[ignore]
+fn _00_12_the_template_renders_the_house_number_without_the_post_code() {
+  world().assert_cli(
+    &ask(POST_CODED_NUMBERED_QUERY).friendly_name_format("{admin_level_12_name}, {house_number}"),
+    &json!({ "matches": [{ "friendly_name": "Rua Deputado Emilio Justo, 23" }] }),
   );
 }
 
@@ -473,6 +590,27 @@ fn _01_05_min_quality_on_coordinates_is_one_minus_the_distance_over_100_m() {
       "--min-quality {min_quality}"
     );
   }
+}
+
+// 01.06. precision guarantee: a multipolygon keeps what its polygons keep, here the inside one
+// joined with one over open water
+#[test]
+#[ignore]
+fn _01_06_a_multipolygon_bounding_keeps_what_its_polygons_keep() {
+  let multipolygon = format!(
+    "MULTIPOLYGON({},{})",
+    INSIDE_POLYGON.trim_start_matches("POLYGON"),
+    OUTSIDE_POLYGON.trim_start_matches("POLYGON")
+  );
+  let joined = world().run(&[TEXT_QUERY, "--bounding-wkt", &multipolygon]);
+  assert!(
+    !matches(&joined).is_empty(),
+    "the inside polygon holds the street"
+  );
+  assert_eq!(
+    way_ids(&joined),
+    way_ids(&world().run(&[TEXT_QUERY, "--bounding-wkt", INSIDE_POLYGON])),
+  );
 }
 
 // 02.00. ambiguity
@@ -662,25 +800,13 @@ fn _03_05_last_admin_levels_on_coordinates_reads_the_leaf_after_the_house_number
   assert_eq!(leaves(&both), [30], "the filters apply as an and");
 }
 
-// 03.06. regression guard: the two services disagree on the street's own post code; the readme
-// documents the divergence and the backlog item that unifies the rule flips this pin
+// 03.06. regression guard: every level answers its own post code, and the attributes the most
+// specific of the path, on both services
 #[test]
 #[ignore]
-fn _03_06_the_two_services_disagree_on_the_street_post_code() {
-  for (input, post_code) in [
-    (POST_CODED_STREET, Value::Null),
-    (POST_CODED_POINT, json!("11320-060")),
-  ] {
-    world().assert_cli(
-      &ask(input),
-      &json!({
-        "matches": [{
-          "id": "c8e841fc-db3a-5bc8-ab40-019e7ef4b4d5",
-          "friendly_name": "Ateneu São Vicente, São Paulo, Brasil, 11320-060",
-          "attributes": { "post_code": post_code },
-        }]
-      }),
-    );
+fn _03_06_both_services_answer_the_street_post_code() {
+  for input in [POST_CODED_STREET, POST_CODED_POINT] {
+    world().assert_cli(&ask(input), &post_coded_street_answer());
   }
 }
 
@@ -715,6 +841,16 @@ fn _03_07_the_two_services_order_same_level_ancestors_differently() {
       &json!({ "matches": [{ "friendly_name": rendered }] }),
     );
   }
+}
+
+// 03.08. regression guard: the http api answers the post code of every level and of the
+// attributes exactly as the cli does
+#[test]
+#[ignore]
+fn _03_08_the_http_api_answers_the_post_code_of_every_level() {
+  let w = world();
+  let s = w.start_server();
+  w.assert_both(&s, &ask(POST_CODED_STREET), &post_coded_street_answer());
 }
 
 // 04.00. pipeline integrity: the preset is inferred from the source path, not from a flag

@@ -1,0 +1,109 @@
+use geo::{Geometry, HaversineDistance, Point};
+use rusqlite::Connection;
+use std::collections::HashMap;
+
+use super::entity::{house_number_match, query_house_number};
+use crate::house_number::{
+  house_number, house_number_policy, house_number_resolution, resolution, token,
+};
+
+// house numbers are precise points; 50m is intentionally tighter than the 100m used for
+// streets, which are lines with a broader snap area
+const MATCH_MAX_DISTANCE_IN_METERS: f64 = 50.0;
+
+fn point_of(wkb: Option<&crate::admin_level::geometry::admin_geometry>) -> Option<Point<f64>> {
+  match wkb.map(|g| g.geometry()) {
+    Some(Geometry::Point(p)) => Some(*p),
+    _ => None,
+  }
+}
+
+fn numbers_by_street(
+  conn: &Connection,
+  admin_level_ids: &[i64],
+) -> HashMap<i64, Vec<(house_number, Point<f64>)>> {
+  let mut by_street: HashMap<i64, Vec<(house_number, Point<f64>)>> = HashMap::new();
+  for row in crate::house_number::repository::by_admin_level_ids(conn, admin_level_ids) {
+    if let Some(point) = point_of(row.wkb.as_ref()) {
+      by_street
+        .entry(row.admin_level_id)
+        .or_default()
+        .push((row.number, point));
+    }
+  }
+  by_street
+}
+
+pub(super) struct resolved_number {
+  number: house_number,
+  resolution: house_number_resolution,
+}
+
+impl resolved_number {
+  pub(super) fn placed(&self) -> Option<(&str, Point<f64>)> {
+    match self.resolution {
+      house_number_resolution::exact(point) | house_number_resolution::interpolated(point) => {
+        Some((self.number.stored_form(), point))
+      }
+      house_number_resolution::absent => None,
+    }
+  }
+
+  pub(super) fn reported(&self) -> query_house_number {
+    query_house_number {
+      number: self.number.stored_form().to_string(),
+      kind: match self.resolution {
+        house_number_resolution::exact(_) => house_number_match::exact,
+        house_number_resolution::interpolated(_) => house_number_match::interpolated,
+        house_number_resolution::absent => house_number_match::absent,
+      },
+    }
+  }
+}
+
+pub(super) fn from_query(
+  conn: &Connection,
+  query: &str,
+  streets: &[(i64, &str)],
+  policy: &house_number_policy,
+) -> HashMap<i64, resolved_number> {
+  if streets.is_empty() || !token::has_house_number(query, policy) {
+    return HashMap::new();
+  }
+  let street_ids: Vec<i64> = streets.iter().map(|(id, _)| *id).collect();
+  let by_street = numbers_by_street(conn, &street_ids);
+  let no_numbers: Vec<(house_number, Point<f64>)> = Vec::new();
+
+  streets
+    .iter()
+    .filter_map(|&(id, name)| {
+      let number = token::first_house_number(query, name, policy)?;
+      let known = by_street.get(&id).unwrap_or(&no_numbers);
+      let resolution = resolution::resolve(&number, known);
+      Some((id, resolved_number { number, resolution }))
+    })
+    .collect()
+}
+
+pub(super) fn nearest_to(
+  conn: &Connection,
+  input_pt: Point<f64>,
+  street_ids: &[i64],
+) -> HashMap<i64, house_number> {
+  if street_ids.is_empty() {
+    return HashMap::new();
+  }
+  numbers_by_street(conn, street_ids)
+    .into_iter()
+    .filter_map(|(id, numbers)| {
+      numbers
+        .into_iter()
+        .filter_map(|(number, point)| {
+          let distance = input_pt.haversine_distance(&point);
+          (distance <= MATCH_MAX_DISTANCE_IN_METERS).then_some((number, distance))
+        })
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .map(|(number, _)| (id, number))
+    })
+    .collect()
+}

@@ -1,24 +1,24 @@
-use crate::domain::admin_level::level;
+use crate::admin_level::level;
 
 #[derive(Clone, Copy)]
 pub struct preset {
   pub name: &'static str,
   pub extract_osm_admin_levels: extract_osm_admin_levels_preset,
-  pub house_numbers: crate::domain::house_number::house_number_policy,
+  pub house_numbers: crate::house_number::house_number_policy,
   pub index_user_friendly_name: index_user_friendly_name_preset,
 }
 
 #[derive(Clone, Copy)]
 pub struct extract_osm_admin_levels_preset {
   pub admin_levels: &'static [level],
-  pub admin_levels_rules: &'static [crate::domain::admin_level::extraction_rules],
+  pub admin_levels_rules: &'static [crate::admin_level::extraction_rules],
   pub name_priority: &'static [&'static str],
 }
 
 #[derive(Clone, Copy)]
 pub struct index_user_friendly_name_preset {
   pub abbreviations: &'static [(&'static str, &'static str)],
-  pub boosts: crate::domain::admin_level_hierarchy::tantivy_boosts,
+  pub boosts: crate::admin_level_hierarchy::tantivy_boosts,
 }
 
 pub const DEFAULT: preset = preset {
@@ -28,17 +28,17 @@ pub const DEFAULT: preset = preset {
     admin_levels_rules: &[],
     name_priority: &["name"],
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     number_tags: &["addr:housenumber"],
     street_tags: &["addr:street"],
     drop_values: &[],
     max_digits: 5,
-    shapes: crate::domain::house_number::policy::SIMPLE_SHAPES,
+    shapes: crate::house_number::policy::SIMPLE_SHAPES,
     allow_hash_prefix: false,
   },
   index_user_friendly_name: index_user_friendly_name_preset {
     abbreviations: &[],
-    boosts: crate::domain::admin_level_hierarchy::tantivy_boosts {
+    boosts: crate::admin_level_hierarchy::tantivy_boosts {
       name_exact: 5.0,
       name_fuzzy: 1.5,
       name_phrase: 10.0,
@@ -60,7 +60,7 @@ pub const BRAZIL: preset = preset {
     admin_levels: &[level::country, level::state, level::city, level::neighborhood, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -86,7 +86,7 @@ pub const PORTUGAL: preset = preset {
     admin_levels: &[level::country, level::county, level::city, level::neighborhood, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -119,7 +119,7 @@ pub const ARGENTINA: preset = preset {
     admin_levels: &[level::country, level::state, level::district, level::city, level::neighborhood, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -147,7 +147,7 @@ pub const BOLIVIA: preset = preset {
     admin_levels: &[level::country, level::state, level::city, level::neighborhood, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -174,7 +174,7 @@ pub const CHILE: preset = preset {
     admin_levels: &[level::country, level::state, level::city, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -208,9 +208,9 @@ pub const COLOMBIA: preset = preset {
     admin_levels: &[level::country, level::state, level::county, level::city, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
-    shapes: crate::domain::house_number::policy::COMPOUND_SHAPES,
+    shapes: crate::house_number::policy::COMPOUND_SHAPES,
     allow_hash_prefix: true,
     ..DEFAULT.house_numbers
   },
@@ -244,7 +244,7 @@ pub const ECUADOR: preset = preset {
     admin_levels: &[level::country, level::state, level::county, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -299,7 +299,7 @@ pub const PARAGUAY: preset = preset {
     admin_levels: &[level::country, level::state, level::city, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -328,7 +328,7 @@ pub const PERU: preset = preset {
     admin_levels: &[level::country, level::state, level::city, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -383,7 +383,7 @@ pub const URUGUAY: preset = preset {
     admin_levels: &[level::country, level::city, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
@@ -412,7 +412,7 @@ pub const VENEZUELA: preset = preset {
     admin_levels: &[level::country, level::state, level::county, level::city, level::street],
     ..DEFAULT.extract_osm_admin_levels
   },
-  house_numbers: crate::domain::house_number::house_number_policy {
+  house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },

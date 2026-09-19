@@ -1,0 +1,195 @@
+use std::collections::{HashMap, HashSet};
+
+use geo::Centroid;
+use rusqlite::Connection;
+
+use super::entity::{
+  self, leaf, match_sources, query_match, query_match_attributes, query_output, query_service,
+  round5,
+};
+use super::house_number::{self, resolved_number};
+use super::{filter, query_opts};
+use crate::admin_level::level;
+use crate::admin_level::repository::{admin_area_row, admin_meta_row};
+use crate::admin_level_hierarchy::search_index::{
+  build_entity_text, search_hit, tantivy_index, tokenize,
+};
+use crate::house_number::house_number_policy;
+
+const MAX_FTS_HITS: u8 = 50;
+
+pub(super) fn run(
+  conn: &Connection,
+  house_numbers: &house_number_policy,
+  index: &tantivy_index,
+  text: &str,
+  opts: &query_opts,
+) -> query_output {
+  let empty = || query_output {
+    service: query_service::text_to_address,
+    matches: vec![],
+  };
+  // a region restricts the ranking inside tantivy rather than filtering after the fts cut, so
+  // a match of the region ranked below the global cap is not lost; the exact containment of the
+  // polygon runs in the filters
+  let region_ids = opts
+    .bounding
+    .as_ref()
+    .map(|b| crate::admin_level::spatial_index::ids_in_bounding_box(conn, b.envelope));
+  if region_ids.as_ref().is_some_and(|r| r.is_empty()) {
+    return empty();
+  }
+  // the fts runs on the full text: a number can be part of the street name ("25" in
+  // "rua 25 de marco"), so stripping it would break the match; the house number is resolved
+  // per candidate afterwards
+  let hits = index.search(
+    text,
+    MAX_FTS_HITS as usize,
+    opts.last_admin_levels.as_deref(),
+    region_ids.as_deref(),
+  );
+  if hits.is_empty() {
+    return empty();
+  }
+
+  let query_tokens = tokenize(text);
+  let mut ids: Vec<i64> = hits.iter().map(|hit| hit.admin_level_id).collect();
+  ids.sort_unstable();
+  ids.dedup();
+  let sources = match_sources::load(conn, &ids, opts.include_wkt);
+  let records = crate::admin_level::repository::load_full_by_ids(conn, &ids);
+  let record_map: HashMap<i64, &admin_area_row> = records.iter().map(|r| (r.id, r)).collect();
+  let streets: Vec<(i64, &str)> = records
+    .iter()
+    .filter(|r| r.admin_level == level::street)
+    .map(|r| (r.id, r.name.as_str()))
+    .collect();
+  let numbers = house_number::from_query(conn, text, &streets, house_numbers);
+
+  // one match per hit: a hit is one path of an area, and its ordinal names the path
+  let mut matches: Vec<query_match> = hits
+    .iter()
+    .filter_map(|hit| {
+      let record = record_map.get(&hit.admin_level_id)?;
+      let Some(path) = sources.path_at(hit.admin_level_id, hit.ordinal) else {
+        crate::debug!(
+          "debug: hit {} ordinal {} has no path: the index is out of step with the hierarchy",
+          hit.admin_level_id,
+          hit.ordinal
+        );
+        return None;
+      };
+      build_match(record, &sources, &query_tokens, hit, path, numbers.get(&record.id), opts)
+    })
+    .collect();
+
+  // bm25 first; among the segments of one street, which share a score, the one that placed the
+  // number wins the tie through the similarity nudge, and the rest keep the collector's order,
+  // which is by area id
+  matches.sort_by(|a, b| {
+    b.score
+      .partial_cmp(&a.score)
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then_with(|| {
+        b.similarity
+          .partial_cmp(&a.similarity)
+          .unwrap_or(std::cmp::Ordering::Equal)
+      })
+  });
+
+  filter::apply_filters_and_truncate(&mut matches, opts);
+
+  query_output {
+    service: query_service::text_to_address,
+    matches,
+  }
+}
+
+fn build_match(
+  record: &admin_area_row,
+  sources: &match_sources,
+  query_tokens: &[String],
+  hit: &search_hit,
+  path: &[i64],
+  number: Option<&resolved_number>,
+  opts: &query_opts,
+) -> Option<query_match> {
+  let geom = record.wkb.as_ref()?.geometry();
+  let centroid = geom.centroid()?;
+  let placed = number.and_then(resolved_number::placed);
+  let placed_number = placed.map(|(n, _)| n);
+  let point = placed.map_or(centroid, |(_, p)| p);
+
+  let ancestors = sources.ancestors_of(path.iter());
+  let leaf = leaf {
+    id: record.id,
+    level: record.admin_level,
+    name: &record.name,
+    relation_id: record.relation_id,
+    way_id: record.way_id,
+  };
+  let admin_levels = sources.level_ladder(&ancestors, &leaf, placed_number);
+  let friendly_name = entity::friendly_name_of(
+    opts.friendly_name_format,
+    &admin_levels,
+    sources,
+    record.id,
+    &record.name,
+    placed_number,
+    path,
+  );
+  let own_meta = sources.meta.get(&record.id);
+  let coverage = token_coverage(
+    query_tokens,
+    &doc_text(
+      &record.name,
+      own_meta.and_then(|m| m.post_code.as_deref()),
+      &ancestors,
+    ),
+  );
+
+  let mut similarity = round5(coverage as f64) as f32;
+  // nudge similarity so a match with the house number resolved outranks the bare street
+  if placed.is_some() {
+    similarity = round5(similarity as f64 + 0.01) as f32;
+  }
+
+  Some(query_match {
+    admin_levels,
+    latitude: round5(point.y()),
+    longitude: round5(point.x()),
+    coordinates_distance_in_meters: None,
+    similarity: Some(similarity),
+    score: Some(hit.score),
+    friendly_name,
+    attributes: query_match_attributes {
+      country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
+      post_code: sources.post_code_of(record.id, path),
+    },
+    house_number: number.map(resolved_number::reported),
+    id: entity::path_id(record.id, path),
+  })
+}
+
+// the text the index holds for a document, rebuilt through the same pipeline as the build so
+// that the tokens agree
+fn doc_text(own_name: &str, own_post_code: Option<&str>, ancestors: &[&admin_meta_row]) -> String {
+  let mut out = build_entity_text(own_name, own_post_code);
+  for a in ancestors {
+    out.push(' ');
+    out.push_str(&build_entity_text(&a.name, a.post_code.as_deref()));
+  }
+  out
+}
+
+fn token_coverage(query_tokens: &[String], doc_text: &str) -> f32 {
+  if query_tokens.is_empty() {
+    return 0.0;
+  }
+  let doc_tokens: HashSet<String> = tokenize(doc_text).into_iter().collect();
+  let hits = query_tokens
+    .iter()
+    .filter(|t| doc_tokens.contains(t.as_str()))
+    .count();
+  hits as f32 / query_tokens.len() as f32
+}

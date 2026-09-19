@@ -1,0 +1,351 @@
+use crate::database::merge_fixtures::{
+  build_source, cleanup, count, make_house, make_way, temp_path,
+};
+use crate::database::{open_write_main, read_user_version};
+use crate::admin_level::id::admin_level_id;
+use crate::admin_level::{admin_level as admin_levels_row, level};
+use crate::admin_level_hierarchy::search_index as tantivy;
+use crate::presets::DEFAULT;
+use crate::address::{address, query_opts, query_output};
+use geo::{Coord, Geometry, LineString};
+use rusqlite::Connection;
+use std::path::Path;
+
+const POLICY: crate::house_number::house_number_policy = DEFAULT.house_numbers;
+
+#[test]
+fn _00_open_write_main_stamps_schema_version() {
+  let path = temp_path("version");
+  let conn = open_write_main(&path);
+  drop(conn);
+  assert_eq!(read_user_version(&path), crate::database::SCHEMA_VERSION);
+  cleanup(&path);
+}
+
+#[test]
+#[should_panic(expected = "incompatible schema version")]
+fn _10_open_write_main_refuses_a_database_stamped_with_another_version() {
+  let path = temp_path("foreign_version");
+  let conn = Connection::open(&path).expect("failed to create sqlite");
+  conn
+    .pragma_update(None, "user_version", 1)
+    .expect("failed to stamp user_version");
+  drop(conn);
+  open_write_main(&path);
+}
+
+// full pipeline (merge data -> rebuild hierarchy/rtree/tantivy -> optimize). ignored by default
+// because it builds a tantivy index on disk; run with `cargo test -- --ignored end_to_end`.
+#[test]
+#[ignore]
+fn _01_end_to_end_merge_into_a_fresh_base_rebuilds_indexes() {
+  let base_path = temp_path("e2e_base");
+  let source_a = temp_path("e2e_source_a");
+  let source_b = temp_path("e2e_source_b");
+  let index_dir = format!("{}.tantivy", temp_path("e2e_index"));
+
+  let way1 = admin_level_id::from_way(1).raw() as i64;
+  build_source(&source_a, &[make_way(1)], &[make_house(100, way1, "10")]);
+  let way3 = admin_level_id::from_way(3).raw() as i64;
+  build_source(&source_b, &[make_way(3)], &[make_house(200, way3, "20")]);
+
+  // base does not exist yet — merge must create it fresh and populate it from both sources.
+  assert!(!std::path::Path::new(&base_path).exists());
+  let preset = crate::presets::resolve(None);
+  super::command_handler_merge(
+    &base_path,
+    &[source_a.clone(), source_b.clone()],
+    &index_dir,
+    &preset,
+  );
+
+  assert!(std::path::Path::new(&base_path).exists(), "base was created");
+  let conn = crate::database::open_readonly(&base_path);
+  assert_eq!(count(&conn, "SELECT COUNT(*) FROM admin_levels"), 2);
+  assert_eq!(count(&conn, "SELECT COUNT(*) FROM house_numbers"), 2);
+  // derived artifacts were rebuilt over the unified set.
+  assert!(count(&conn, "SELECT COUNT(*) FROM admin_levels_rtree") >= 2);
+  assert!(count(&conn, "SELECT COUNT(*) FROM admin_levels_hierarchy") >= 2);
+  drop(conn);
+
+  cleanup(&base_path);
+  cleanup(&source_a);
+  cleanup(&source_b);
+  let _ = std::fs::remove_dir_all(&index_dir);
+  let _ = std::fs::remove_file(crate::database::osm_data_path(&base_path));
+}
+
+// a named level-12 street at a specific location. distinct coordinates let the rtree/hierarchy and the
+// coordinate queries tell streets apart (make_way puts everything at the same point).
+fn make_street_at(name: &str, way_id: u64, lon: f64, lat: f64) -> admin_levels_row {
+  admin_levels_row {
+    id: admin_level_id::from_way(way_id),
+    level: level::street,
+    wkb: Geometry::LineString(LineString(vec![
+      Coord { x: lon, y: lat },
+      Coord { x: lon + 0.0005, y: lat },
+    ]))
+    .into(),
+    name: name.to_string(),
+    country_iso_code: None,
+    post_code: None,
+  }
+}
+
+// the matched street is the most specific admin_level (highest level) of the top result.
+fn top_street_name(out: &query_output) -> Option<String> {
+  out
+    .matches
+    .first()
+    .and_then(|m| m.admin_levels.iter().max_by_key(|a| a.level))
+    .map(|a| a.name.clone())
+}
+
+fn cleanup_build(sqlite_path: &str) {
+  cleanup(sqlite_path);
+  let osm = crate::database::osm_data_path(sqlite_path);
+  for suffix in ["", "-wal", "-shm"] {
+    let _ = std::fs::remove_file(format!("{osm}{suffix}"));
+  }
+}
+
+// a build merged from two separately-built regions must answer queries identically to a single build
+// of the same regions combined. merge re-derives every index from the unified raw data and admin_level
+// ids derive from osm ids (deterministic), so for disjoint regions parity is exact. both the merge and
+// the combined build use the same preset (DEFAULT). region A sits near (-46.3, -23.9) and region B near
+// (7.4, 43.7) — far apart, disjoint ids — mirroring two disjoint extracts without pbf fixtures.
+#[test]
+fn _02_merge_matches_single_combined_build_query_parity() {
+  let source_a = temp_path("parity_source_a");
+  let source_b = temp_path("parity_source_b");
+  let merged = temp_path("parity_merged");
+  let combined = temp_path("parity_combined");
+  let merged_index = format!("{}.tantivy", temp_path("parity_merged_index"));
+  let combined_index = format!("{}.tantivy", temp_path("parity_combined_index"));
+
+  let alpha = admin_level_id::from_way(1).raw() as i64;
+  let gamma = admin_level_id::from_way(3).raw() as i64;
+
+  // two regions built separately, then merged into a fresh base (re-derives all indexes). the rows
+  // are re-created per db because admin_levels is not Clone.
+  build_source(
+    &source_a,
+    &[
+      make_street_at("Rua Alpha", 1, -46.30, -23.90),
+      make_street_at("Rua Beta", 2, -46.31, -23.91),
+    ],
+    &[make_house(100, alpha, "10")],
+  );
+  build_source(
+    &source_b,
+    &[
+      make_street_at("Rue Gamma", 3, 7.40, 43.70),
+      make_street_at("Rue Delta", 4, 7.41, 43.71),
+    ],
+    &[make_house(200, gamma, "20")],
+  );
+  super::command_handler_merge(
+    &merged,
+    &[source_a.clone(), source_b.clone()],
+    &merged_index,
+    &DEFAULT,
+  );
+
+  // the same four streets as a single combined build, then index.
+  build_source(
+    &combined,
+    &[
+      make_street_at("Rua Alpha", 1, -46.30, -23.90),
+      make_street_at("Rua Beta", 2, -46.31, -23.91),
+      make_street_at("Rue Gamma", 3, 7.40, 43.70),
+      make_street_at("Rue Delta", 4, 7.41, 43.71),
+    ],
+    &[make_house(100, alpha, "10"), make_house(200, gamma, "20")],
+  );
+  crate::interfaces::cli::index::command_handler_index(
+    &combined,
+    &combined_index,
+    None,
+    &DEFAULT.index_user_friendly_name,
+  );
+
+  let mconn = crate::database::open_readonly(&merged);
+  let cconn = crate::database::open_readonly(&combined);
+  let mindex = tantivy::load(Path::new(&merged_index), DEFAULT.index_user_friendly_name.boosts)
+    .expect("merged tantivy index missing");
+  let cindex = tantivy::load(Path::new(&combined_index), DEFAULT.index_user_friendly_name.boosts)
+    .expect("combined tantivy index missing");
+
+  // same data in, same row counts out.
+  assert_eq!(
+    count(&mconn, "SELECT COUNT(*) FROM admin_levels"),
+    count(&cconn, "SELECT COUNT(*) FROM admin_levels"),
+    "admin_levels count differs between merged and combined"
+  );
+  assert_eq!(
+    count(&mconn, "SELECT COUNT(*) FROM house_numbers"),
+    count(&cconn, "SELECT COUNT(*) FROM house_numbers"),
+    "house_numbers count differs between merged and combined"
+  );
+
+  let merged_address = address::open(&mconn, Some(&mindex), &POLICY);
+  let combined_address = address::open(&cconn, Some(&cindex), &POLICY);
+  let opts = query_opts::default();
+
+  // text queries in each region resolve to the same street in both builds.
+  for q in ["Alpha", "Beta", "Gamma", "Delta"] {
+    let m = top_street_name(&merged_address.query_by_text(q, &opts));
+    let c = top_street_name(&combined_address.query_by_text(q, &opts));
+    assert!(m.is_some(), "query '{q}' returned no match in the merged build");
+    assert_eq!(m, c, "merged vs combined differ for text query '{q}'");
+  }
+
+  // reverse geocoding (coordinates) is identical too: a point in each region.
+  for (region, latitude, longitude) in [("region a", -23.90, -46.30), ("region b", 43.70, 7.40)] {
+    let m = top_street_name(&merged_address.query_by_coordinates(latitude, longitude, &opts));
+    let c = top_street_name(&combined_address.query_by_coordinates(latitude, longitude, &opts));
+    assert_eq!(m, c, "merged vs combined differ for the coordinate query in {region}");
+  }
+
+  cleanup_build(&source_a);
+  cleanup_build(&source_b);
+  cleanup_build(&merged);
+  cleanup_build(&combined);
+  let _ = std::fs::remove_dir_all(&merged_index);
+  let _ = std::fs::remove_dir_all(&combined_index);
+}
+
+#[test]
+fn _03_require_compatible_version_returns_on_the_current_schema() {
+  let path = temp_path("version_ok");
+  drop(open_write_main(&path));
+  super::require_compatible_version("base", &path);
+  cleanup(&path);
+}
+
+// merging into an existing compatible base takes the in-place branch (version-checked, not the
+// "creating new base" one) and appends the source rows to the ones already there.
+#[test]
+fn _04_merges_into_an_existing_compatible_base_in_place() {
+  let base = temp_path("inplace_base");
+  let source = temp_path("inplace_source");
+  let index_dir = format!("{}.tantivy", temp_path("inplace_index"));
+
+  build_source(&base, &[make_street_at("Rua Alpha", 1, -46.30, -23.90)], &[]);
+  build_source(&source, &[make_street_at("Rue Gamma", 3, 7.40, 43.70)], &[]);
+
+  super::command_handler_merge(&base, std::slice::from_ref(&source), &index_dir, &DEFAULT);
+
+  let conn = crate::database::open_readonly(&base);
+  assert_eq!(
+    count(&conn, "SELECT COUNT(*) FROM admin_levels"),
+    2,
+    "the existing base must keep its street and gain the merged one"
+  );
+  drop(conn);
+
+  cleanup_build(&base);
+  cleanup_build(&source);
+  let _ = std::fs::remove_dir_all(&index_dir);
+}
+
+// ---- process::exit paths, asserted from a respawned child ----
+
+fn respawn(helper: &str) -> std::process::Output {
+  let mut cmd = std::process::Command::new(std::env::current_exe().expect("current_exe"));
+  cmd.args(["--exact", helper, "--ignored", "--nocapture"]);
+  cmd.output().expect("failed to respawn test binary")
+}
+
+fn stderr_of(out: &std::process::Output) -> String {
+  String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+fn assert_merge_child_exits_one(helper: &str, expected_stderr: &str) {
+  let out = respawn(helper);
+  assert_eq!(out.status.code(), Some(1), "stderr: {}", stderr_of(&out));
+  assert!(
+    stderr_of(&out).contains(expected_stderr),
+    "stderr must contain '{expected_stderr}', got: {}",
+    stderr_of(&out)
+  );
+}
+
+#[test]
+#[ignore] // executed only as a child of _05
+fn _90_merge_with_no_databases() {
+  let base = temp_path("exit_no_databases");
+  super::command_handler_merge(&base, &[], &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _05_merge_without_databases_exits_one() {
+  assert_merge_child_exits_one("interfaces::cli::merge::tests::_90_merge_with_no_databases", "no databases to merge");
+}
+
+#[test]
+#[ignore] // executed only as a child of _06
+fn _90_merge_with_missing_database() {
+  let base = temp_path("exit_missing_db_base");
+  let ghost = temp_path("exit_missing_db_ghost");
+  super::command_handler_merge(&base, std::slice::from_ref(&ghost), &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _06_merge_with_a_missing_database_exits_one() {
+  assert_merge_child_exits_one("interfaces::cli::merge::tests::_90_merge_with_missing_database", "database not found");
+}
+
+#[test]
+#[ignore] // executed only as a child of _07
+fn _90_merge_with_incompatible_base() {
+  let base = temp_path("exit_bad_base");
+  let source = temp_path("exit_bad_base_source");
+  // an empty file is a valid sqlite db at user_version 0, which never matches SCHEMA_VERSION.
+  std::fs::write(&base, b"").expect("failed to create empty base");
+  std::fs::write(&source, b"").expect("failed to create empty source");
+  super::command_handler_merge(&base, std::slice::from_ref(&source), &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _07_merge_with_an_incompatible_base_exits_one() {
+  assert_merge_child_exits_one(
+    "interfaces::cli::merge::tests::_90_merge_with_incompatible_base",
+    "incompatible schema version on base",
+  );
+}
+
+#[test]
+#[ignore] // executed only as a child of _08
+fn _90_merge_with_incompatible_source() {
+  let base = temp_path("exit_bad_source_base");
+  let source = temp_path("exit_bad_source");
+  std::fs::write(&source, b"").expect("failed to create empty source");
+  super::command_handler_merge(&base, std::slice::from_ref(&source), &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _08_merge_with_an_incompatible_source_exits_one() {
+  assert_merge_child_exits_one(
+    "interfaces::cli::merge::tests::_90_merge_with_incompatible_source",
+    "incompatible schema version on source",
+  );
+}
+
+#[test]
+#[ignore] // executed only as a child of _09
+fn _90_merge_with_nothing_to_merge() {
+  let base = temp_path("exit_empty_base");
+  let source = temp_path("exit_empty_source");
+  // stamped at the current schema but holding zero admin_levels rows.
+  build_source(&source, &[], &[]);
+  super::command_handler_merge(&base, std::slice::from_ref(&source), &format!("{base}.tantivy"), &DEFAULT);
+}
+
+#[test]
+fn _09_merge_that_stays_empty_exits_one() {
+  assert_merge_child_exits_one(
+    "interfaces::cli::merge::tests::_90_merge_with_nothing_to_merge",
+    "admin_levels is empty after merge",
+  );
+}

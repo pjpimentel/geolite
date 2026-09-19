@@ -199,6 +199,30 @@ fn _00_02_a_street_keeps_the_post_code_of_its_way_and_its_label_ends_with_it() {
   assert!(with_post_code.len() > 100, "{REGENERATE}");
 }
 
+// 00.03. the rows: every row comes from exactly one way or one relation, and its id packs that
+// origin
+#[test]
+#[ignore]
+fn _00_03_every_row_carries_one_origin_packed_in_its_id() {
+  let conn = world().open_sqlite();
+  for (sql, broken) in [
+    (
+      "SELECT COUNT(*) FROM admin_levels WHERE (relation_id IS NULL) = (way_id IS NULL)",
+      "rows with no origin or with two",
+    ),
+    (
+      "SELECT COUNT(*) FROM admin_levels \
+       WHERE id != COALESCE(relation_id, way_id) * 2 + (relation_id IS NOT NULL)",
+      "rows whose id does not pack their origin",
+    ),
+  ] {
+    let count: i64 = conn
+      .query_row(sql, [], |r| r.get(0))
+      .expect("failed to count");
+    assert_eq!(count, 0, "{broken}");
+  }
+}
+
 // 01.00. chains: the country is the root, and every state hangs from it alone
 #[test]
 #[ignore]

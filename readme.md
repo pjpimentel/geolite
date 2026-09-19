@@ -34,15 +34,19 @@ $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
 
 ## docs
 
-1. source code modules
+1. [source code modules](src/readme.md)
     1. [database](src/database/readme.md)
-    1. [osm-pbf-file](src/domain/readme.md#osm_pbf_file)
-    1. [admin-level](src/domain/readme.md#admin_level)
-    1. [admin-level-hierarchy](src/domain/readme.md#admin_level_hierarchy)
-    1. [house-number](src/domain/readme.md#house_number)
-    1. [address](src/domain/readme.md#address)
-    1. [cli](src/cli/)
-    1. [http](src/http/readme.md)
+    1. [osm-pbf-file](src/osm_pbf_file/readme.md)
+    1. [osm-tag](src/osm_tag/readme.md)
+    1. [osm-node](src/osm_node/readme.md)
+    1. [osm-way](src/osm_way/readme.md)
+    1. [osm-relation](src/osm_relation/readme.md)
+    1. [admin-level](src/admin_level/readme.md)
+    1. [admin-level-hierarchy](src/admin_level_hierarchy/readme.md)
+    1. [house-number](src/house_number/readme.md)
+    1. [address](src/address/readme.md)
+    1. [cli](src/interfaces/cli/)
+    1. [http](src/interfaces/http/readme.md)
 1. [docker images](#docker-images)
     1. [base image](#base-image)
     1. [pre-built images](#pre-built-images)
