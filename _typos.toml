@@ -1,6 +1,3 @@
-[files]
-extend-exclude = ["tasks.md"]
-
 [default.extend-words]
 # portuguese words flagged as english misspellings
 algoritmos = "algoritmos"
@@ -42,6 +39,9 @@ cll = "cll"
 
 # typos splits on digits, so `flate2` crate name becomes `flate` + `2`
 flate = "flate"
+
+# crate name a planned changelog item cites
+ratatui = "ratatui"
 
 # test fixture token
 seh = "seh"
