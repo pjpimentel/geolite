@@ -604,7 +604,7 @@ fn _00_12_each_label_of_a_street_answers_a_point_inside_its_own_neighbourhood() 
       .expect("failed to read the neighbourhood");
     assert!(
       decode_wkb(&blob).contains(&Point::new(longitude, latitude)),
-      "{query:?} answers ({latitude}, {longitude}), outside its neighbourhood"
+      "{query:?} answers outside its neighbourhood"
     );
   }
 }
