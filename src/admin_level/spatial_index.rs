@@ -352,6 +352,7 @@ pub fn nearest(conn: &Connection, point: Point<f64>, envelope: bounding_box) -> 
     b.level
       .cmp(&a.level)
       .then(a.distance_in_meters.cmp(&b.distance_in_meters))
+      .then(a.id.cmp(&b.id))
   });
   candidates
 }

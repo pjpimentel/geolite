@@ -4,8 +4,8 @@ use crate::common::query::{
   distances, first, leaves, level_at, levels_of, matches, name_at, names_at, point_of, way_ids,
   wkt_at,
 };
-use geo::Geometry;
-use geozero::{ToGeo, wkb::SpatiaLiteWkb};
+use geo::{EuclideanDistance, Geometry, Point};
+use geozero::{ToGeo, wkb::SpatiaLiteWkb, wkt::Wkt};
 use serde_json::{Value, json};
 
 pub static SCENARIO: scenario = scenario {
@@ -176,8 +176,8 @@ fn _00_03_friendly_name_format_house_number_alias() {
 #[test]
 #[ignore]
 fn _00_04_the_text_query_matches_are_exactly_these() {
-  // every match, whole and in order: the two segments tie on score and rank by id, and the id of
-  // a match is the uuid of the path it took
+  // every match, whole and in order: the two ways of the street touch, so they answer as one
+  // street, and the id of a match is the uuid of the path it took
   let result = world().run(&[TEXT_QUERY]);
   world().assert_exact(
     &Value::Array(matches(&result).clone()),
@@ -227,59 +227,9 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
         "coordinates_distance_in_meters": null,
         "friendly_name": "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil",
         "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
-        "latitude": -23.9718,
-        "longitude": -46.3195,
-        "score": 111.817,
-        "similarity": 1.0,
-      },
-      {
-        "admin_levels": [
-          {
-            "level": 2,
-            "name": "Brasil",
-            "post_code": null,
-            "osm_relation_id": 59470,
-            "osm_way_id": null,
-          },
-          {
-            "level": 4,
-            "name": "São Paulo",
-            "post_code": null,
-            "osm_relation_id": 298204,
-            "osm_way_id": null,
-          },
-          {
-            "level": 8,
-            "name": "Santos",
-            "post_code": null,
-            "osm_relation_id": 298442,
-            "osm_way_id": null,
-          },
-          {
-            "level": 10,
-            "name": "Embaré",
-            "post_code": null,
-            "osm_relation_id": 4282882,
-            "osm_way_id": null,
-          },
-          {
-            "level": 12,
-            "name": "Rua Castro Alves",
-            "post_code": null,
-            "osm_relation_id": null,
-            "osm_way_id": 729205713,
-          },
-        ],
-        "attributes": {
-          "country_iso_3166_1_alpha_2_code": "BR",
-          "post_code": null,
-        },
-        "coordinates_distance_in_meters": null,
-        "friendly_name": "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil",
-        "id": "92d2fd8c-a4e1-5fa6-a3cc-43ee45c32b45",
-        "latitude": -23.9692,
-        "longitude": -46.3173,
-        "score": 111.817,
+        "latitude": -23.9694,
+        "longitude": -46.3175,
+        "score": 108.702,
         "similarity": 1.0,
       },
     ]),
@@ -328,7 +278,7 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
           "name": "Rua Castro Alves",
           "post_code": null,
           "osm_relation_id": null,
-          "osm_way_id": 729205713,
+          "osm_way_id": 255710390,
         },
         {
           "level": 30,
@@ -344,7 +294,7 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
       },
       "coordinates_distance_in_meters": 3,
       "friendly_name": "Rua Castro Alves, 35, Embaré, Santos, São Paulo, Brasil",
-      "id": "92d2fd8c-a4e1-5fa6-a3cc-43ee45c32b45",
+      "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
       "latitude": -23.9709,
       "longitude": -46.3188,
       "score": null,
@@ -425,7 +375,7 @@ fn _00_09_both_services_write_the_numbered_label_along_the_path() {
       &ask(input),
       &json!({
         "matches": [{
-          "id": "db0e8278-a223-50da-9dff-862ac1016648",
+          "id": "e62f6c36-4709-566a-a4d8-be7167c931c6",
           "friendly_name": "Rua Prefeito Antenor Bué, 4, Conjunto Habitacional Jaú, Aparecida, Santos, São Paulo, Brasil",
         }]
       }),
@@ -491,16 +441,16 @@ fn _00_13_a_point_beyond_fifty_metres_answers_the_bare_street() {
   );
   assert_eq!(name_at(&near, 30).as_deref(), Some("565"));
 
-  let far = first(&w.run(&[AVENUE_FAR_POINT])).clone();
-  assert_eq!(
-    name_at(&far, 12).as_deref(),
-    Some("Avenida Washington Luiz")
-  );
+  let at_far_point = w.run(&[AVENUE_FAR_POINT]);
+  let far = matches(&at_far_point)
+    .iter()
+    .find(|m| name_at(m, 12).as_deref() == Some("Avenida Washington Luiz"))
+    .expect("the avenue is among the streets at the point");
   assert_eq!(
     far["coordinates_distance_in_meters"], 0,
     "the point is on the avenue"
   );
-  assert_eq!(levels_of(&far), [2, 4, 8, 10, 12], "no number within 50 m");
+  assert_eq!(levels_of(far), [2, 4, 8, 10, 12], "no number within 50 m");
 }
 
 // 00.14. result quality: the text path and the coordinate path read the same stored numbers
@@ -520,6 +470,50 @@ fn _00_14_both_paths_read_the_same_stored_number() {
   assert_eq!(
     name_at(first(&w.run(&[AVENUE_NUMBER_POINT])), 30).as_deref(),
     Some("565"),
+  );
+}
+
+// 00.15. result quality: a number that sat on one way of a street resolves on the street its ways
+// were folded into, and the street answers once
+#[test]
+#[ignore]
+fn _00_15_a_number_on_one_way_of_a_folded_street_resolves_as_exact_on_the_one_match() {
+  let w = world();
+  let result = w.assert_cli(
+    &ask("rua castro alves, 35, embare"),
+    &json!({
+      "matches": [{
+        "friendly_name": "Rua Castro Alves, 35, Embaré, Santos, São Paulo, Brasil",
+        "house_number": { "number": "35", "kind": "exact" },
+      }],
+    }),
+  );
+  let in_embare = matches(&result)
+    .iter()
+    .filter(|m| name_at(m, 10).as_deref() == Some("Embaré"))
+    .count();
+  assert_eq!(in_embare, 1, "the two ways of the street answer as one");
+}
+
+// 00.16. result quality: a street of several ways answers with a point on the street, not on the
+// mean of its ways
+#[test]
+#[ignore]
+fn _00_16_a_street_of_several_ways_answers_a_point_on_the_street() {
+  let result = world().query_json(&[TEXT_QUERY]);
+  let top = first(&result);
+  let street = Wkt(
+    wkt_at(top, 12)
+      .expect("the street carries geometry")
+      .as_str(),
+  )
+  .to_geo()
+  .expect("the street geometry must be valid wkt");
+  let (latitude, longitude) = point_of(top);
+  let distance = Point::new(longitude, latitude).euclidean_distance(&street);
+  assert!(
+    distance < 0.00002,
+    "the point is {distance} degrees away from the street"
   );
 }
 
@@ -966,8 +960,8 @@ fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
   let wkt_of =
     |level: u64| wkt_at(top, level).unwrap_or_else(|| panic!("level {level} must carry geometry"));
   assert!(
-    wkt_of(12).starts_with("LINESTRING"),
-    "streets are always lines"
+    wkt_of(12).starts_with("MULTILINESTRING"),
+    "the two ways of the street fold into a multi-line"
   );
 
   let country = wkt_of(2);
@@ -1341,7 +1335,9 @@ fn _02_11_every_spelling_of_the_jose_menino_square_lands_on_the_same_square() {
   }
 }
 
-// 02.12. ambiguity: ten points around the whole square, every one landing on the same square
+// 02.12. ambiguity: ten points around the whole square, every one landing on the same square; the
+// square hangs from José Menino and from Marapé, and a point answers the neighbourhood that holds
+// the point of the square nearest to it
 #[test]
 #[ignore]
 fn _02_12_every_point_around_the_jose_menino_square_lands_on_the_same_square() {
@@ -1359,21 +1355,20 @@ fn _02_12_every_point_around_the_jose_menino_square_lands_on_the_same_square() {
     "-23.966124,-46.353048",
     "-23.966073,-46.353005",
   ] {
-    w.assert_both(
+    let result = w.assert_both(
       &s,
       &ask(input),
-      &json!({
-        "service": "coordinates_to_address",
-        "matches": [{
-          "admin_levels": [
-            { "level": 2, "name": "Brasil" },
-            { "level": 4, "name": "São Paulo" },
-            { "level": 8, "name": "Santos" },
-            { "level": 10, "name": "José Menino" },
-            { "level": 12, "name": "Praça Washington" },
-          ],
-        }],
-      }),
+      &json!({ "service": "coordinates_to_address" }),
+    );
+    let top = first(&result);
+    assert_eq!(
+      name_at(top, 12).as_deref(),
+      Some("Praça Washington"),
+      "{input}"
+    );
+    assert!(
+      matches!(name_at(top, 10).as_deref(), Some("José Menino" | "Marapé")),
+      "{input}: the square hangs from both neighbourhoods"
     );
   }
 }

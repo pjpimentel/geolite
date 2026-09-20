@@ -58,6 +58,10 @@ mean "no number" (`drop_values`); the preset is where a region fills it in.
 tile, `by_proximity` otherwise — and `code()` pins the two to the `0` and `1` the column stores;
 nothing reads the column back yet, so there is no reading of the code.
 
+the link is not final: `optimize merge-admin-levels` moves the numbers of a way it folds into
+another street to the street that survives (`repository::repoint_streets`), before the way's row
+goes.
+
 ## the number in the query — `token`
 
 `first_house_number` walks the query's tokens and returns the first one that `recognize` accepts

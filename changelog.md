@@ -10,6 +10,12 @@
 1. ADDED e2e scenarios for the degraded paths the real pipeline never produces, so warning and carrying on is guarded by the battery that stays.
 1. REMOVED the unit tests the e2e battery now covers: the merge, the http helpers and the wkt parse.
 1. MODIFIED the pre-merge checks into a lint job beside the coverage one, so the check pass and the build pass run in parallel instead of one after the other.
+1. ADDED `optimize merge-admin-levels`, which folds the ways of one street (same name, a shared area, touching or within 20 m) into one row, so a street answers once under each area it runs through and its house numbers sit on one row.
+1. MODIFIED `build` and `geolite merge` to run it between the hierarchy and the search indexes, so the two indexes are built over the rows that stay. `geolite index` alone still does not merge.
+1. MODIFIED the resolver to ask a street folded from several ways one line at a time, so resolving it again writes the edges folding wrote.
+1. MODIFIED the coordinate service to answer a street only under the areas that hold its nearest point, and to rank two streets at the same distance by id, so a street that runs through many areas does not answer once per area.
+1. MODIFIED the text service to answer a street without a number with a point of the street: the one nearest its centroid, or nearest the centre of the area of each path when the street runs through several, so each label answers inside its own area.
+1. MODIFIED the `wkt` of a street folded from several ways to a multi-line.
 
 ## **2026-09-19** - 0.0.12
 

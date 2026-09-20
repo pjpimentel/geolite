@@ -49,7 +49,9 @@ low bit set for relations: a way and a relation that share an osm id stay distin
 pure function of the source and never an insert-order rowid, and `osm_id()` and `kind()` read it
 back. the row carries it from the stage that builds it (`from_way` or `from_relation`), so a row
 without an origin cannot be built; `batch_upsert` writes the `relation_id`/`way_id` columns back
-from `kind()` and `osm_id()`.
+from `kind()` and `osm_id()`. a street folded from several ways (`optimize merge-admin-levels`, in
+`admin_level_hierarchy`) keeps the id of the smallest of them and its `way_id`, and the others are
+gone.
 
 ## the shape — `geometry`
 
@@ -63,6 +65,9 @@ persistence imported it, and a repository importing from the query layer is the 
 `bounding_geometry` is the region of `--bounding-wkt` and of the http `bounding_wkt`: the polygon
 for the exact test and its `bounding_box` for the rtree. `parse_bounding_wkt` is its one parse,
 the cli `value_parser` and the http check alike, and it takes only a polygon or a multipolygon.
+`mbr_of` reads the box of a blob without decoding it. `nearby_pairs` finds which lines touch or come
+within a reach of each other, and `fold_lines` puts lines in one geometry without repeating one it
+already has: the two pieces of the street merge.
 
 ## the rtree — `spatial_index`
 
@@ -77,9 +82,10 @@ the calling thread, because `conn.path()` is empty for it and a worker could not
 the rtree's two reads live here too. `nearest(conn, point, envelope)` is what the coordinate
 service asks: the rtree narrows the streets to a window of 0.1° around the point inside the
 envelope, each candidate's closest point is measured on the ground, and the answer comes most
-specific level first, closest first within a level; a street whose blob is missing, is not a
-line, or is empty is dropped, and the debug output counts why. `ids_in_bounding_box` is the region
-filter of the text search. neither `address` nor `repository` writes sql over the rtree any more.
+specific level first, closest first within a level, and by id when two are at the same distance; a
+street whose blob is missing, is not a line, or is empty is dropped, and the debug output counts
+why. `ids_in_bounding_box` is the region filter of the text search. neither `address` nor
+`repository` writes sql over the rtree any more.
 
 ## the extraction — `extract`
 
@@ -109,7 +115,7 @@ each stage reads its candidates through the element repositories (`osm_relation:
 the member ways of each relation into rings (`geometry::assemble_rings`), closes each ring that
 comes back to its start into a polygon wound clockwise, the way spatialite's `st_buildarea` does,
 and falls back to a multi-line when nothing closes; a place way closes into one polygon by the same
-rule; a street is always a line, even when the way is a ring.
+rule; a street is a line, even when the way is a ring, and a multi-line once its ways are folded.
 
 ## the rules — `rules`
 

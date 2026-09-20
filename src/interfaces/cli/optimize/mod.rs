@@ -1,4 +1,5 @@
 pub mod delete_intermediary_data;
+pub mod merge_admin_levels;
 pub mod sqlite_file;
 
 use clap::Subcommand;
@@ -9,6 +10,8 @@ pub enum optimize_commands {
   delete_intermediary_data,
   #[command(name = "sqlite-file")]
   sqlite_file { pbf_or_sqlite: String },
+  #[command(name = "merge-admin-levels")]
+  merge_admin_levels,
 }
 
 fn file_size(path: &str) -> u64 {
@@ -91,6 +94,13 @@ pub fn command_handler_optimize(
     }
     Some(optimize_commands::sqlite_file { .. }) => {
       sqlite_file::command_handler_optimize_sqlite_file(sqlite_path)
+    }
+    Some(optimize_commands::merge_admin_levels) => {
+      if merge_admin_levels::command_handler_optimize_merge_admin_levels(sqlite_path, index_path) {
+        println!(
+          "\x1b[1;33mnext\x1b[0m run `geolite index user-friendly-name` and `geolite index coordinates`"
+        );
+      }
     }
   }
   println!();

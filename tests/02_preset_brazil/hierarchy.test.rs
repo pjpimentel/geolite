@@ -13,7 +13,7 @@ const EMBARE: i64 = 8_565_765;
 const BOQUEIRAO: i64 = 8_565_761;
 const JOSE_MENINO: i64 = 8_565_771;
 const MARAPE: i64 = 8_565_773;
-const STREETS: i64 = 12_878;
+const STREETS: i64 = 7_195;
 const STATES: usize = 27;
 const PLACE_WAYS: usize = 22;
 
@@ -120,22 +120,29 @@ fn street_way_of(m: &serde_json::Value) -> u64 {
     .unwrap_or_else(|| panic!("the top match must be a street: {m}"))
 }
 
-// 00.00. the rows: a street is always a line, even when the way closes on itself
+// 00.00. the rows: a street is a line, or a fold of lines, even when the way closes on itself
 #[test]
 #[ignore]
-fn _00_00_every_street_is_a_line_even_when_the_way_is_a_ring() {
+fn _00_00_every_street_is_a_line_or_a_fold_of_lines_even_when_the_way_is_a_ring() {
   let conn = world().open_sqlite();
   let streets = ids_where(&conn, "SELECT id FROM admin_levels WHERE admin_level = 12");
   assert_eq!(streets.len() as i64, STREETS, "{REGENERATE}");
   for id in &streets {
     assert!(
-      matches!(geometry_of(&conn, *id), Geometry::LineString(_)),
+      matches!(
+        geometry_of(&conn, *id),
+        Geometry::LineString(_) | Geometry::MultiLineString(_)
+      ),
       "street {id} is not a line"
     );
   }
   match geometry_of(&conn, way(92_741_038)) {
-    Geometry::LineString(ring) => {
-      assert_eq!(ring.0.len(), 31, "{REGENERATE}");
+    Geometry::MultiLineString(lines) => {
+      let ring = lines
+        .0
+        .iter()
+        .find(|line| line.0.len() == 31)
+        .unwrap_or_else(|| panic!("the ring of Praça da Paz is one of the lines; {REGENERATE}"));
       assert_eq!(
         ring.0.first(),
         ring.0.last(),
@@ -337,14 +344,14 @@ fn _01_05_neighbourhoods_from_relations_and_from_ways_resolve_alike() {
   assert_eq!(paths_of(&conn, way(1_223_042_714)), under_santos);
 }
 
-// 02.00. search: the ancestry is indexed with the name, and tells homonym streets apart; the two
-// segments of each street tie on score and the lower id wins
+// 02.00. search: the ancestry is indexed with the name, and tells homonym streets apart; a street
+// that crosses two neighbourhoods answers once under each of them
 #[test]
 #[ignore]
 fn _02_00_the_ancestry_tells_homonym_streets_apart() {
   for (query, neighbourhood, way) in [
     ("rua bento de abreu boqueirao", "Boqueirão", 255_734_641),
-    ("rua bento de abreu embare", "Embaré", 485_448_287),
+    ("rua bento de abreu embare", "Embaré", 255_734_641),
   ] {
     let result = world().run(&[query]);
     let top = first(&result);
@@ -376,7 +383,7 @@ fn _03_00_a_street_along_a_shared_boundary_hangs_from_both_neighbourhoods() {
   let conn = world().open_sqlite();
 
   assert_eq!(
-    paths_of(&conn, way(368_068_238)),
+    paths_of(&conn, way(316_743_190)),
     vec![
       vec![JOSE_MENINO, SANTOS, SAO_PAULO, BRASIL],
       vec![MARAPE, SANTOS, SAO_PAULO, BRASIL]
@@ -391,7 +398,7 @@ fn _03_00_a_street_along_a_shared_boundary_hangs_from_both_neighbourhoods() {
 fn _03_01_a_street_crossing_two_neighbourhoods_answers_one_match_per_path() {
   let conn = world().open_sqlite();
   assert_eq!(
-    paths_of(&conn, way(883_674_521)),
+    paths_of(&conn, way(255_734_641)),
     vec![
       vec![BOQUEIRAO, SANTOS, SAO_PAULO, BRASIL],
       vec![EMBARE, SANTOS, SAO_PAULO, BRASIL]
@@ -402,7 +409,7 @@ fn _03_01_a_street_crossing_two_neighbourhoods_answers_one_match_per_path() {
   let answers = world().run(&["rua bento de abreu"]);
   let crossing: Vec<&serde_json::Value> = matches(&answers)
     .iter()
-    .filter(|m| street_way_of(m) == 883_674_521)
+    .filter(|m| street_way_of(m) == 255_734_641)
     .collect();
   assert_eq!(crossing.len(), 2, "one match per path");
   let neighbourhoods: Vec<Option<String>> = crossing.iter().map(|m| name_at(m, 10)).collect();

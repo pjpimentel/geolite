@@ -1,5 +1,5 @@
 use crate::database::table;
-use crate::interfaces::cli::index::command_handler_index;
+use crate::interfaces::cli::index::command_handler_index_and_merge;
 
 fn require_compatible_version(label: &str, path: &str) {
   let version = crate::database::read_user_version(path);
@@ -69,7 +69,7 @@ pub fn command_handler_merge(
   // step clears and rebuilds from scratch, so no stale rows survive the merge.
   println!();
   println!("\x1b[2m── index\x1b[0m");
-  command_handler_index(base, index_path, None, &preset.index_user_friendly_name);
+  command_handler_index_and_merge(base, index_path, &preset.index_user_friendly_name);
 
   // compact the resulting file (ANALYZE / PRAGMA optimize / wal_checkpoint / VACUUM).
   println!();

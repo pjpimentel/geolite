@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use geo::Centroid;
+use geo::{Centroid, Closest, ClosestPoint, Geometry, Point};
 use rusqlite::Connection;
 
 use super::entity::{
@@ -54,7 +54,8 @@ pub(super) fn run(
   let mut ids: Vec<i64> = hits.iter().map(|hit| hit.admin_level_id).collect();
   ids.sort_unstable();
   ids.dedup();
-  let sources = match_sources::load(conn, &ids, opts.include_wkt);
+  let mut sources = match_sources::load(conn, &ids, opts.include_wkt);
+  sources.load_leaf_boxes(conn);
   let records = crate::admin_level::repository::load_full_by_ids(conn, &ids);
   let record_map: HashMap<i64, &admin_area_row> = records.iter().map(|r| (r.id, r)).collect();
   let streets: Vec<(i64, &str)> = records
@@ -103,6 +104,26 @@ pub(super) fn run(
   }
 }
 
+fn resting_point(
+  record: &admin_area_row,
+  geometry: &Geometry<f64>,
+  sources: &match_sources,
+  path: &[i64],
+) -> Option<Point<f64>> {
+  let centroid = geometry.centroid()?;
+  if record.admin_level != level::street {
+    return Some(centroid);
+  }
+  let toward = match (sources.paths_of(record.id).len() > 1, path.first()) {
+    (true, Some(&leaf)) => sources.center_of(leaf).unwrap_or(centroid),
+    _ => centroid,
+  };
+  match geometry.closest_point(&toward) {
+    Closest::SinglePoint(point) | Closest::Intersection(point) => Some(point),
+    Closest::Indeterminate => Some(centroid),
+  }
+}
+
 fn build_match(
   record: &admin_area_row,
   sources: &match_sources,
@@ -113,7 +134,7 @@ fn build_match(
   opts: &query_opts,
 ) -> Option<query_match> {
   let geom = record.wkb.as_ref()?.geometry();
-  let centroid = geom.centroid()?;
+  let centroid = resting_point(record, geom, sources, path)?;
   let placed = number.and_then(resolved_number::placed);
   let placed_number = placed.map(|(n, _)| n);
   let point = placed.map_or(centroid, |(_, p)| p);

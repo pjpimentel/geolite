@@ -1,10 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
+use geo::Point;
 use rusqlite::Connection;
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use super::label;
+use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::level;
 use crate::admin_level::repository::admin_meta_row;
 use crate::admin_level_hierarchy::paths::paths_of;
@@ -98,6 +100,7 @@ pub(super) struct match_sources {
   paths: HashMap<i64, Vec<Vec<i64>>>,
   pub(super) meta: HashMap<i64, admin_meta_row>,
   wkt: HashMap<i64, String>,
+  boxes: HashMap<i64, bounding_box>,
 }
 
 impl match_sources {
@@ -116,7 +119,32 @@ impl match_sources {
     } else {
       HashMap::new()
     };
-    match_sources { paths, meta, wkt }
+    match_sources {
+      paths,
+      meta,
+      wkt,
+      boxes: HashMap::new(),
+    }
+  }
+
+  pub(super) fn load_leaf_boxes(&mut self, conn: &Connection) {
+    let leaves: BTreeSet<i64> = self
+      .paths
+      .values()
+      .filter(|paths| paths.len() > 1)
+      .flatten()
+      .filter_map(|path| path.first().copied())
+      .collect();
+    let leaves: Vec<i64> = leaves.into_iter().collect();
+    self.boxes = crate::admin_level::repository::boxes_by_ids(conn, &leaves);
+  }
+
+  pub(super) fn center_of(&self, id: i64) -> Option<Point<f64>> {
+    self.boxes.get(&id).map(bounding_box::center)
+  }
+
+  pub(super) fn box_covers(&self, id: i64, point: &Point<f64>) -> bool {
+    self.boxes.get(&id).is_some_and(|mbr| mbr.covers(point))
   }
 
   // an area the hierarchy does not know still answers one match, with an empty path

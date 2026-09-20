@@ -1,0 +1,668 @@
+use std::collections::HashMap;
+use std::path::Path;
+
+use crate::admin_level::{admin_levels_at, index_at};
+use crate::common::harness::{decode_wkb, output, plain, query_at, world};
+use crate::common::query::{level_at, matches, name_at, point_of};
+use crate::extract::{REGENERATE, count, extracted, scratch, stage};
+use crate::general::world;
+use geo::{Contains, Geometry, LineString, Point};
+
+const LOWER_WAY: u64 = 255_710_390;
+const UPPER_WAY: u64 = 729_205_713;
+const APART_WAYS: [u64; 2] = [169_924_327, 489_092_642];
+const EUCLIDES_CROSSING: u64 = 38_791_238;
+const EUCLIDES_ACROSS_THE_GAP: u64 = 482_330_396;
+const SAO_PAULO: i64 = 596_409;
+const GUARUJA: i64 = 596_927;
+const EMBARE: i64 = 8_565_765;
+const GONZAGA: i64 = 8_565_769;
+const JOSE_MENINO: i64 = 8_565_771;
+const STREETS: i64 = 12_878;
+const STREETS_AFTER: i64 = 7_195;
+const PIECES: i64 = 1_984;
+const NUMBERS_MOVED: usize = 261;
+const TEXT_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
+const EUCLIDES_GONZAGA_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
+const EUCLIDES_JOSE_MENINO_QUERY: &str = "rua euclides da cunha, jose menino, santos, sao paulo";
+
+fn way(osm_id: u64) -> i64 {
+  (osm_id << 1) as i64
+}
+
+fn merged_at(w: &world, dir: &Path) -> output {
+  stage(
+    w,
+    dir,
+    &["--preset", "brazil", "optimize", "merge-admin-levels"],
+  )
+}
+
+pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
+  index_at(w, dir, &["admin-levels-hierarchy"]);
+  merged_at(w, dir);
+  index_at(w, dir, &["user-friendly-name"]);
+  index_at(w, dir, &["coordinates"]);
+}
+
+// the streets and the house numbers of a scratch, the hierarchy resolved and nothing merged yet
+fn resolved(w: &world, name: &str) -> scratch {
+  let s = extracted(w, name, "2", &[]);
+  admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
+  stage(
+    w,
+    &s.dir,
+    &["--preset", "brazil", "extract", "osm-house-numbers"],
+  );
+  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  s
+}
+
+fn lines_of(conn: &rusqlite::Connection, id: i64) -> Vec<LineString<f64>> {
+  let wkb: Vec<u8> = conn
+    .query_row("SELECT wkb FROM admin_levels WHERE id = ?1", [id], |r| {
+      r.get(0)
+    })
+    .unwrap_or_else(|e| panic!("no admin_levels row {id}: {e}"));
+  match decode_wkb(&wkb) {
+    Geometry::LineString(line) => vec![line],
+    Geometry::MultiLineString(lines) => lines.0,
+    other => panic!("street {id} is not a line: {other:?}"),
+  }
+}
+
+fn parents_of(conn: &rusqlite::Connection, id: i64) -> Vec<i64> {
+  conn
+    .prepare(
+      "SELECT parent_id FROM admin_levels_hierarchy \
+       WHERE admin_level_id = ?1 AND parent_id IS NOT NULL ORDER BY parent_id",
+    )
+    .expect("failed to prepare")
+    .query_map([id], |r| r.get(0))
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read a parent id"))
+    .collect()
+}
+
+fn street_of_each_number(conn: &rusqlite::Connection) -> Vec<(i64, i64)> {
+  conn
+    .prepare("SELECT node_id, admin_level_id FROM house_numbers ORDER BY node_id")
+    .expect("failed to prepare")
+    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read a house number"))
+    .collect()
+}
+
+// what the merge may change, as three strings: the rows, their edges and the street of each number
+fn snapshot(conn: &rusqlite::Connection) -> (String, String, String) {
+  let read = |sql: &str| -> String {
+    conn
+      .query_row(sql, [], |r| r.get::<_, Option<String>>(0))
+      .expect("failed to read the snapshot")
+      .unwrap_or_default()
+  };
+  (
+    read(
+      "SELECT GROUP_CONCAT(id || ':' || LENGTH(wkb)) FROM \
+       (SELECT id, wkb FROM admin_levels ORDER BY id)",
+    ),
+    read(
+      "SELECT GROUP_CONCAT(admin_level_id || '>' || COALESCE(parent_id, '')) FROM \
+       (SELECT admin_level_id, parent_id FROM admin_levels_hierarchy ORDER BY admin_level_id, parent_id)",
+    ),
+    read(
+      "SELECT GROUP_CONCAT(node_id || ':' || admin_level_id) FROM \
+       (SELECT node_id, admin_level_id FROM house_numbers ORDER BY node_id)",
+    ),
+  )
+}
+
+fn set_post_codes(dir: &Path, codes: [(u64, Option<&str>); 2]) {
+  let conn = rusqlite::Connection::open(dir.join("database.sqlite3"))
+    .expect("failed to open the scratch database for writing");
+  for (osm_id, code) in codes {
+    let changed = conn
+      .execute(
+        "UPDATE admin_levels SET post_code = ?2 WHERE id = ?1",
+        rusqlite::params![way(osm_id), code],
+      )
+      .expect("failed to write the post code");
+    assert_eq!(changed, 1, "{REGENERATE}");
+  }
+}
+
+// 00.00. ways that touch fold into the one with the smallest id, keeping the lines of both
+#[test]
+#[ignore]
+fn _00_00_ways_that_touch_fold_into_the_smallest_id() {
+  let w = world();
+  let s = resolved(w, "street_merge_fold");
+  let (lower, upper) = {
+    let conn = s.ledger();
+    (
+      lines_of(&conn, way(LOWER_WAY)),
+      lines_of(&conn, way(UPPER_WAY)),
+    )
+  };
+
+  let stdout = plain(&merged_at(w, &s.dir).stdout);
+  let summary = format!(
+    "merged {} street ways into {PIECES} streets in",
+    STREETS - STREETS_AFTER + PIECES
+  );
+  assert!(stdout.contains(&summary), "{REGENERATE}:\n{stdout}");
+
+  let conn = s.ledger();
+  assert_eq!(
+    count(
+      &conn,
+      &format!(
+        "SELECT COUNT(*) FROM admin_levels WHERE id = {}",
+        way(UPPER_WAY)
+      )
+    ),
+    0,
+    "the way with the larger id is absorbed"
+  );
+  let survivor_way: i64 = conn
+    .query_row(
+      "SELECT way_id FROM admin_levels WHERE id = ?1",
+      [way(LOWER_WAY)],
+      |r| r.get(0),
+    )
+    .expect("failed to read the way of the street");
+  assert_eq!(survivor_way, LOWER_WAY as i64);
+  assert_eq!(
+    lines_of(&conn, way(LOWER_WAY)),
+    [lower, upper].concat(),
+    "the street keeps the lines of both ways, the smallest id first"
+  );
+  assert_eq!(
+    count(
+      &conn,
+      "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 12"
+    ),
+    STREETS_AFTER,
+    "{REGENERATE}"
+  );
+}
+
+// 00.01. ways farther apart than the reach stay apart, under the same name and the same chain
+#[test]
+#[ignore]
+fn _00_01_ways_farther_apart_than_the_reach_stay_apart() {
+  let w = world();
+  let s = resolved(w, "street_merge_apart");
+  let before: Vec<Vec<LineString<f64>>> = APART_WAYS
+    .iter()
+    .map(|&osm_id| lines_of(&s.ledger(), way(osm_id)))
+    .collect();
+
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  for (osm_id, lines) in APART_WAYS.into_iter().zip(before) {
+    assert_eq!(
+      lines_of(&conn, way(osm_id)),
+      lines,
+      "way {osm_id} keeps its row; {REGENERATE}"
+    );
+  }
+}
+
+// 00.02. the same name under another chain stays apart
+#[test]
+#[ignore]
+fn _00_02_the_same_name_under_another_chain_stays_apart() {
+  let w = world();
+  let s = resolved(w, "street_merge_chains");
+  merged_at(w, &s.dir);
+
+  let per_parent: Vec<(i64, i64)> = s
+    .ledger()
+    .prepare(
+      "SELECT h.parent_id, COUNT(*) FROM admin_levels_hierarchy h \
+       JOIN admin_levels a ON a.id = h.admin_level_id \
+       WHERE a.name = 'Rua Castro Alves' GROUP BY h.parent_id ORDER BY h.parent_id",
+    )
+    .expect("failed to prepare")
+    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read a count"))
+    .collect();
+  assert_eq!(
+    per_parent,
+    vec![(SAO_PAULO, 2), (GUARUJA, 1), (EMBARE, 1)],
+    "{REGENERATE}"
+  );
+}
+
+// 00.03. the chain of a folded street is the chain its ways had, and the tables stay consistent
+#[test]
+#[ignore]
+fn _00_03_a_folded_street_keeps_the_chain_of_its_ways() {
+  let w = world();
+  let s = resolved(w, "street_merge_chain_kept");
+  let (lower, upper) = {
+    let conn = s.ledger();
+    (
+      parents_of(&conn, way(LOWER_WAY)),
+      parents_of(&conn, way(UPPER_WAY)),
+    )
+  };
+  assert_eq!(lower, upper, "the two ways share their chain; {REGENERATE}");
+
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  assert_eq!(parents_of(&conn, way(LOWER_WAY)), lower);
+  assert_eq!(
+    count(&conn, "SELECT COUNT(*) FROM admin_levels"),
+    count(
+      &conn,
+      "SELECT COUNT(DISTINCT admin_level_id) FROM admin_levels_hierarchy"
+    ),
+    "every area keeps one hierarchy row at least, and no area that is gone keeps one"
+  );
+  assert_eq!(
+    count(&conn, "SELECT COUNT(*) FROM pragma_foreign_key_check"),
+    0,
+    "no edge and no number may point at a row that is gone"
+  );
+}
+
+// 00.04. the numbers of an absorbed way move to the street it was folded into
+#[test]
+#[ignore]
+fn _00_04_house_numbers_follow_the_street_they_were_folded_into() {
+  let w = world();
+  let s = resolved(w, "street_merge_numbers");
+  let (before, names): (Vec<(i64, i64)>, HashMap<i64, String>) = {
+    let conn = s.ledger();
+    let names = conn
+      .prepare("SELECT id, name FROM admin_levels WHERE admin_level = 12")
+      .expect("failed to prepare")
+      .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+      .expect("failed to query")
+      .map(|r| r.expect("failed to read a name"))
+      .collect();
+    (street_of_each_number(&conn), names)
+  };
+
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  let after = street_of_each_number(&conn);
+  assert_eq!(after.len(), before.len(), "no number is lost");
+  let moved: Vec<(i64, i64)> = before
+    .iter()
+    .zip(&after)
+    .filter(|(old, new)| old.1 != new.1)
+    .map(|(old, new)| (old.1, new.1))
+    .collect();
+  assert_eq!(moved.len(), NUMBERS_MOVED, "{REGENERATE}");
+  for (from, to) in moved {
+    assert_eq!(
+      names[&from], names[&to],
+      "a number stays on a street of its name"
+    );
+  }
+  assert_eq!(
+    count(
+      &conn,
+      &format!(
+        "SELECT COUNT(*) FROM house_numbers WHERE number = '35' AND admin_level_id = {}",
+        way(LOWER_WAY)
+      )
+    ),
+    1,
+    "number 35 was on the way that was absorbed"
+  );
+}
+
+// 00.05. a second run finds nothing to fold and leaves the indexes as they are
+#[test]
+#[ignore]
+fn _00_05_a_second_run_changes_nothing_and_keeps_the_indexes() {
+  let w = world();
+  let s = resolved(w, "street_merge_twice");
+  merged_at(w, &s.dir);
+  index_at(w, &s.dir, &["user-friendly-name"]);
+  index_at(w, &s.dir, &["coordinates"]);
+  let rtree = count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree");
+  let before = snapshot(&s.ledger());
+
+  let again = plain(&merged_at(w, &s.dir).stdout);
+
+  assert!(
+    again.contains("skipping merge-admin-levels — no street to merge"),
+    "{again}"
+  );
+  assert_eq!(snapshot(&s.ledger()), before);
+  assert!(s.dir.join("database.tantivy").is_dir());
+  assert_eq!(
+    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree"),
+    rtree
+  );
+}
+
+// 00.06. what it folds makes the two indexes after it stale: it clears them and says so
+#[test]
+#[ignore]
+fn _00_06_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
+  let w = world();
+  let s = resolved(w, "street_merge_clears");
+  index_at(w, &s.dir, &["user-friendly-name"]);
+  index_at(w, &s.dir, &["coordinates"]);
+  assert!(s.dir.join("database.tantivy").is_dir());
+
+  let out = merged_at(w, &s.dir);
+
+  assert!(
+    plain(&out.stdout)
+      .contains("next run `geolite index user-friendly-name` and `geolite index coordinates`"),
+    "{}",
+    out.stdout
+  );
+  assert!(!s.dir.join("database.tantivy").exists());
+  assert_eq!(
+    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree"),
+    0
+  );
+  let asked = w.geolite_in(
+    &s.dir,
+    &[
+      "--preset",
+      "brazil",
+      "query",
+      TEXT_QUERY,
+      "--include-wkt",
+      "false",
+    ],
+  );
+  assert_eq!(asked.status, 1);
+  assert!(
+    asked.stderr.contains("tantivy index not found"),
+    "{}",
+    asked.stderr
+  );
+
+  index_at(w, &s.dir, &["user-friendly-name"]);
+  index_at(w, &s.dir, &["coordinates"]);
+  let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
+  assert_eq!(matches(&result).len(), 1, "the street answers once");
+}
+
+// 00.07. the ledger counts what the table holds after the fold
+#[test]
+#[ignore]
+fn _00_07_the_ledger_follows_the_table_after_the_merge() {
+  let w = world();
+  let s = resolved(w, "street_merge_ledger");
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  let (admins, houses): (i64, i64) = conn
+    .query_row(
+      "SELECT admin_levels_count, house_numbers_count FROM osm_pbf_files",
+      [],
+      |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .expect("failed to read the ledger");
+  assert_eq!(
+    admins,
+    count(
+      &conn,
+      "SELECT COUNT(*) FROM admin_levels WHERE wkb IS NOT NULL"
+    )
+  );
+  assert_eq!(houses, count(&conn, "SELECT COUNT(*) FROM house_numbers"));
+}
+
+// 00.08. resolving the hierarchy again over the folded rows writes the same edges
+#[test]
+#[ignore]
+fn _00_08_resolving_the_hierarchy_again_keeps_the_edges_of_the_folded_streets() {
+  let w = world();
+  let s = resolved(w, "street_merge_rehierarchy");
+  merged_at(w, &s.dir);
+  let before = snapshot(&s.ledger());
+
+  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+
+  assert_eq!(snapshot(&s.ledger()), before);
+  let again = plain(&merged_at(w, &s.dir).stdout);
+  assert!(again.contains("skipping merge-admin-levels"), "{again}");
+}
+
+// 00.09. a way extracted again after the fold comes back as a row, and the next run absorbs it again
+#[test]
+#[ignore]
+fn _00_09_a_way_extracted_again_is_absorbed_again() {
+  let w = world();
+  let s = resolved(w, "street_merge_reextracted");
+  merged_at(w, &s.dir);
+  let before = snapshot(&s.ledger());
+
+  admin_levels_at(w, &s.dir, "12", &[]);
+  assert_eq!(
+    count(
+      &s.ledger(),
+      "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 12"
+    ),
+    STREETS,
+    "every absorbed way is a row again"
+  );
+
+  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  merged_at(w, &s.dir);
+
+  assert_eq!(snapshot(&s.ledger()), before);
+}
+
+// 00.10. ways that share a neighbourhood fold into one street that belongs to every neighbourhood
+// its ways were in, so each label answers once
+#[test]
+#[ignore]
+fn _00_10_ways_that_share_a_neighbourhood_fold_into_a_street_that_belongs_to_all_of_them() {
+  let w = world();
+  let s = resolved(w, "street_merge_labels");
+  assert_eq!(
+    parents_of(&s.ledger(), way(EUCLIDES_CROSSING)),
+    vec![GONZAGA],
+    "the way that carries the street in Gonzaga has only that parent; {REGENERATE}"
+  );
+
+  indexed_and_merged(w, &s.dir);
+
+  assert_eq!(
+    parents_of(&s.ledger(), way(EUCLIDES_CROSSING)),
+    vec![GONZAGA, JOSE_MENINO],
+    "the street belongs to every neighbourhood its ways were in"
+  );
+  let result = query_at(w, &s.dir, "brazil", EUCLIDES_GONZAGA_QUERY);
+  let in_gonzaga = matches(&result)
+    .iter()
+    .filter(|m| name_at(m, 12).as_deref() == Some("Rua Euclides da Cunha"))
+    .filter(|m| name_at(m, 10).as_deref() == Some("Gonzaga"))
+    .count();
+  assert_eq!(in_gonzaga, 1, "the label answers once");
+}
+
+// 00.11. a gap wider than the reach keeps two pieces: the two ends of the street across an avenue
+// with a median are 48 m apart
+#[test]
+#[ignore]
+fn _00_11_a_gap_wider_than_the_reach_keeps_two_pieces() {
+  let w = world();
+  let s = resolved(w, "street_merge_gap");
+
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  assert_eq!(
+    count(
+      &conn,
+      "SELECT COUNT(*) FROM admin_levels WHERE name = 'Rua Euclides da Cunha'"
+    ),
+    2,
+    "{REGENERATE}"
+  );
+  for osm_id in [EUCLIDES_CROSSING, EUCLIDES_ACROSS_THE_GAP] {
+    assert_eq!(
+      count(
+        &conn,
+        &format!(
+          "SELECT COUNT(*) FROM admin_levels WHERE id = {}",
+          way(osm_id)
+        )
+      ),
+      1,
+      "way {osm_id} survives as the street of its piece"
+    );
+  }
+}
+
+// 00.12. each label of a street across two neighbourhoods answers a point inside its own
+#[test]
+#[ignore]
+fn _00_12_each_label_of_a_street_answers_a_point_inside_its_own_neighbourhood() {
+  let w = world();
+  let s = resolved(w, "street_merge_label_points");
+  indexed_and_merged(w, &s.dir);
+  let conn = s.ledger();
+
+  for (query, neighbourhood) in [
+    (EUCLIDES_GONZAGA_QUERY, GONZAGA),
+    (EUCLIDES_JOSE_MENINO_QUERY, JOSE_MENINO),
+  ] {
+    let result = query_at(w, &s.dir, "brazil", query);
+    let across = matches(&result)
+      .iter()
+      .find(|m| {
+        level_at(m, 12).and_then(|street| street["osm_way_id"].as_u64()) == Some(EUCLIDES_CROSSING)
+      })
+      .unwrap_or_else(|| panic!("the street that crosses both answers {query:?}"));
+    let (latitude, longitude) = point_of(across);
+    let blob: Vec<u8> = conn
+      .query_row(
+        "SELECT wkb FROM admin_levels WHERE id = ?1",
+        [neighbourhood],
+        |r| r.get(0),
+      )
+      .expect("failed to read the neighbourhood");
+    assert!(
+      decode_wkb(&blob).contains(&Point::new(longitude, latitude)),
+      "{query:?} answers ({latitude}, {longitude}), outside its neighbourhood"
+    );
+  }
+}
+
+// 01.00. two different post codes are two streets
+#[test]
+#[ignore]
+fn _01_00_two_different_post_codes_keep_two_streets() {
+  let w = world();
+  let s = resolved(w, "street_merge_post_codes_differ");
+  set_post_codes(
+    &s.dir,
+    [
+      (LOWER_WAY, Some("11000-000")),
+      (UPPER_WAY, Some("11000-001")),
+    ],
+  );
+
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  for osm_id in [LOWER_WAY, UPPER_WAY] {
+    assert_eq!(
+      count(
+        &conn,
+        &format!(
+          "SELECT COUNT(*) FROM admin_levels WHERE id = {}",
+          way(osm_id)
+        )
+      ),
+      1,
+      "way {osm_id} keeps its row"
+    );
+  }
+}
+
+// 01.01. a missing post code does not split a street, and the code that exists survives
+#[test]
+#[ignore]
+fn _01_01_a_missing_post_code_does_not_split_a_street() {
+  let w = world();
+  let s = resolved(w, "street_merge_post_code_missing");
+  set_post_codes(&s.dir, [(LOWER_WAY, None), (UPPER_WAY, Some("11000-001"))]);
+
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  let code: Option<String> = conn
+    .query_row(
+      "SELECT post_code FROM admin_levels WHERE id = ?1",
+      [way(LOWER_WAY)],
+      |r| r.get(0),
+    )
+    .expect("failed to read the post code of the street");
+  assert_eq!(
+    code.as_deref(),
+    Some("11000-001"),
+    "the street takes the code of the way that had one"
+  );
+  assert_eq!(
+    count(
+      &conn,
+      &format!(
+        "SELECT COUNT(*) FROM admin_levels WHERE id = {}",
+        way(UPPER_WAY)
+      )
+    ),
+    0
+  );
+}
+
+// 02.00. it needs a resolved hierarchy: without one it says so and changes nothing
+#[test]
+#[ignore]
+fn _02_00_it_refuses_a_database_without_a_hierarchy() {
+  let w = world();
+  let s = extracted(w, "street_merge_no_hierarchy", "2", &[]);
+  admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
+
+  let out = merged_at(w, &s.dir);
+
+  assert!(
+    plain(&out.stderr).contains("admin_levels_hierarchy is missing or incomplete"),
+    "{}",
+    out.stderr
+  );
+  assert_eq!(
+    count(
+      &s.ledger(),
+      "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 12"
+    ),
+    STREETS,
+    "{REGENERATE}"
+  );
+}
+
+// 02.01. it needs rows to fold: without any it says so
+#[test]
+#[ignore]
+fn _02_01_it_refuses_an_empty_database() {
+  let w = world();
+  let s = extracted(w, "street_merge_empty", "2", &[]);
+
+  let out = merged_at(w, &s.dir);
+
+  assert!(
+    plain(&out.stderr).contains("admin_levels is empty"),
+    "{}",
+    out.stderr
+  );
+}

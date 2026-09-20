@@ -3,6 +3,7 @@ pub mod paths;
 pub mod repository;
 pub mod resolver;
 pub mod search_index;
+pub mod street_merge;
 
 #[cfg(test)]
 #[path = "fixtures.test.rs"]

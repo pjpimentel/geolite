@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use crate::common::harness::{output, query_at, world};
 use crate::extract::{REGENERATE, extracted, stage};
 use crate::general::world;
+use crate::street_merge::indexed_and_merged;
 
 const TEXT_QUERY: &str = "rua januario dos santos, santos 197";
 const COORDINATES_QUERY: &str = "-23.98202,-46.31005";
@@ -96,7 +97,7 @@ fn _00_00_a_merge_of_two_halves_matches_a_single_build() {
   assert_eq!(merged.status, 0, "merge failed:\n{}", merged.stderr);
 
   let combined = half(w, "merge_combined", "2,4,8,10,12");
-  stage(w, &combined, &["--preset", "brazil", "index"]);
+  indexed_and_merged(w, &combined);
 
   assert_eq!(signature(&base_dir), signature(&combined), "{REGENERATE}");
   for query in [TEXT_QUERY, COORDINATES_QUERY] {

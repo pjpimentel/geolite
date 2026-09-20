@@ -195,3 +195,31 @@ pub fn batch_insert_links(conn: &Connection, links: &[house_number_link]) -> i64
   tx.commit().expect("failed to commit");
   total
 }
+
+pub fn repoint_streets(conn: &Connection, moves: &[(i64, i64)]) -> usize {
+  const SQL_REPOINT: &str = "
+    UPDATE house_numbers
+    SET admin_level_id = ?2
+    WHERE admin_level_id = ?1
+  ";
+
+  if moves.is_empty() {
+    return 0;
+  }
+  let tx = conn
+    .unchecked_transaction()
+    .expect("failed to begin transaction");
+  let mut total: usize = 0;
+  {
+    let mut stmt = tx
+      .prepare(SQL_REPOINT)
+      .expect("failed to prepare house_numbers repoint");
+    for &(from, to) in moves {
+      total += stmt
+        .execute(rusqlite::params![from, to])
+        .expect("failed to repoint house_numbers");
+    }
+  }
+  tx.commit().expect("failed to commit");
+  total
+}

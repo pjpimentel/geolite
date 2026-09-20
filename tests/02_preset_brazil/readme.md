@@ -14,9 +14,10 @@ cut from a geofabrik `brazil-latest.osm.pbf` by `santos.build-fixture.sh`.
   boundary never closes a ring and could not become an ancestor), sorted, and stripped of the edit
   metadata (`version`, `timestamp`, `changeset`, `uid`, `user`) the build ignores anyway.
 - identity: md5 `44ba55e5d242559e6709418427ae9168`, 5,100,204 bytes; 683,313 nodes, 41,335 ways
-  and 1,274 relations; 12,981 admin levels and 473 house numbers after a build with
-  `--preset brazil`. the e2e harness keys its shared world on the preset, the city and this md5, so
-  a regenerated file rebuilds the world on its own.
+  and 1,274 relations; 12,981 admin levels before `optimize merge-admin-levels` folds the ways of
+  each street, 7,298 after, and 473 house numbers, after a build with `--preset brazil`. the e2e
+  harness keys its shared world on the preset, the city and this md5, so a regenerated file rebuilds
+  the world on its own.
 
 ## regenerating
 

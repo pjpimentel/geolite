@@ -5,7 +5,7 @@ use crate::interfaces::cli::extract::{
   osm_pbf_data::command_handler_extract_osm_pbf_data,
   osm_pbf_header::command_handler_extract_osm_pbf_header,
 };
-use crate::interfaces::cli::index::command_handler_index;
+use crate::interfaces::cli::index::command_handler_index_and_merge;
 use crate::interfaces::cli::optimize::command_handler_optimize;
 use crate::interfaces::cli::osm_pbf_file::download::command_handler_osm_pbf_file_download;
 use crate::osm_pbf_file::{input_kind, osm_pbf_file};
@@ -105,7 +105,7 @@ pub fn command_handler_build(
 
   println!();
   println!("\x1b[2m── index\x1b[0m");
-  command_handler_index(sqlite_path, index_path, None, &preset.index_user_friendly_name);
+  command_handler_index_and_merge(sqlite_path, index_path, &preset.index_user_friendly_name);
 
   println!();
   println!("\x1b[2m── optimize\x1b[0m");

@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use super::entity::admin_level;
 use geozero::ToWkt;
 
-use super::geometry::{admin_geometry, mbr_center};
+use super::geometry::{admin_geometry, bounding_box, mbr_center, mbr_of};
 use super::id::osm_element_kind;
 use super::scale::level;
 use crate::database::table;
@@ -252,6 +252,27 @@ pub fn geometry_by_ids(conn: &Connection, ids: &[i64]) -> Vec<(i64, admin_geomet
   by_ids(conn, SQL_GEOMETRY_BY_IDS, ids, |row| Ok((row.get(0)?, row.get(1)?)))
 }
 
+pub fn boxes_by_ids(
+  conn: &Connection,
+  ids: &[i64],
+) -> std::collections::HashMap<i64, bounding_box> {
+  const SQL_HEADERS_BY_IDS: &str = "
+    SELECT id, SUBSTR(wkb, 1, 38)
+    FROM admin_levels
+    WHERE wkb IS NOT NULL
+      AND id IN
+  ";
+
+  by_ids(conn, SQL_HEADERS_BY_IDS, ids, |row| {
+    let id: i64 = row.get(0)?;
+    let header: Vec<u8> = row.get(1)?;
+    Ok(mbr_of(&header).map(|mbr| (id, mbr)))
+  })
+  .into_iter()
+  .flatten()
+  .collect()
+}
+
 pub fn wkt_by_ids(conn: &Connection, ids: &[i64]) -> std::collections::HashMap<i64, String> {
   geometry_by_ids(conn, ids)
     .into_iter()
@@ -344,6 +365,25 @@ pub fn load_wkb_page(
     .expect("failed to query load_wkb_page")
     .map(|r| r.expect("failed to read wkb page row"))
     .collect()
+}
+
+pub fn delete_by_ids(conn: &Connection, ids: &[i64]) -> usize {
+  const SQL_DELETE_BY_IDS: &str = "
+    DELETE FROM admin_levels
+    WHERE id IN
+  ";
+
+  if ids.is_empty() {
+    return 0;
+  }
+  let sql = format!(
+    "{} ({})",
+    SQL_DELETE_BY_IDS.trim(),
+    crate::database::placeholders_for(ids.len())
+  );
+  conn
+    .execute(&sql, rusqlite::params_from_iter(ids))
+    .expect("failed to delete admin_levels by ids")
 }
 
 pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {

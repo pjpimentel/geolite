@@ -1,13 +1,14 @@
 use geo::{Area, BoundingRect, Centroid, Geometry, LineString};
 use rstar::{AABB, RTree, RTreeObject};
 use rusqlite::Connection;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::mpsc;
 use std::thread;
 
 use super::entity::hierarchy_edges;
 use super::repository::{self, admin_levels_hierarchy};
+use crate::admin_level::geometry::admin_geometry;
 use crate::admin_level::level;
 use crate::admin_level::repository as admin_level_repository;
 use crate::admin_level::repository::admin_level_geom_row;
@@ -263,6 +264,23 @@ fn resolve_level(
   results
 }
 
+fn street_lines_as_entries(row: &admin_level_geom_row) -> Vec<ancestor_entry> {
+  match row.wkb.as_ref().map(admin_geometry::geometry) {
+    Some(Geometry::MultiLineString(lines)) if lines.0.len() > 1 => lines
+      .0
+      .iter()
+      .map(|line| {
+        parse_entry(&admin_level_geom_row {
+          id: row.id,
+          admin_level: row.admin_level,
+          wkb: Some(admin_geometry(Geometry::LineString(line.clone()))),
+        })
+      })
+      .collect(),
+    _ => vec![parse_entry(row)],
+  }
+}
+
 fn resolve_street_rows(
   conn: &Connection,
   ids: &[i64],
@@ -272,10 +290,13 @@ fn resolve_street_rows(
   admin_level_repository::load_by_ids(conn, ids)
     .iter()
     .map(|db_row| {
-      let e = parse_entry(db_row);
-      let qualifying = qualifying_candidates(&e, tree, entries);
+      let qualifying: BTreeSet<usize> = street_lines_as_entries(db_row)
+        .iter()
+        .flat_map(|line| qualifying_candidates(line, tree, entries))
+        .collect();
+      let qualifying: Vec<usize> = qualifying.into_iter().collect();
       hierarchy_edges {
-        admin_level_id: e.id,
+        admin_level_id: db_row.id,
         parents: reduce_to_parents(&qualifying, entries)
           .iter()
           .map(|&p| entries[p].id)
