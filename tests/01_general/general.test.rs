@@ -991,6 +991,74 @@ fn _02_15_an_unparsable_bounding_wkt_returns_bad_request() {
   );
 }
 
+// 02.16. dead case
+#[test]
+#[ignore]
+fn _02_16_a_malformed_percent_escape_decodes_as_a_literal() {
+  let w = world();
+  let s = w.start_server();
+  let broken = get(
+    s.port,
+    "/geocode?query=rua%20castro%20alves%zz&include_wkt=false",
+  );
+  assert_eq!(broken.status, 200);
+  assert_eq!(
+    first(&broken.json())["admin_levels"]
+      .as_array()
+      .and_then(|levels| levels.last())
+      .and_then(|leaf| leaf["name"].as_str()),
+    Some("Rua Castro Alves"),
+  );
+
+  let accented = get(s.port, "/geocode?query=embar%C3%A9&include_wkt=false");
+  assert_eq!(accented.status, 200);
+  assert!(
+    !matches(&accented.json()).is_empty(),
+    "a percent-encoded accented name finds its area"
+  );
+}
+
+// 02.17. dead case: both surfaces tolerate the spaces around a level, and each refuses an empty
+// list in its own words — clap reads value by value, the server reads the whole list
+#[test]
+#[ignore]
+fn _02_17_last_admin_levels_tolerates_spaces_and_refuses_an_empty_list() {
+  let w = world();
+  assert_eq!(
+    w.geolite(&["query", ANY_TEXT, "--last-admin-levels", "8, 10"])
+      .status,
+    0
+  );
+  let empty = w.geolite(&["query", ANY_TEXT, "--last-admin-levels", ""]);
+  assert_eq!(empty.status, 2);
+  assert!(
+    empty.stderr.contains("is not a level number"),
+    "stderr: {}",
+    empty.stderr
+  );
+
+  let s = w.start_server();
+  let query = encode(ANY_TEXT);
+  assert_eq!(
+    get(
+      s.port,
+      &format!("/geocode?query={query}&last_admin_levels=8,%2010")
+    )
+    .status,
+    200
+  );
+  let refused = get(
+    s.port,
+    &format!("/geocode?query={query}&last_admin_levels="),
+  );
+  assert_eq!(refused.status, 400);
+  assert!(
+    refused.text().contains("comma-separated"),
+    "body: {}",
+    refused.text()
+  );
+}
+
 // 03.00. degraded mode
 #[test]
 #[ignore]

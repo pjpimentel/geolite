@@ -318,3 +318,63 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
   assert_eq!(levels_of(top).last(), Some(&8));
   assert_eq!(name_at(top, 8).as_deref(), Some("Santos"));
 }
+
+// 03.00. a geometry the column cannot read warns and answers nothing, instead of taking the query
+// down: neither shape reaches the real pipeline
+#[test]
+#[ignore]
+fn _03_00_an_unreadable_geometry_warns_and_drops_the_row() {
+  let w = world();
+  let s = extracted(w, "admin_level_unreadable_geometry", "2", &[]);
+  admin_levels_at(w, &s.dir, "2,4,8", &[]);
+  index_at(w, &s.dir, &[]);
+  {
+    let conn = rusqlite::Connection::open(s.dir.join("database.sqlite3"))
+      .expect("failed to open the scratch database for writing");
+    conn
+      .execute(
+        "UPDATE admin_levels SET wkb = x'0001' WHERE admin_level = 8 AND name = 'Santos'",
+        [],
+      )
+      .expect("failed to shorten the blob");
+    conn
+      .execute(
+        "UPDATE admin_levels SET wkb = randomblob(60) WHERE admin_level = 4 AND name = 'São Paulo'",
+        [],
+      )
+      .expect("failed to scramble the blob");
+  }
+
+  for (query, unreadable, warning) in [
+    ("santos", "Santos", "blob too short"),
+    ("sao paulo", "São Paulo", "WKB parse failed"),
+  ] {
+    let out = w.geolite_in(
+      &s.dir,
+      &[
+        "--preset",
+        "brazil",
+        "query",
+        query,
+        "--include-wkt",
+        "false",
+      ],
+    );
+    assert_eq!(out.status, 0, "the query must answer: {}", out.stderr);
+    assert!(
+      out.stderr.contains(warning),
+      "{query:?} must warn {warning:?}:\n{}",
+      out.stderr
+    );
+    let answer: serde_json::Value =
+      serde_json::from_str(&out.stdout).expect("the query must print json");
+    for m in matches(&answer) {
+      let leaf = levels_of(m).last().copied().unwrap_or_default();
+      assert_ne!(
+        name_at(m, leaf).as_deref(),
+        Some(unreadable),
+        "an area without a readable geometry cannot be a match"
+      );
+    }
+  }
+}

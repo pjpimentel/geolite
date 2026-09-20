@@ -6,6 +6,9 @@
 1. MODIFIED the 50 m house-number rule into `house_number::resolution::nearest` and `numbers_by_street` into `house_number::repository`, so the number's domain also resolves the coordinate path.
 1. MODIFIED `query`, `http-server` and `http::serve` to take the whole preset instead of `boosts` and `house_numbers` one by one, so a new preset policy no longer crosses the whole stack.
 1. MODIFIED the five `progress_report` types into one shared domain type, so one progress renderer in the cli serves every stage.
+1. ADDED e2e scenarios for `geolite merge`, the only command the battery never ran, so a wrong id remapping cannot pass in silence.
+1. ADDED e2e scenarios for the degraded paths the real pipeline never produces, so warning and carrying on is guarded by the battery that stays.
+1. REMOVED the unit tests the e2e battery now covers: the merge, the http helpers and the wkt parse.
 
 ## **2026-09-19** - 0.0.12
 

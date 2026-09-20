@@ -78,7 +78,3 @@ pub fn command_handler_merge(
   let (bytes_before, bytes_after) = crate::database::compact(&conn);
   println!("\x1b[1;32moptimized\x1b[0m {bytes_before} → {bytes_after} bytes");
 }
-
-#[cfg(test)]
-#[path = "merge.test.rs"]
-mod tests;

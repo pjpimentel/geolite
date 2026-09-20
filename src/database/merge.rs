@@ -72,7 +72,3 @@ pub fn merge_source(conn: &Connection, source_path: &str) -> (usize, usize) {
     .expect("failed to detach merge source");
   (admins, houses)
 }
-
-#[cfg(test)]
-#[path = "merge.test.rs"]
-mod tests;

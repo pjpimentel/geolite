@@ -9,9 +9,6 @@ pub mod jsonb;
 pub mod merge;
 
 #[cfg(test)]
-#[path = "merge_fixtures.test.rs"]
-pub(crate) mod merge_fixtures;
-#[cfg(test)]
 #[path = "jsonb_fixtures.test.rs"]
 pub(crate) mod jsonb_fixtures;
 

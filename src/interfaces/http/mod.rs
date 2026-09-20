@@ -380,7 +380,3 @@ fn respond_html(request: tiny_http::Request, status: StatusCode, body: &str) -> 
   request.respond(response).ok();
   code
 }
-
-#[cfg(test)]
-#[path = "http.test.rs"]
-mod tests;
