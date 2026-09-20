@@ -1,11 +1,50 @@
 # changelog
 
-## **2026-XX-XX** - 0.0.13
+## **planned** - 0.0.17
 
-1. MODIFIED `doc_text` and `token_coverage` into `admin_level_hierarchy::search_index::coverage`, so the similarity replicates the index pipeline where it is defined.
-1. MODIFIED the 50 m house-number rule into `house_number::resolution::nearest` and `numbers_by_street` into `house_number::repository`, so the number's domain also resolves the coordinate path.
-1. MODIFIED `query`, `http-server` and `http::serve` to take the whole preset instead of `boosts` and `house_numbers` one by one, so a new preset policy no longer crosses the whole stack.
-1. MODIFIED the five `progress_report` types into one shared domain type, so one progress renderer in the cli serves every stage.
+1. MODIFIED the storage to a single file, without the split between `database.sqlite3` and `database.tantivy`, so a base is one file to copy, publish and merge.
+1. ADDED a repository of prebuilt data per region and schema version, with a `geolite fetch <region>` that downloads instead of building, so a user queries without the build.
+1. ADDED a study of a geofabrik proxy that mirrors, caches and versions the extracts, so a build is reproducible and survives the origin being down.
+1. ADDED a layer compatible with the google geocoding and places sdk (`/maps/api/geocode/json`, `/maps/api/place/*`), so a client of the sdk changes only the endpoint.
+1. ADDED a feasibility study of vector tiles built from the pbf and served at `/tiles/{z}/{x}/{y}.pbf`, so it is decided whether geolite serves the map besides the geocode.
+
+## **planned** - 0.0.16
+
+1. ADDED a tui that walks the admin levels like folders, runs queries and shows the ledger counters, so the data is explored in the terminal.
+1. REMOVED the web ui served at `/` by `http-server`, so the server serves only the api.
+1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
+1. ADDED e2e coverage for the downward reads of the hierarchy beside their first consumer, so they debut covered over real data.
+1. ADDED a query cache to `http-server` and `query`, bounded by a cli option, so a repeated question answers at once.
+
+## **planned** - 0.0.15
+
+1. MODIFIED `house_number::resolution` to interpolate along the street and to extrapolate from one reference, so a number lands on its most probable point instead of the centroid.
+1. ADDED a data exporter, as a sql dump of the domain tables and as `.osm.pbf`, so the data travels to another database and sub-extracts need no osmium.
+1. ADDED `src/lib.rs`, with `main.rs` reduced to `cli::run`, so geolite can be used as a dependency.
+1. ADDED a study of removing each direct dependency, measured in own code, transitive crates and binary size, so which ones stay is decided by numbers.
+1. MODIFIED the workflows to reuse the binary of the quality check in the docker images and in `cargo publish`, so the binary tested is the binary shipped.
+
+## **planned** - 0.0.14
+
+1. ADDED an e2e scenario that reads the `EXPLAIN QUERY PLAN` of the relation candidates and of the hierarchy reads, so a rewritten query cannot lose its index in silence.
+1. ADDED scenarios that pin the thresholds of the hierarchy resolution and the defaults of `src/admin_level/rules.rs`, so a change of rule cannot pass green.
+1. ADDED scenarios for the shapes the real extract never brings (compound and `#` house numbers, `drop_values`, the label and the scale errors), so the battery over real data holds them too.
+1. REMOVED the island of unit tests that was left, as the scenarios above take over each guard, so one regression battery is left.
+
+## **2026-09-20** - 0.0.13
+
+1. MODIFIED the similarity, the house number reads, the preset plumbing and the progress report to the domains that own them.
+1. ADDED e2e scenarios for `geolite merge` and for the degraded paths the real pipeline never produces.
+1. REMOVED the unit tests the e2e battery now covers: the merge, the http helpers and the wkt parse.
+1. MODIFIED the pre-merge checks into a lint job beside the coverage one, so they run in parallel.
+1. ADDED `optimize merge-admin-levels`, which folds the ways of one street into one row; `build` and `geolite merge` run it before the search indexes.
+1. MODIFIED the resolver to ask a folded street one line at a time, so resolving it again writes the same edges.
+1. MODIFIED the coordinate service to answer a street only under the areas that hold its nearest point, and to rank two streets at the same distance by id.
+1. MODIFIED the text service to answer a street without a number with a point of the street, inside the area of each label.
+1. MODIFIED the `wkt` of a folded street to always be a multi-line of the original lines of its ways.
+1. ADDED `merged_way_ids` to `admin_levels` and `osm_merged_way_ids` to the response, naming the osm way of each line of a folded street, with no new schema version.
+1. MODIFIED `geolite merge` to carry `merged_way_ids` and to accept a source built before the column.
+1. ADDED e2e scenarios for the street merge in the pipeline, the ranking of streets at the same distance and the ways of a folded street in the response.
 
 ## **2026-09-19** - 0.0.12
 

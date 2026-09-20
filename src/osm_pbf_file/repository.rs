@@ -55,7 +55,7 @@ impl table for osm_pbf_files {
 pub(crate) fn add_origin_wkt(conn: &Connection) {
   const SQL_ADD_ORIGIN_WKT: &str = "ALTER TABLE osm_pbf_files ADD COLUMN origin_wkt BLOB";
 
-  if crate::database::has_column(conn, "osm_pbf_files", "origin_wkt") {
+  if crate::database::has_column(conn, "main", "osm_pbf_files", "origin_wkt") {
     return;
   }
   conn

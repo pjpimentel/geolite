@@ -1,38 +1,12 @@
-use geo::{Geometry, HaversineDistance, Point};
+use geo::Point;
 use rusqlite::Connection;
 use std::collections::HashMap;
 
 use super::entity::{house_number_match, query_house_number};
+use crate::house_number::repository::numbers_by_street;
 use crate::house_number::{
   house_number, house_number_policy, house_number_resolution, resolution, token,
 };
-
-// house numbers are precise points; 50m is intentionally tighter than the 100m used for
-// streets, which are lines with a broader snap area
-const MATCH_MAX_DISTANCE_IN_METERS: f64 = 50.0;
-
-fn point_of(wkb: Option<&crate::admin_level::geometry::admin_geometry>) -> Option<Point<f64>> {
-  match wkb.map(|g| g.geometry()) {
-    Some(Geometry::Point(p)) => Some(*p),
-    _ => None,
-  }
-}
-
-fn numbers_by_street(
-  conn: &Connection,
-  admin_level_ids: &[i64],
-) -> HashMap<i64, Vec<(house_number, Point<f64>)>> {
-  let mut by_street: HashMap<i64, Vec<(house_number, Point<f64>)>> = HashMap::new();
-  for row in crate::house_number::repository::by_admin_level_ids(conn, admin_level_ids) {
-    if let Some(point) = point_of(row.wkb.as_ref()) {
-      by_street
-        .entry(row.admin_level_id)
-        .or_default()
-        .push((row.number, point));
-    }
-  }
-  by_street
-}
 
 pub(super) struct resolved_number {
   number: house_number,
@@ -90,20 +64,12 @@ pub(super) fn nearest_to(
   input_pt: Point<f64>,
   street_ids: &[i64],
 ) -> HashMap<i64, house_number> {
-  if street_ids.is_empty() {
-    return HashMap::new();
-  }
   numbers_by_street(conn, street_ids)
     .into_iter()
-    .filter_map(|(id, numbers)| {
-      numbers
-        .into_iter()
-        .filter_map(|(number, point)| {
-          let distance = input_pt.haversine_distance(&point);
-          (distance <= MATCH_MAX_DISTANCE_IN_METERS).then_some((number, distance))
-        })
-        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-        .map(|(number, _)| (id, number))
+    .filter_map(|(id, known)| {
+      resolution::nearest(input_pt, &known)
+        .cloned()
+        .map(|number| (id, number))
     })
     .collect()
 }

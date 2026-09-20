@@ -412,15 +412,19 @@ impl server {
 
 impl world {
   pub fn start_server(&self) -> server {
-    self.spawn_server(&self.index_path.to_string_lossy(), "healthy")
+    self.spawn_server(&self.index_path.to_string_lossy(), "healthy", None)
   }
 
   pub fn start_degraded_server(&self) -> server {
     let missing = self.root.join("absent.tantivy");
-    self.spawn_server(&missing.to_string_lossy(), "degraded")
+    self.spawn_server(&missing.to_string_lossy(), "degraded", None)
   }
 
-  fn spawn_server(&self, index_path: &str, tag: &str) -> server {
+  pub fn start_server_with_preset(&self, preset: &str) -> server {
+    self.spawn_server(&self.index_path.to_string_lossy(), preset, Some(preset))
+  }
+
+  fn spawn_server(&self, index_path: &str, tag: &str, preset: Option<&str>) -> server {
     // the os picks the port (`--port 0`) and the child names it on stdout: nothing to probe
     let seq = SPAWN_SEQ.fetch_add(1, Ordering::Relaxed);
     let stdout_path = self.root.join(format!("server-{tag}-{seq}.stdout"));
@@ -433,6 +437,7 @@ impl world {
       .arg(&self.data_path)
       .arg("--index-path")
       .arg(index_path)
+      .args(preset.map_or(vec![], |p| vec!["--preset", p]))
       .arg("http-server")
       .arg("--host")
       .arg("127.0.0.1")
@@ -523,6 +528,17 @@ pub fn plain(text: &str) -> String {
   out
 }
 
+// every line is found after the one before it, so the text names them all and in this order
+pub fn assert_in_order(text: &str, lines: &[&str]) {
+  let mut at = 0;
+  for line in lines {
+    let found = text[at..]
+      .find(line)
+      .unwrap_or_else(|| panic!("{line:?} is missing or out of order:\n{text}"));
+    at += found + line.len();
+  }
+}
+
 // a text query under a preset, against the database of a scratch or of the world
 pub fn query_at(w: &world, data_path: &Path, preset: &str, text: &str) -> serde_json::Value {
   let out = w.geolite_in(
@@ -543,4 +559,16 @@ pub fn decode_wkb(blob: &[u8]) -> geo::Geometry<f64> {
   geozero::wkb::SpatiaLiteWkb(blob)
     .to_geo()
     .unwrap_or_else(|e| panic!("undecodable geometry: {e}"))
+}
+
+// the merged_way_ids column as it is stored: a jsonb array, read back as text
+pub fn merged_way_ids_of(conn: &rusqlite::Connection, id: i64) -> Option<Vec<u64>> {
+  let text: Option<String> = conn
+    .query_row(
+      "SELECT JSON(merged_way_ids) FROM admin_levels WHERE id = ?1",
+      [id],
+      |r| r.get(0),
+    )
+    .unwrap_or_else(|e| panic!("no admin_levels row {id}: {e}"));
+  text.map(|text| serde_json::from_str(&text).expect("merged_way_ids is not a json array of ids"))
 }

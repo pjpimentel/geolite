@@ -17,3 +17,9 @@ mod admin_level;
 
 #[path = "house_number.test.rs"]
 mod house_number;
+
+#[path = "merge.test.rs"]
+mod merge;
+
+#[path = "street_merge.test.rs"]
+mod street_merge;

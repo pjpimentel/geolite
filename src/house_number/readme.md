@@ -58,6 +58,10 @@ mean "no number" (`drop_values`); the preset is where a region fills it in.
 tile, `by_proximity` otherwise — and `code()` pins the two to the `0` and `1` the column stores;
 nothing reads the column back yet, so there is no reading of the code.
 
+the link is not final: `optimize merge-admin-levels` moves the numbers of a way it folds into
+another street to the street that survives (`repository::repoint_streets`), before the way's row
+goes.
+
 ## the number in the query — `token`
 
 `first_house_number` walks the query's tokens and returns the first one that `recognize` accepts
@@ -72,6 +76,10 @@ there is none and the number is simple or suffixed, with the linear interpolatio
 nearest stored numbers below and above it (`interpolated`); otherwise with `absent`. a compound
 number is never interpolated: `82-56` between `82-52` and `82-60` is not a position on a line but
 a door nobody mapped.
+
+`nearest` answers the other way round, for the coordinate path: the stored number closest to a
+point, within 50 m — tighter than the 100 m of the street quality on purpose, since a number is a
+point and a street is a line.
 
 ## the extraction — `extract` and `linker`
 
@@ -99,8 +107,9 @@ on the ledger after it.
 
 the ddl, the one index (`house_numbers_search_by_admin_level_id`, the read of every query), the
 candidate scan of `osm_data.osm_nodes` (`load_all_candidates`, where `normalize` runs), the
-numbers of a set of streets (`by_admin_level_ids`, in node id order — the order the first-match
-rules of the resolution see, whatever the insertion order — where `from_stored` runs) and the
+numbers of a set of streets with their points (`numbers_by_street`, in node id order — the order
+the first-match rules of the resolution see, whatever the insertion order — where `from_stored`
+runs) and the
 insert. the streets come through `admin_level::repository` — `streets_with_centroid` for the
 tiles, `geometry_by_ids` for the linker — so only the owner writes sql over `admin_levels`.
 `osm_pbf_file::repository::update_house_numbers_count` reads the table the other way round, for

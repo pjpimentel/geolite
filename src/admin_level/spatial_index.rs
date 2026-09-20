@@ -7,6 +7,7 @@ use std::thread;
 use super::geometry::{admin_geometry, bounding_box};
 use super::repository;
 use super::scale::level;
+use crate::progress_report;
 
 const SQL_CREATE_RTREE: &str = "
   CREATE VIRTUAL TABLE IF NOT EXISTS admin_levels_rtree
@@ -83,11 +84,6 @@ pub fn batch_insert(conn: &Connection, rows: &[rtree_row]) {
       .expect("failed to insert rtree row");
   }
   tx.commit().expect("failed to commit rtree batch");
-}
-
-pub struct progress_report {
-  pub total: Option<u64>,
-  pub processed: u64,
 }
 
 const BATCH_SIZE: usize = 50_000;
@@ -356,6 +352,7 @@ pub fn nearest(conn: &Connection, point: Point<f64>, envelope: bounding_box) -> 
     b.level
       .cmp(&a.level)
       .then(a.distance_in_meters.cmp(&b.distance_in_meters))
+      .then(a.id.cmp(&b.id))
   });
   candidates
 }

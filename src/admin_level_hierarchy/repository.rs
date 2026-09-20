@@ -33,6 +33,16 @@ const SQL_NODES_UNDER: &str = "
   ORDER BY al.admin_level ASC, al.name ASC, al.id ASC
 ";
 
+const SQL_INSERT_EDGE: &str = "
+  INSERT OR IGNORE INTO admin_levels_hierarchy (
+    admin_level_id,
+    parent_id
+  ) VALUES (
+    ?1,
+    ?2
+  );
+";
+
 pub struct admin_levels_hierarchy;
 
 impl table for admin_levels_hierarchy {
@@ -218,15 +228,6 @@ pub fn load_all_edges(conn: &Connection) -> HashMap<i64, Vec<i64>> {
 }
 
 pub fn batch_insert(conn: &Connection, rows: &[hierarchy_edges]) {
-  const SQL_INSERT_EDGE: &str = "
-    INSERT OR IGNORE INTO admin_levels_hierarchy (
-      admin_level_id,
-      parent_id
-    ) VALUES (
-      ?1,
-      ?2
-    );
-  ";
   // a null parent escapes the primary key, nulls never collide, so the root row is written only
   // where the area has no row yet
   const SQL_INSERT_ROOT: &str = "
@@ -262,6 +263,40 @@ pub fn batch_insert(conn: &Connection, rows: &[hierarchy_edges]) {
           .expect("failed to insert hierarchy root");
         continue;
       }
+      for parent in &row.parents {
+        insert_edge
+          .execute(rusqlite::params![row.admin_level_id, parent])
+          .expect("failed to insert hierarchy edge");
+      }
+    }
+  }
+  tx.commit().expect("failed to commit");
+}
+
+
+pub fn replace_parents(conn: &Connection, rows: &[hierarchy_edges]) {
+  const SQL_DELETE_EDGES: &str = "
+    DELETE FROM admin_levels_hierarchy
+    WHERE admin_level_id = ?1
+  ";
+
+  if rows.is_empty() {
+    return;
+  }
+  let tx = conn
+    .unchecked_transaction()
+    .expect("failed to begin transaction");
+  {
+    let mut delete_edges = tx
+      .prepare(SQL_DELETE_EDGES)
+      .expect("failed to prepare hierarchy edge delete");
+    let mut insert_edge = tx
+      .prepare(SQL_INSERT_EDGE)
+      .expect("failed to prepare hierarchy edge insert");
+    for row in rows {
+      delete_edges
+        .execute([row.admin_level_id])
+        .expect("failed to delete hierarchy edges");
       for parent in &row.parents {
         insert_edge
           .execute(rusqlite::params![row.admin_level_id, parent])

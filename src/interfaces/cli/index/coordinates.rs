@@ -1,6 +1,7 @@
-use indicatif::ProgressStyle;
 use std::io::Write;
 use std::time::Instant;
+
+use crate::interfaces::cli::progress;
 
 pub fn command_handler_index_coordinates(sqlite_path: &str) {
   crate::interfaces::cli::require_sqlite(sqlite_path);
@@ -14,27 +15,11 @@ pub fn command_handler_index_coordinates(sqlite_path: &str) {
   crate::admin_level::spatial_index::recreate(&conn);
   println!(" done");
 
-  let bar = super::progress_bar();
-  bar.set_style(
-    ProgressStyle::with_template(
-      "{prefix:.bold.green} {msg:<40}  [{bar:20.green/white}] {percent:>3}%  {pos:>6}/{len:<6}  {per_sec}  eta {eta}",
-    )
-    .unwrap()
-    .progress_chars("=> "),
-  );
-  bar.set_prefix("indexing");
-  bar.set_message("coordinates");
+  let bar = progress::bar("indexing", "coordinates");
 
   let start = Instant::now();
 
-  crate::admin_level::spatial_index::run(&conn, |p| {
-    if let Some(total) = p.total
-      && bar.length().is_none()
-    {
-      bar.set_length(total);
-    }
-    bar.set_position(p.processed);
-  });
+  crate::admin_level::spatial_index::run(&conn, |p| progress::advance(&bar, &p));
 
   bar.finish();
 

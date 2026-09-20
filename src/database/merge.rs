@@ -12,7 +12,8 @@ const SQL_MERGE_ADMIN_LEVELS: &str = "
     wkb,
     name,
     country_iso_code,
-    post_code
+    post_code,
+    merged_way_ids
   )
   SELECT
     id,
@@ -22,14 +23,16 @@ const SQL_MERGE_ADMIN_LEVELS: &str = "
     wkb,
     name,
     country_iso_code,
-    post_code
+    post_code,
+    {source_merged_way_ids}
   FROM merge_src.admin_levels
   WHERE TRUE
   ON CONFLICT (id) DO UPDATE SET
     name             = excluded.name,
     country_iso_code = excluded.country_iso_code,
     post_code        = excluded.post_code,
-    wkb              = excluded.wkb
+    wkb              = excluded.wkb,
+    merged_way_ids   = excluded.merged_way_ids
 ";
 
 const SQL_MERGE_HOUSE_NUMBERS: &str = "
@@ -60,9 +63,18 @@ pub fn merge_source(conn: &Connection, source_path: &str) -> (usize, usize) {
   conn
     .execute(SQL_ATTACH_SOURCE, [&uri])
     .expect("failed to attach merge source");
+  // a source attached read-only cannot gain the column, so one built before it answers NULL
+  let tracking = if super::has_column(conn, "merge_src", "admin_levels", "merged_way_ids") {
+    "merged_way_ids"
+  } else {
+    "NULL"
+  };
   // admin_levels first: house_numbers.admin_level_id references admin_levels(id).
   let admins = conn
-    .execute(SQL_MERGE_ADMIN_LEVELS, [])
+    .execute(
+      &SQL_MERGE_ADMIN_LEVELS.replace("{source_merged_way_ids}", tracking),
+      [],
+    )
     .expect("failed to merge admin_levels");
   let houses = conn
     .execute(SQL_MERGE_HOUSE_NUMBERS, [])
@@ -72,7 +84,3 @@ pub fn merge_source(conn: &Connection, source_path: &str) -> (usize, usize) {
     .expect("failed to detach merge source");
   (admins, houses)
 }
-
-#[cfg(test)]
-#[path = "merge.test.rs"]
-mod tests;

@@ -1,6 +1,10 @@
-use geo::Point;
+use geo::{HaversineDistance, Point};
 
 use super::value::{house_number, house_number_shape};
+
+// house numbers are precise points; 50m is intentionally tighter than the 100m used for
+// streets, which are lines with a broader snap area
+const NEAREST_MAX_DISTANCE_IN_METERS: f64 = 50.0;
 
 #[derive(Debug, PartialEq)]
 pub enum house_number_resolution {
@@ -51,4 +55,15 @@ fn interpolate(known: &[(house_number, Point<f64>)], target: u32) -> Option<Poin
     low_point.x() + (high_point.x() - low_point.x()) * fraction,
     low_point.y() + (high_point.y() - low_point.y()) * fraction,
   ))
+}
+
+pub fn nearest(point: Point<f64>, known: &[(house_number, Point<f64>)]) -> Option<&house_number> {
+  known
+    .iter()
+    .filter_map(|(number, at)| {
+      let distance = point.haversine_distance(at);
+      (distance <= NEAREST_MAX_DISTANCE_IN_METERS).then_some((number, distance))
+    })
+    .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+    .map(|(number, _)| number)
 }

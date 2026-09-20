@@ -1,6 +1,8 @@
-use geo::{BoundingRect, Contains, Coord, Geometry, LineString, Point};
+use geo::{BoundingRect, Contains, Coord, Geometry, Line, LineString, MultiLineString, Point};
 use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use rstar::{RTree, primitives::GeomWithData};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 pub struct admin_geometry(pub Geometry<f64>);
 
@@ -69,10 +71,9 @@ impl FromSql for admin_geometry {
   }
 }
 
-// reads the centre of the MBR header of a spatialite blob without parsing the geometry: byte 0
-// is 0x00, byte 1 the endianness, bytes 2-5 the SRID, bytes 6-37 min_x, min_y, max_x, max_y as
-// four f64. returns (lon, lat).
-pub fn mbr_center(blob: &[u8]) -> Option<(f64, f64)> {
+// reads the MBR header of a spatialite blob without parsing the geometry: byte 0 is 0x00, byte 1
+// the endianness, bytes 2-5 the SRID, bytes 6-37 min_x, min_y, max_x, max_y as four f64
+pub fn mbr_of(blob: &[u8]) -> Option<bounding_box> {
   if blob.len() < 38 || blob[0] != 0x00 {
     return None;
   }
@@ -86,11 +87,20 @@ pub fn mbr_center(blob: &[u8]) -> Option<(f64, f64)> {
       f64::from_be_bytes(buf)
     }
   };
-  let min_x = read(6);
-  let min_y = read(14);
-  let max_x = read(22);
-  let max_y = read(30);
-  Some(((min_x + max_x) / 2.0, (min_y + max_y) / 2.0))
+  Some(bounding_box {
+    min_lon: read(6),
+    min_lat: read(14),
+    max_lon: read(22),
+    max_lat: read(30),
+  })
+}
+
+pub fn mbr_center(blob: &[u8]) -> Option<(f64, f64)> {
+  let mbr = mbr_of(blob)?;
+  Some((
+    (mbr.min_lon + mbr.max_lon) / 2.0,
+    (mbr.min_lat + mbr.max_lat) / 2.0,
+  ))
 }
 
 pub fn approx_eq(a: Coord<f64>, b: Coord<f64>) -> bool {
@@ -135,12 +145,132 @@ fn take_continuation(
   None
 }
 
+pub fn lines_of(geometry: Geometry<f64>) -> Vec<LineString<f64>> {
+  let lines = match geometry {
+    Geometry::LineString(line) => vec![line],
+    Geometry::MultiLineString(lines) => lines.0,
+    _ => Vec::new(),
+  };
+  lines.into_iter().filter(|line| !line.0.is_empty()).collect()
+}
+
+const METERS_PER_DEGREE: f64 = 111_320.0;
+
+fn projected(coord: &Coord<f64>) -> Point<f64> {
+  Point::new(
+    coord.x * coord.y.to_radians().cos() * METERS_PER_DEGREE,
+    coord.y * METERS_PER_DEGREE,
+  )
+}
+
+pub fn nearby_pairs(members: &[Vec<LineString<f64>>], reach_in_meters: f64) -> Vec<(usize, usize)> {
+  let mut pairs: BTreeSet<(usize, usize)> = BTreeSet::new();
+  let mut pair = |a: usize, b: usize| {
+    if a != b {
+      pairs.insert((a.min(b), a.max(b)));
+    }
+  };
+
+  let mut owners: HashMap<(u64, u64), Vec<usize>> = HashMap::new();
+  for (member, lines) in members.iter().enumerate() {
+    for coord in lines.iter().flat_map(|line| line.0.iter()) {
+      let here = owners
+        .entry((coord.x.to_bits(), coord.y.to_bits()))
+        .or_default();
+      here.iter().for_each(|&other| pair(other, member));
+      if here.last() != Some(&member) {
+        here.push(member);
+      }
+    }
+  }
+
+  let tree = RTree::bulk_load(
+    members
+      .iter()
+      .enumerate()
+      .flat_map(|(member, lines)| {
+        lines.iter().flat_map(move |line| {
+          line.0.windows(2).map(move |pair| {
+            GeomWithData::new(Line::new(projected(&pair[0]), projected(&pair[1])), member)
+          })
+        })
+      })
+      .collect(),
+  );
+  for (member, lines) in members.iter().enumerate() {
+    for end in lines
+      .iter()
+      .flat_map(|line| [line.0.first(), line.0.last()])
+      .flatten()
+    {
+      for near in tree.locate_within_distance(projected(end), reach_in_meters * reach_in_meters) {
+        pair(near.data, member);
+      }
+    }
+  }
+  pairs.into_iter().collect()
+}
+
+pub struct merged_way_ids(pub Vec<u64>);
+
+impl ToSql for merged_way_ids {
+  fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+    serde_json::to_string(&self.0)
+      .map(ToSqlOutput::from)
+      .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
+  }
+}
+
+impl FromSql for merged_way_ids {
+  fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+    serde_json::from_str(value.as_str()?)
+      .map(Self)
+      .map_err(|e| FromSqlError::Other(Box::new(e)))
+  }
+}
+
+pub fn fold_lines(
+  members: impl IntoIterator<Item = Vec<(u64, LineString<f64>)>>,
+) -> Option<(Geometry<f64>, merged_way_ids)> {
+  let mut folded: HashSet<u64> = HashSet::new();
+  let mut way_ids: Vec<u64> = Vec::new();
+  let mut lines: Vec<LineString<f64>> = Vec::new();
+  for member in members {
+    let from = way_ids.len();
+    for (way_id, line) in member {
+      if !folded.contains(&way_id) {
+        way_ids.push(way_id);
+        lines.push(line);
+      }
+    }
+    folded.extend(&way_ids[from..]);
+  }
+  (!lines.is_empty()).then_some((
+    Geometry::MultiLineString(MultiLineString(lines)),
+    merged_way_ids(way_ids),
+  ))
+}
+
 #[derive(Clone, Copy)]
 pub struct bounding_box {
   pub min_lat: f64,
   pub max_lat: f64,
   pub min_lon: f64,
   pub max_lon: f64,
+}
+
+impl bounding_box {
+  pub fn covers(&self, point: &Point<f64>) -> bool {
+    (self.min_lon..=self.max_lon).contains(&point.x())
+      && (self.min_lat..=self.max_lat).contains(&point.y())
+  }
+
+  pub fn center(&self) -> Point<f64> {
+    Point::new(
+      (self.min_lon + self.max_lon) / 2.0,
+      (self.min_lat + self.max_lat) / 2.0,
+    )
+  }
 }
 
 #[derive(Clone)]

@@ -12,6 +12,11 @@
 #[rustfmt::skip] mod interfaces;
 #[rustfmt::skip] mod presets; // 7
 
+pub struct progress_report {
+  pub total: Option<u64>,
+  pub processed: u64,
+}
+
 #[macro_export]
 macro_rules! debug {
   ($($arg:tt)*) => {

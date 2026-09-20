@@ -1,4 +1,4 @@
-use geo::Point;
+use geo::{Intersects, Point};
 use rusqlite::Connection;
 
 use super::entity::{
@@ -8,6 +8,7 @@ use super::entity::{
 use super::filter;
 use super::{house_number, query_opts};
 use crate::admin_level::geometry::bounding_box;
+use crate::admin_level::repository as admin_level_repository;
 use crate::admin_level::spatial_index;
 
 const WORLD_BOUNDING_BOX: bounding_box = bounding_box {
@@ -16,6 +17,37 @@ const WORLD_BOUNDING_BOX: bounding_box = bounding_box {
   min_lon: -180.0,
   max_lon: 180.0,
 };
+
+fn paths_at<'a>(
+  conn: &Connection,
+  sources: &'a match_sources,
+  id: i64,
+  point: &Point<f64>,
+) -> Vec<&'a Vec<i64>> {
+  let paths = sources.paths_of(id);
+  if paths.len() < 2 {
+    return paths.iter().collect();
+  }
+  let boxed: Vec<&Vec<i64>> = paths
+    .iter()
+    .filter(|path| path.first().is_some_and(|&leaf| sources.box_covers(leaf, point)))
+    .collect();
+  let leaves: Vec<i64> = boxed.iter().filter_map(|path| path.first().copied()).collect();
+  let areas = admin_level_repository::geometry_by_ids(conn, &leaves);
+  let inside: Vec<&Vec<i64>> = boxed
+    .into_iter()
+    .filter(|path| {
+      areas
+        .iter()
+        .any(|(leaf, area)| path.first() == Some(leaf) && area.geometry().intersects(point))
+    })
+    .collect();
+  if inside.is_empty() {
+    paths.iter().collect()
+  } else {
+    inside
+  }
+}
 
 pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query_opts) -> query_output {
   let input_pt = Point::new(longitude, latitude);
@@ -37,7 +69,8 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
   }
   crate::debug!("debug: candidates={}", candidates.len());
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
-  let sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);
+  let mut sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);
+  sources.load_leaf_boxes(conn);
   let numbers = house_number::nearest_to(conn, input_pt, &candidate_ids);
 
   let mut matches: Vec<query_match> = Vec::new();
@@ -46,7 +79,7 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
     let own_name = own_meta.map(|m| m.name.as_str()).unwrap_or_default();
     let number = numbers.get(&c.id).map(|n| n.stored_form());
     // a street inside two neighbourhoods is two answers, in the order the paths are enumerated
-    for path in sources.paths_of(c.id) {
+    for path in paths_at(conn, &sources, c.id, &c.closest_point) {
       // the path comes most-specific first; reversed before the stable sort so that, within one
       // level, the order is general → specific
       let ancestors = sources.ancestors_of(path.iter().rev());

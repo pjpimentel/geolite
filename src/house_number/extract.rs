@@ -7,15 +7,11 @@ use super::linker::{self, street, tile_data};
 use super::policy::house_number_policy;
 use super::repository::{self, candidate_row};
 use crate::admin_level::repository::street_centre_row;
+use crate::progress_report;
 
 const TILE_SIZE: f64 = 2.0;
 const WKB_BATCH: usize = 500;
 const CHUNK_SIZE: usize = 500;
-
-pub struct progress_report {
-  pub total: u64,
-  pub processed: u64,
-}
 
 type tile = (i64, i64);
 
@@ -28,7 +24,7 @@ impl house_number_link {
     let candidates = repository::load_all_candidates(conn, policy);
     let total = candidates.len() as u64;
     on_progress(progress_report {
-      total,
+      total: Some(total),
       processed: 0,
     });
     if total == 0 {
@@ -44,7 +40,10 @@ impl house_number_link {
     let mut processed: u64 = 0;
     for chunk in links.chunks(CHUNK_SIZE) {
       processed += repository::batch_insert_links(conn, chunk) as u64;
-      on_progress(progress_report { total, processed });
+      on_progress(progress_report {
+        total: Some(total),
+        processed,
+      });
     }
   }
 }

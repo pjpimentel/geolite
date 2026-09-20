@@ -56,8 +56,7 @@ pub fn serve(
   sqlite_path: &str,
   index_path: &str,
   threads: u8,
-  boosts: crate::admin_level_hierarchy::tantivy_boosts,
-  house_numbers: crate::house_number::house_number_policy,
+  preset: &crate::presets::preset,
 ) {
   let addr = bound.addr();
   let server = bound.server;
@@ -65,6 +64,7 @@ pub fn serve(
 
   // degraded boot: a missing index disables text_to_address (reported via /status) instead of
   // refusing to start, so the server keeps serving coordinate queries and the health endpoint.
+  let boosts = preset.index_user_friendly_name.boosts;
   let index: Option<Arc<tantivy_index>> =
     crate::admin_level_hierarchy::search_index::load(Path::new(index_path), boosts).map(Arc::new);
   if index.is_none() {
@@ -96,13 +96,14 @@ pub fn serve(
       let sqlite_path = sqlite_path.clone();
       let index = index.clone();
       let db_file = db_file.clone();
+      let preset = *preset;
       std::thread::spawn(move || {
         let conn = crate::database::open_readonly(&sqlite_path);
         // recv_timeout instead of the blocking incoming_requests() so each worker rechecks the
         // shutdown flag every poll interval (tiny_http's unblock() only wakes one thread).
         while !SHUTDOWN.load(Ordering::Relaxed) {
           match server.recv_timeout(Duration::from_millis(250)) {
-            Ok(Some(request)) => handle(request, &conn, index.as_deref(), &db_file, &house_numbers),
+            Ok(Some(request)) => handle(request, &conn, index.as_deref(), &db_file, &preset),
             Ok(None) => {}
             Err(_) => break,
           }
@@ -122,7 +123,7 @@ fn handle(
   conn: &rusqlite::Connection,
   index: Option<&tantivy_index>,
   db_file: &str,
-  house_numbers: &crate::house_number::house_number_policy,
+  preset: &crate::presets::preset,
 ) {
   let start = Instant::now();
   let url = request.url().to_string();
@@ -241,7 +242,7 @@ fn handle(
               last_admin_levels,
               include_wkt,
             };
-            let address = crate::address::address::open(conn, index, house_numbers);
+            let address = crate::address::address::open(conn, index, &preset.house_numbers);
             let result = match input {
               crate::address::query_input::coordinates {
                 latitude,
@@ -379,7 +380,3 @@ fn respond_html(request: tiny_http::Request, status: StatusCode, body: &str) -> 
   request.respond(response).ok();
   code
 }
-
-#[cfg(test)]
-#[path = "http.test.rs"]
-mod tests;

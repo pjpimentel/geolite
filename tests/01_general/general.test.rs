@@ -1,8 +1,11 @@
 use crate::common::ask::ask;
-use crate::common::harness::{encode, get, plain, request, scenario, world, world_cell};
+use crate::common::harness::{
+  assert_in_order, encode, get, plain, request, scenario, world, world_cell,
+};
 use crate::common::query::{first, matches};
 use crate::extract::REGENERATE;
 use crate::house_number::HOUSE_NUMBERS;
+use crate::street_merge::{NUMBERS_MOVED, merged_summary};
 use serde_json::{Value, json};
 
 pub static SCENARIO: scenario = scenario {
@@ -251,6 +254,28 @@ fn _00_10_the_build_reports_the_house_numbers_it_linked_and_the_optimize_steps()
       .unwrap_or_else(|| panic!("missing {line:?} after offset {at}; {REGENERATE}:\n{stdout}"));
     at += found + line.len();
   }
+}
+
+// 00.11. pipeline integrity: the build folds the streets after the hierarchy the rule reads and
+// before the two indexes that hold one entry per row
+#[test]
+#[ignore]
+fn _00_11_the_build_folds_the_streets_between_the_hierarchy_and_the_search_indexes() {
+  let stdout = plain(&world().build_stdout);
+  let numbers_moved = format!("{NUMBERS_MOVED} house numbers moved");
+  assert_in_order(
+    &stdout,
+    &[
+      "indexed hierarchy in",
+      "── optimize merge-admin-levels",
+      merged_summary().as_str(),
+      numbers_moved.as_str(),
+      "── index",
+      "indexed user-friendly-name in",
+      "indexed coordinates in",
+      "── optimize",
+    ],
+  );
 }
 
 // 01.00. contract
@@ -746,6 +771,50 @@ fn _01_23_the_response_schemas_document_the_post_code() {
   }
 }
 
+// 01.24. contract: the preset the server was started with is the policy its queries read
+#[test]
+#[ignore]
+fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
+  let w = world();
+  let path = format!(
+    "/geocode?query={}",
+    encode("rua januario dos santos, santos #197")
+  );
+
+  let colombia = w.start_server_with_preset("colombia");
+  let read = get(colombia.port, &path).json();
+  assert_eq!(
+    first(&read)["house_number"],
+    json!({ "number": "197", "kind": "exact" }),
+  );
+
+  let brazil = w.start_server_with_preset("brazil");
+  let unread = get(brazil.port, &path).json();
+  assert!(
+    first(&unread).get("house_number").is_none(),
+    "brazil reads no number in '#197'"
+  );
+}
+
+// 01.25. contract: the ways of a folded street are documented as a list of ids that only a fold
+// carries
+#[test]
+#[ignore]
+fn _01_25_the_response_schema_documents_the_merged_way_ids() {
+  let s = world().start_server();
+  let spec = get(s.port, "/openapi.json").json();
+  let level = &spec["components"]["schemas"]["admin_level"];
+  assert_eq!(
+    level["properties"]["osm_merged_way_ids"]["items"]["type"],
+    "integer"
+  );
+  assert_eq!(
+    level["required"],
+    json!(["level", "name"]),
+    "the ways are optional"
+  );
+}
+
 // 02.00. dead case
 #[test]
 #[ignore]
@@ -963,6 +1032,74 @@ fn _02_15_an_unparsable_bounding_wkt_returns_bad_request() {
     r.text().contains("bounding_wkt: invalid wkt"),
     "body: {}",
     r.text()
+  );
+}
+
+// 02.16. dead case
+#[test]
+#[ignore]
+fn _02_16_a_malformed_percent_escape_decodes_as_a_literal() {
+  let w = world();
+  let s = w.start_server();
+  let broken = get(
+    s.port,
+    "/geocode?query=rua%20castro%20alves%zz&include_wkt=false",
+  );
+  assert_eq!(broken.status, 200);
+  assert_eq!(
+    first(&broken.json())["admin_levels"]
+      .as_array()
+      .and_then(|levels| levels.last())
+      .and_then(|leaf| leaf["name"].as_str()),
+    Some("Rua Castro Alves"),
+  );
+
+  let accented = get(s.port, "/geocode?query=embar%C3%A9&include_wkt=false");
+  assert_eq!(accented.status, 200);
+  assert!(
+    !matches(&accented.json()).is_empty(),
+    "a percent-encoded accented name finds its area"
+  );
+}
+
+// 02.17. dead case: both surfaces tolerate the spaces around a level, and each refuses an empty
+// list in its own words — clap reads value by value, the server reads the whole list
+#[test]
+#[ignore]
+fn _02_17_last_admin_levels_tolerates_spaces_and_refuses_an_empty_list() {
+  let w = world();
+  assert_eq!(
+    w.geolite(&["query", ANY_TEXT, "--last-admin-levels", "8, 10"])
+      .status,
+    0
+  );
+  let empty = w.geolite(&["query", ANY_TEXT, "--last-admin-levels", ""]);
+  assert_eq!(empty.status, 2);
+  assert!(
+    empty.stderr.contains("is not a level number"),
+    "stderr: {}",
+    empty.stderr
+  );
+
+  let s = w.start_server();
+  let query = encode(ANY_TEXT);
+  assert_eq!(
+    get(
+      s.port,
+      &format!("/geocode?query={query}&last_admin_levels=8,%2010")
+    )
+    .status,
+    200
+  );
+  let refused = get(
+    s.port,
+    &format!("/geocode?query={query}&last_admin_levels="),
+  );
+  assert_eq!(refused.status, 400);
+  assert!(
+    refused.text().contains("comma-separated"),
+    "body: {}",
+    refused.text()
   );
 }
 

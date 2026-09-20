@@ -3,13 +3,8 @@ pub mod coordinates;
 pub mod user_friendly_name;
 
 use clap::Subcommand;
-use indicatif::ProgressBar;
 
-fn progress_bar() -> ProgressBar {
-  let bar = ProgressBar::new_spinner();
-  bar.set_draw_target(crate::interfaces::cli::progress_draw_target());
-  bar
-}
+use crate::interfaces::cli::optimize::merge_admin_levels;
 
 #[derive(Subcommand)]
 pub enum index_commands {
@@ -19,6 +14,30 @@ pub enum index_commands {
   user_friendly_name,
   #[command(name = "coordinates")]
   coordinates,
+}
+
+fn command_handler_index_search(
+  sqlite_path: &str,
+  index_path: &str,
+  preset: &crate::presets::index_user_friendly_name_preset,
+) {
+  user_friendly_name::command_handler_index_user_friendly_name(sqlite_path, index_path, preset);
+  println!();
+  coordinates::command_handler_index_coordinates(sqlite_path);
+}
+
+pub fn command_handler_index_and_merge(
+  sqlite_path: &str,
+  index_path: &str,
+  preset: &crate::presets::index_user_friendly_name_preset,
+) {
+  admin_levels_hierarchy::command_handler_index_admin_levels_hierarchy(sqlite_path);
+  println!();
+  println!("\x1b[2m── optimize merge-admin-levels\x1b[0m");
+  merge_admin_levels::command_handler_optimize_merge_admin_levels(sqlite_path, index_path);
+  println!();
+  println!("\x1b[2m── index\x1b[0m");
+  command_handler_index_search(sqlite_path, index_path, preset);
 }
 
 pub fn command_handler_index(
@@ -31,9 +50,7 @@ pub fn command_handler_index(
     None => {
       admin_levels_hierarchy::command_handler_index_admin_levels_hierarchy(sqlite_path);
       println!();
-      user_friendly_name::command_handler_index_user_friendly_name(sqlite_path, index_path, preset);
-      println!();
-      coordinates::command_handler_index_coordinates(sqlite_path);
+      command_handler_index_search(sqlite_path, index_path, preset);
     }
     Some(index_commands::admin_levels_hierarchy) => {
       admin_levels_hierarchy::command_handler_index_admin_levels_hierarchy(sqlite_path)

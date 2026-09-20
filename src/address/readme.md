@@ -49,9 +49,9 @@ a match is composed once and nothing is re-rendered afterwards. on the text path
 `resolution::resolve` place it; on `exact` and `interpolated` the match is built on the number's
 point, with level 30 on the ladder and in the label, and `similarity` gains +0.01: a street split
 into several osm segments shares one score, and the nudge is what lifts the segment that placed the
-number above the bare ones. on the coordinate path `nearest_to` keeps only the nearest stored
-number within 50 m — tighter than the 100 m of the street quality on purpose, since a number is a
-point and a street is a line.
+number above the bare ones. on the coordinate path `nearest_to` asks `resolution::nearest` for the
+stored number closest to the point, within 50 m. the numbers of both paths come from
+`house_number::repository::numbers_by_street`.
 
 ## the response — `entity`
 
@@ -61,7 +61,10 @@ keep their names; coordinates are rounded to five decimals (`round5`). the ladde
 built once, in `match_sources`: the paths of the ids climbed from the edges, the metadata of the
 ids and their ancestors, and the wkt only when `include_wkt` asks for it (the polygons of countries
 and states are megabytes). every level of the ladder carries its own `post_code`, `null` when the
-area has none, the house number included.
+area has none, the house number included. a street folded from several ways carries
+`osm_merged_way_ids`, the osm way of each line of its `wkt`, in the order of the lines; the key is
+absent everywhere else, and it is read on every query rather than under `include_wkt`, because it
+also says which ways a street stands for when no shape is asked.
 
 **one answer is one path, not one area.** a street inside two neighbourhoods answers twice, once
 per path, and `matches[].id` is the uuid v5 of that path — the area ids from the root down to the
@@ -106,10 +109,10 @@ rtree tested the envelope only), the leaf level against `last_admin_levels` — 
 `MAX_RESULTS` (ten) only after every filter, so no filter discards a match that would have made the
 cut.
 
-## what still belongs elsewhere
+## what belongs elsewhere
 
-the move was pure, and two pieces sit here until their owners take them, each an item in the
-backlog: `doc_text` and `token_coverage` replicate the index pipeline and belong to
-`admin_level_hierarchy::search_index`; the 50 m rule and `numbers_by_street` belong to
-`house_number`. the rtree read behind the coordinate service is `admin_level::spatial_index::nearest`
-now, and the wkt of a match comes from `admin_level::repository::wkt_by_ids`.
+no rule of another concept sits here any more: the similarity is
+`admin_level_hierarchy::search_index::coverage`, the numbers of a street and the 50 m rule are
+`house_number`'s, the rtree read behind the coordinate service is `admin_level::spatial_index::nearest`
+and the wkt of a match comes from `admin_level::repository::wkt_by_ids`, the ways of a folded street
+from `merged_way_ids_by_ids` beside it.

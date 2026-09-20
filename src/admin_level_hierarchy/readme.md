@@ -17,7 +17,7 @@ parent_id)`, and an area has one row per parent. that is a table of its own and 
 | | `admin_levels_rtree` | `admin_levels_hierarchy` |
 |---|---|---|
 | what it stores | a bounding box, recomputable in milliseconds | which area contains which, answered by sampled geometry |
-| who reads it | only `admin_level`'s own coordinate query | the tantivy index, the query path, and the cli's `optimize` guard |
+| who reads it | only `admin_level`'s own coordinate query | the tantivy index, the query path, the street merge and the cli's `optimize` guards |
 
 the tantivy document is one per **path**, not per admin level — a path, not the area, is the unit
 of search and the unit of an answer, which is why the search index lives here and not in
@@ -67,6 +67,10 @@ one beside it. a point exactly on a border counts as neither in nor out: it prom
 the street traced over the line two neighbourhoods share; two areas sharing a boundary are
 neighbours, not one inside the other.
 
+a street folded from several ways (below) is asked one line at a time: what a line that runs along
+a border is promoted to depends on what that line entered, and asking the whole would let its
+neighbours change the answer, so resolving a folded street again writes the edges folding wrote.
+
 what survives is every area the child sits in, at any level, minus the ones another survivor
 already hangs from — the street inside a neighbourhood hangs from the neighbourhood, not from its
 city as well, while the road that leaves its neighbourhood and runs on into the next city keeps
@@ -77,6 +81,38 @@ qualified is never measured at all, because the reduction would drop it: that is
 ring of a country out of the pass. a ring longer than five hundred edges is indexed by latitude
 band when it is loaded, so a point test walks a few dozen edges instead of the whole boundary of a
 state.
+
+## the street merge — `street_merge`
+
+a street mapped in several ways answers several times under one label, and its numbers sit on
+whichever way they were linked to. `street_merge` folds the ways of one street into one row after
+the resolver has said which areas each way is in and before the search index is built, because the
+rule needs the areas and the index needs the rows: it is `geolite optimize merge-admin-levels`,
+which `build` and `geolite merge` run between `index admin-levels-hierarchy` and
+`index user-friendly-name`. `geolite index` alone does not merge.
+
+two ways of the same name are one street when they **share an area**, their post codes agree (a
+missing code agrees with any, two different codes do not) and they **touch or come within 20 m**: the
+end of one is within `REACH_IN_METERS` of the line of the other, which is what an avenue with a
+median puts between the two halves of the street that crosses it. the rule runs to a fixed point over
+the pieces as they grow, so two pieces that share an area only through what each has already
+absorbed still join, which is what a second run would find: a second run finds nothing. a street
+with no area never folds, since nothing says it is one street.
+
+the row that survives is the one with the smallest id of the piece, and it keeps that way. its
+geometry is always a multi-line holding the line of every way as the way has it, its own first and
+the others in id order, and `merged_way_ids` names the way of each line by position, so the ways
+whose rows are gone can still be told. a way the street already holds is told by its id, not by its
+coordinates, and is not folded again: two ways drawn over the same points both stay, and folding
+again what was folded changes nothing. its areas are the reduced union of the areas of its ways, which is what the
+resolver answers on the folded geometry. a street across two neighbourhoods is one row with two
+parents and answers once under each. the numbers of a way move to the survivor before its row goes,
+because `house_numbers.admin_level_id` cascades on delete, and the edges of the ways that go leave
+with them.
+
+the search index and the rtree hold one entry per row, so the command clears both before its first
+write and says so; a run that finds nothing to fold touches neither. it needs the hierarchy to be
+complete, and it refuses otherwise.
 
 ## the search index — `search_index`
 
@@ -99,6 +135,11 @@ source.
 one document per path, so the two paths of a street crossing two neighbourhoods are two
 documents, and naming one of the neighbourhoods ranks its path first. a hit answers the area id
 and the ordinal of the path, which is what the query needs to rebuild the same path.
+
+`coverage(query_tokens, own, ancestors)` is the similarity the text service reports: the share of
+the query's tokens found in a document's text, the text rebuilt through the same pipeline the build
+runs (the name with its post code in both forms, then `tokenize`), so the similarity and the index
+agree token for token.
 
 two documents with the same score rank by area id, then by ordinal, ascending. the tie-break is
 the collector's own sort key, read from the `admin_level_id` and `ordinal` fast fields inside

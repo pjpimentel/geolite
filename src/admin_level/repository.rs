@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use super::entity::admin_level;
 use geozero::ToWkt;
 
-use super::geometry::{admin_geometry, mbr_center};
+use super::geometry::{admin_geometry, bounding_box, mbr_center, mbr_of, merged_way_ids};
 use super::id::osm_element_kind;
 use super::scale::level;
 use crate::database::table;
@@ -18,7 +18,9 @@ const SQL_CREATE: &str = "
     name VARCHAR(128) NOT NULL,
     -- country_iso_code: ISO 3166-1 alpha-2 (2 chars, e.g. 'BR', 'US')
     country_iso_code VARCHAR(3),
-    post_code VARCHAR(12)
+    post_code VARCHAR(12),
+    -- merged_way_ids: jsonb array where element i is the osm way of line i of wkb (NULL unless folded)
+    merged_way_ids BLOB
   );
 ";
 
@@ -46,6 +48,17 @@ fn level_of(id: i64, raw: u8) -> Option<level> {
     eprintln!("warn: admin_levels row {id} carries level {raw}, outside the scale; skipped");
   }
   level
+}
+
+pub(crate) fn add_merged_way_ids(conn: &Connection) {
+  const SQL_ADD_MERGED_WAY_IDS: &str = "ALTER TABLE admin_levels ADD COLUMN merged_way_ids BLOB";
+
+  if crate::database::has_column(conn, "main", "admin_levels", "merged_way_ids") {
+    return;
+  }
+  conn
+    .execute_batch(SQL_ADD_MERGED_WAY_IDS)
+    .expect("failed to add merged_way_ids to admin_levels");
 }
 
 pub(crate) fn drop_table(conn: &Connection) {
@@ -252,6 +265,48 @@ pub fn geometry_by_ids(conn: &Connection, ids: &[i64]) -> Vec<(i64, admin_geomet
   by_ids(conn, SQL_GEOMETRY_BY_IDS, ids, |row| Ok((row.get(0)?, row.get(1)?)))
 }
 
+pub fn merged_way_ids_by_ids(
+  conn: &Connection,
+  ids: &[i64],
+) -> std::collections::HashMap<i64, merged_way_ids> {
+  const SQL_MERGED_WAY_IDS_BY_IDS: &str = "
+    SELECT id, JSON(merged_way_ids)
+    FROM admin_levels
+    WHERE merged_way_ids IS NOT NULL
+      AND id IN
+  ";
+
+  if !crate::database::has_column(conn, "main", "admin_levels", "merged_way_ids") {
+    return std::collections::HashMap::new();
+  }
+  by_ids(conn, SQL_MERGED_WAY_IDS_BY_IDS, ids, |row| {
+    Ok((row.get(0)?, row.get(1)?))
+  })
+  .into_iter()
+  .collect()
+}
+
+pub fn boxes_by_ids(
+  conn: &Connection,
+  ids: &[i64],
+) -> std::collections::HashMap<i64, bounding_box> {
+  const SQL_HEADERS_BY_IDS: &str = "
+    SELECT id, SUBSTR(wkb, 1, 38)
+    FROM admin_levels
+    WHERE wkb IS NOT NULL
+      AND id IN
+  ";
+
+  by_ids(conn, SQL_HEADERS_BY_IDS, ids, |row| {
+    let id: i64 = row.get(0)?;
+    let header: Vec<u8> = row.get(1)?;
+    Ok(mbr_of(&header).map(|mbr| (id, mbr)))
+  })
+  .into_iter()
+  .flatten()
+  .collect()
+}
+
 pub fn wkt_by_ids(conn: &Connection, ids: &[i64]) -> std::collections::HashMap<i64, String> {
   geometry_by_ids(conn, ids)
     .into_iter()
@@ -346,7 +401,37 @@ pub fn load_wkb_page(
     .collect()
 }
 
+pub fn delete_by_ids(conn: &Connection, ids: &[i64]) -> usize {
+  const SQL_DELETE_BY_IDS: &str = "
+    DELETE FROM admin_levels
+    WHERE id IN
+  ";
+
+  if ids.is_empty() {
+    return 0;
+  }
+  let sql = format!(
+    "{} ({})",
+    SQL_DELETE_BY_IDS.trim(),
+    crate::database::placeholders_for(ids.len())
+  );
+  conn
+    .execute(&sql, rusqlite::params_from_iter(ids))
+    .expect("failed to delete admin_levels by ids")
+}
+
 pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
+  upsert(conn, rows.iter().map(|row| (row, None)))
+}
+
+pub fn batch_upsert_folded(conn: &Connection, rows: &[(admin_level, merged_way_ids)]) -> i64 {
+  upsert(conn, rows.iter().map(|(row, way_ids)| (row, Some(way_ids))))
+}
+
+fn upsert<'a>(
+  conn: &Connection,
+  rows: impl Iterator<Item = (&'a admin_level, Option<&'a merged_way_ids>)>,
+) -> i64 {
   const SQL_UPSERT: &str = "
     INSERT INTO admin_levels (
       id,
@@ -356,7 +441,8 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
       name,
       country_iso_code,
       post_code,
-      wkb
+      wkb,
+      merged_way_ids
     ) VALUES (
       ?1,
       ?2,
@@ -365,14 +451,16 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
       ?5,
       ?6,
       ?7,
-      ?8
+      ?8,
+      JSONB(?9)
     )
     ON CONFLICT (id)
     DO UPDATE SET
       name             = excluded.name,
       country_iso_code = excluded.country_iso_code,
       post_code        = excluded.post_code,
-      wkb              = excluded.wkb
+      wkb              = excluded.wkb,
+      merged_way_ids   = excluded.merged_way_ids
   ";
 
   let tx = conn
@@ -381,7 +469,7 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
   let mut total_changes: i64 = 0;
   {
     let mut stmt = tx.prepare(SQL_UPSERT).expect("failed to prepare upsert");
-    for row in rows {
+    for (row, way_ids) in rows {
       let osm_id = Some(row.id.osm_id());
       let (relation_id, way_id) = match row.id.kind() {
         osm_element_kind::relation => (osm_id, None),
@@ -397,6 +485,7 @@ pub fn batch_upsert(conn: &Connection, rows: &[admin_level]) -> i64 {
           row.country_iso_code,
           row.post_code,
           row.wkb,
+          way_ids,
         ])
         .expect("failed to upsert admin_level row");
       total_changes += changes as i64;

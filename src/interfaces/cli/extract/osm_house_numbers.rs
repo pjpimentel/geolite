@@ -1,8 +1,8 @@
-use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
 use crate::house_number::{house_number_link, house_number_policy, house_numbers};
 use crate::database::table;
+use crate::interfaces::cli::progress;
 
 pub fn command_handler_extract_osm_house_numbers(
   sqlite_path: &str,
@@ -14,26 +14,13 @@ pub fn command_handler_extract_osm_house_numbers(
   }
   let conn = crate::database::open_write(sqlite_path);
 
-  let bar = ProgressBar::new_spinner();
-  bar.set_draw_target(crate::interfaces::cli::progress_draw_target());
-  bar.set_style(
-    ProgressStyle::with_template(
-      "{prefix:.bold.green} {msg:<40}  [{bar:20.green/white}] {percent:>3}%  {pos:>6}/{len:<6}  {per_sec}  eta {eta}",
-    )
-    .unwrap()
-    .progress_chars("=> "),
-  );
-  bar.set_prefix("extracting");
-  bar.set_message("house-numbers");
+  let bar = progress::bar("extracting", "house-numbers");
 
   let start = Instant::now();
   let mut count: u64 = 0;
 
   house_number_link::extract(&conn, &policy, |p| {
-    if bar.length().is_none() && p.total > 0 {
-      bar.set_length(p.total);
-    }
-    bar.set_position(p.processed);
+    progress::advance(&bar, &p);
     count = p.processed;
   });
 

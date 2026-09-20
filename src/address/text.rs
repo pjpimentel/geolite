@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use geo::Centroid;
+use geo::{Centroid, Closest, ClosestPoint, Geometry, Point};
 use rusqlite::Connection;
 
 use super::entity::{
@@ -10,10 +10,8 @@ use super::entity::{
 use super::house_number::{self, resolved_number};
 use super::{filter, query_opts};
 use crate::admin_level::level;
-use crate::admin_level::repository::{admin_area_row, admin_meta_row};
-use crate::admin_level_hierarchy::search_index::{
-  build_entity_text, search_hit, tantivy_index, tokenize,
-};
+use crate::admin_level::repository::admin_area_row;
+use crate::admin_level_hierarchy::search_index::{self, search_hit, tantivy_index, tokenize};
 use crate::house_number::house_number_policy;
 
 const MAX_FTS_HITS: u8 = 50;
@@ -56,7 +54,8 @@ pub(super) fn run(
   let mut ids: Vec<i64> = hits.iter().map(|hit| hit.admin_level_id).collect();
   ids.sort_unstable();
   ids.dedup();
-  let sources = match_sources::load(conn, &ids, opts.include_wkt);
+  let mut sources = match_sources::load(conn, &ids, opts.include_wkt);
+  sources.load_leaf_boxes(conn);
   let records = crate::admin_level::repository::load_full_by_ids(conn, &ids);
   let record_map: HashMap<i64, &admin_area_row> = records.iter().map(|r| (r.id, r)).collect();
   let streets: Vec<(i64, &str)> = records
@@ -105,6 +104,26 @@ pub(super) fn run(
   }
 }
 
+fn resting_point(
+  record: &admin_area_row,
+  geometry: &Geometry<f64>,
+  sources: &match_sources,
+  path: &[i64],
+) -> Option<Point<f64>> {
+  let centroid = geometry.centroid()?;
+  if record.admin_level != level::street {
+    return Some(centroid);
+  }
+  let toward = match (sources.paths_of(record.id).len() > 1, path.first()) {
+    (true, Some(&leaf)) => sources.center_of(leaf).unwrap_or(centroid),
+    _ => centroid,
+  };
+  match geometry.closest_point(&toward) {
+    Closest::SinglePoint(point) | Closest::Intersection(point) => Some(point),
+    Closest::Indeterminate => Some(centroid),
+  }
+}
+
 fn build_match(
   record: &admin_area_row,
   sources: &match_sources,
@@ -115,7 +134,7 @@ fn build_match(
   opts: &query_opts,
 ) -> Option<query_match> {
   let geom = record.wkb.as_ref()?.geometry();
-  let centroid = geom.centroid()?;
+  let centroid = resting_point(record, geom, sources, path)?;
   let placed = number.and_then(resolved_number::placed);
   let placed_number = placed.map(|(n, _)| n);
   let point = placed.map_or(centroid, |(_, p)| p);
@@ -139,13 +158,10 @@ fn build_match(
     path,
   );
   let own_meta = sources.meta.get(&record.id);
-  let coverage = token_coverage(
+  let coverage = search_index::coverage(
     query_tokens,
-    &doc_text(
-      &record.name,
-      own_meta.and_then(|m| m.post_code.as_deref()),
-      &ancestors,
-    ),
+    (&record.name, own_meta.and_then(|m| m.post_code.as_deref())),
+    ancestors.iter().map(|a| (a.name.as_str(), a.post_code.as_deref())),
   );
 
   let mut similarity = round5(coverage as f64) as f32;
@@ -169,27 +185,4 @@ fn build_match(
     house_number: number.map(resolved_number::reported),
     id: entity::path_id(record.id, path),
   })
-}
-
-// the text the index holds for a document, rebuilt through the same pipeline as the build so
-// that the tokens agree
-fn doc_text(own_name: &str, own_post_code: Option<&str>, ancestors: &[&admin_meta_row]) -> String {
-  let mut out = build_entity_text(own_name, own_post_code);
-  for a in ancestors {
-    out.push(' ');
-    out.push_str(&build_entity_text(&a.name, a.post_code.as_deref()));
-  }
-  out
-}
-
-fn token_coverage(query_tokens: &[String], doc_text: &str) -> f32 {
-  if query_tokens.is_empty() {
-    return 0.0;
-  }
-  let doc_tokens: HashSet<String> = tokenize(doc_text).into_iter().collect();
-  let hits = query_tokens
-    .iter()
-    .filter(|t| doc_tokens.contains(t.as_str()))
-    .count();
-  hits as f32 / query_tokens.len() as f32
 }

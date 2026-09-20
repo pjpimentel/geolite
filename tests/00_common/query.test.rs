@@ -81,13 +81,14 @@ pub fn point_of(m: &Value) -> (f64, f64) {
   )
 }
 
+pub fn street_way(m: &Value) -> Option<u64> {
+  level_at(m, 12).and_then(|a| a["osm_way_id"].as_u64())
+}
+
 // the street ids behind a result set, sorted and deduped, for assertions about the set: segments
 // of the same street tie on score and rank by id
 pub fn way_ids(result: &Value) -> Vec<u64> {
-  let mut ids: Vec<u64> = matches(result)
-    .iter()
-    .filter_map(|m| level_at(m, 12).and_then(|a| a["osm_way_id"].as_u64()))
-    .collect();
+  let mut ids: Vec<u64> = matches(result).iter().filter_map(street_way).collect();
   ids.sort_unstable();
   ids.dedup();
   ids

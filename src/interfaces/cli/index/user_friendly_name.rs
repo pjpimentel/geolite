@@ -1,7 +1,8 @@
-use indicatif::ProgressStyle;
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
+
+use crate::interfaces::cli::progress;
 
 pub fn command_handler_index_user_friendly_name(
   sqlite_path: &str,
@@ -20,16 +21,7 @@ pub fn command_handler_index_user_friendly_name(
   crate::admin_level_hierarchy::search_index::destroy(path);
   println!(" done");
 
-  let bar = super::progress_bar();
-  bar.set_style(
-    ProgressStyle::with_template(
-      "{prefix:.bold.green} {msg:<40}  [{bar:20.green/white}] {percent:>3}%  {pos:>6}/{len:<6}  {per_sec}  eta {eta}",
-    )
-    .unwrap()
-    .progress_chars("=> "),
-  );
-  bar.set_prefix("indexing");
-  bar.set_message("user-friendly-name");
+  let bar = progress::bar("indexing", "user-friendly-name");
 
   let start = Instant::now();
 
@@ -37,14 +29,7 @@ pub fn command_handler_index_user_friendly_name(
     &conn,
     path,
     preset,
-    |p| {
-      if let Some(total) = p.total
-        && bar.length().is_none()
-      {
-        bar.set_length(total);
-      }
-      bar.set_position(p.processed);
-    },
+    |p| progress::advance(&bar, &p),
   );
 
   bar.finish();
