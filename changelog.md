@@ -9,6 +9,7 @@
 1. ADDED e2e scenarios for `geolite merge`, the only command the battery never ran, so a wrong id remapping cannot pass in silence.
 1. ADDED e2e scenarios for the degraded paths the real pipeline never produces, so warning and carrying on is guarded by the battery that stays.
 1. REMOVED the unit tests the e2e battery now covers: the merge, the http helpers and the wkt parse.
+1. MODIFIED the pre-merge checks into a lint job beside the coverage one, so the check pass and the build pass run in parallel instead of one after the other.
 
 ## **2026-09-19** - 0.0.12
 
