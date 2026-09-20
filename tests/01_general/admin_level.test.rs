@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::common::harness::{output, plain, query_at, world};
+use crate::common::harness::{assert_in_order, output, plain, query_at, world};
 use crate::common::query::{first, levels_of, matches, name_at};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
 use crate::general::world;
@@ -280,20 +280,17 @@ fn _02_02_the_index_run_names_every_stage_it_finished() {
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
   let stdout = plain(&index_at(w, &s.dir, &[]).stdout);
-  let mut at = 0;
-  for line in [
-    "clearing hierarchy",
-    "indexed hierarchy in",
-    "clearing user-friendly-name",
-    "indexed user-friendly-name in",
-    "clearing coordinates",
-    "indexed coordinates in",
-  ] {
-    let found = stdout[at..]
-      .find(line)
-      .unwrap_or_else(|| panic!("{line:?} is missing or out of order:\n{stdout}"));
-    at += found + line.len();
-  }
+  assert_in_order(
+    &stdout,
+    &[
+      "clearing hierarchy",
+      "indexed hierarchy in",
+      "clearing user-friendly-name",
+      "indexed user-friendly-name in",
+      "clearing coordinates",
+      "indexed coordinates in",
+    ],
+  );
 }
 
 // 02.01. the hierarchy row, not the area, is the unit of search

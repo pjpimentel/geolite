@@ -44,6 +44,7 @@
 1. MODIFIED the `wkt` of a folded street to always be a multi-line of the original lines of its ways.
 1. ADDED `merged_way_ids` to `admin_levels` and `osm_merged_way_ids` to the response, naming the osm way of each line of a folded street, with no new schema version.
 1. MODIFIED `geolite merge` to carry `merged_way_ids` and to accept a source built before the column.
+1. ADDED e2e scenarios for the street merge in the pipeline, the ranking of streets at the same distance and the ways of a folded street in the response.
 
 ## **2026-09-19** - 0.0.12
 

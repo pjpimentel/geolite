@@ -1,8 +1,11 @@
 use crate::common::ask::ask;
-use crate::common::harness::{encode, get, plain, request, scenario, world, world_cell};
+use crate::common::harness::{
+  assert_in_order, encode, get, plain, request, scenario, world, world_cell,
+};
 use crate::common::query::{first, matches};
 use crate::extract::REGENERATE;
 use crate::house_number::HOUSE_NUMBERS;
+use crate::street_merge::{NUMBERS_MOVED, merged_summary};
 use serde_json::{Value, json};
 
 pub static SCENARIO: scenario = scenario {
@@ -251,6 +254,28 @@ fn _00_10_the_build_reports_the_house_numbers_it_linked_and_the_optimize_steps()
       .unwrap_or_else(|| panic!("missing {line:?} after offset {at}; {REGENERATE}:\n{stdout}"));
     at += found + line.len();
   }
+}
+
+// 00.11. pipeline integrity: the build folds the streets after the hierarchy the rule reads and
+// before the two indexes that hold one entry per row
+#[test]
+#[ignore]
+fn _00_11_the_build_folds_the_streets_between_the_hierarchy_and_the_search_indexes() {
+  let stdout = plain(&world().build_stdout);
+  let numbers_moved = format!("{NUMBERS_MOVED} house numbers moved");
+  assert_in_order(
+    &stdout,
+    &[
+      "indexed hierarchy in",
+      "── optimize merge-admin-levels",
+      merged_summary().as_str(),
+      numbers_moved.as_str(),
+      "── index",
+      "indexed user-friendly-name in",
+      "indexed coordinates in",
+      "── optimize",
+    ],
+  );
 }
 
 // 01.00. contract
@@ -768,6 +793,25 @@ fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
   assert!(
     first(&unread).get("house_number").is_none(),
     "brazil reads no number in '#197'"
+  );
+}
+
+// 01.25. contract: the ways of a folded street are documented as a list of ids that only a fold
+// carries
+#[test]
+#[ignore]
+fn _01_25_the_response_schema_documents_the_merged_way_ids() {
+  let s = world().start_server();
+  let spec = get(s.port, "/openapi.json").json();
+  let level = &spec["components"]["schemas"]["admin_level"];
+  assert_eq!(
+    level["properties"]["osm_merged_way_ids"]["items"]["type"],
+    "integer"
+  );
+  assert_eq!(
+    level["required"],
+    json!(["level", "name"]),
+    "the ways are optional"
   );
 }
 

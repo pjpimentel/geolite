@@ -528,6 +528,17 @@ pub fn plain(text: &str) -> String {
   out
 }
 
+// every line is found after the one before it, so the text names them all and in this order
+pub fn assert_in_order(text: &str, lines: &[&str]) {
+  let mut at = 0;
+  for line in lines {
+    let found = text[at..]
+      .find(line)
+      .unwrap_or_else(|| panic!("{line:?} is missing or out of order:\n{text}"));
+    at += found + line.len();
+  }
+}
+
 // a text query under a preset, against the database of a scratch or of the world
 pub fn query_at(w: &world, data_path: &Path, preset: &str, text: &str) -> serde_json::Value {
   let out = w.geolite_in(

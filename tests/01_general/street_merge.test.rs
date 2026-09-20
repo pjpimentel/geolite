@@ -12,6 +12,13 @@ pub(crate) const LOWER_WAY: u64 = 255_710_390;
 pub(crate) const UPPER_WAY: u64 = 729_205_713;
 const APART_WAYS: [u64; 2] = [169_924_327, 489_092_642];
 const EUCLIDES_CROSSING: u64 = 38_791_238;
+const EUCLIDES_WAYS: [u64; 5] = [
+  EUCLIDES_CROSSING,
+  483_127_426,
+  483_127_429,
+  858_402_097,
+  858_402_098,
+];
 const EUCLIDES_ACROSS_THE_GAP: u64 = 482_330_396;
 const SAO_PAULO: i64 = 596_409;
 const GUARUJA: i64 = 596_927;
@@ -21,7 +28,7 @@ const JOSE_MENINO: i64 = 8_565_771;
 const STREETS: i64 = 12_878;
 const STREETS_AFTER: i64 = 7_195;
 const PIECES: i64 = 1_984;
-const NUMBERS_MOVED: usize = 261;
+pub(crate) const NUMBERS_MOVED: usize = 261;
 const TEXT_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
 const EUCLIDES_GONZAGA_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
 const EUCLIDES_JOSE_MENINO_QUERY: &str = "rua euclides da cunha, jose menino, santos, sao paulo";
@@ -30,11 +37,51 @@ pub(crate) fn way(osm_id: u64) -> i64 {
   (osm_id << 1) as i64
 }
 
+fn writable(dir: &Path) -> rusqlite::Connection {
+  rusqlite::Connection::open(dir.join("database.sqlite3"))
+    .expect("failed to open the scratch database for writing")
+}
+
+fn rows_of(conn: &rusqlite::Connection, ways: &[u64]) -> i64 {
+  let ids: Vec<String> = ways.iter().map(|&osm_id| way(osm_id).to_string()).collect();
+  count(
+    conn,
+    &format!(
+      "SELECT COUNT(*) FROM admin_levels WHERE id IN ({})",
+      ids.join(", ")
+    ),
+  )
+}
+
+fn street_rows(conn: &rusqlite::Connection) -> i64 {
+  count(
+    conn,
+    "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 12",
+  )
+}
+
+fn traced_rows(conn: &rusqlite::Connection) -> i64 {
+  count(
+    conn,
+    "SELECT COUNT(*) FROM admin_levels WHERE merged_way_ids IS NOT NULL",
+  )
+}
+
+fn assert_refused(out: &output, reason: &str) {
+  assert!(plain(&out.stderr).contains(reason), "{}", out.stderr);
+}
+
+pub(crate) fn merged_summary() -> String {
+  format!(
+    "merged {} street ways into {PIECES} streets in",
+    STREETS - STREETS_AFTER + PIECES
+  )
+}
+
 // a database as a build before the column left it. sqlite finds where the last column starts by
 // walking back to a comma, so the ddl comment of merged_way_ids must carry none
 pub(crate) fn drop_merged_way_ids(dir: &Path) {
-  let conn = rusqlite::Connection::open(dir.join("database.sqlite3"))
-    .expect("failed to open the scratch database for writing");
+  let conn = writable(dir);
   conn
     .execute_batch("ALTER TABLE admin_levels DROP COLUMN merged_way_ids")
     .expect("failed to drop merged_way_ids");
@@ -136,8 +183,7 @@ fn snapshot(conn: &rusqlite::Connection) -> (String, String, String) {
 }
 
 fn set_post_codes(dir: &Path, codes: [(u64, Option<&str>); 2]) {
-  let conn = rusqlite::Connection::open(dir.join("database.sqlite3"))
-    .expect("failed to open the scratch database for writing");
+  let conn = writable(dir);
   for (osm_id, code) in codes {
     let changed = conn
       .execute(
@@ -164,11 +210,10 @@ fn _00_00_ways_that_touch_fold_into_the_smallest_id() {
   };
 
   let stdout = plain(&merged_at(w, &s.dir).stdout);
-  let summary = format!(
-    "merged {} street ways into {PIECES} streets in",
-    STREETS - STREETS_AFTER + PIECES
+  assert!(
+    stdout.contains(&merged_summary()),
+    "{REGENERATE}:\n{stdout}"
   );
-  assert!(stdout.contains(&summary), "{REGENERATE}:\n{stdout}");
 
   let conn = s.ledger();
   assert_eq!(
@@ -609,6 +654,61 @@ fn _00_12_each_label_of_a_street_answers_a_point_inside_its_own_neighbourhood() 
   }
 }
 
+// 00.13. a street of many ways keeps the line of every way, its own first and the others in id
+// order, and its trace names them in that order
+#[test]
+#[ignore]
+fn _00_13_a_street_of_many_ways_keeps_every_line_in_the_order_of_its_trace() {
+  let w = world();
+  let s = resolved(w, "street_merge_many_ways");
+  let before: Vec<LineString<f64>> = {
+    let conn = s.ledger();
+    EUCLIDES_WAYS
+      .iter()
+      .flat_map(|&osm_id| lines_of(&conn, way(osm_id)))
+      .collect()
+  };
+
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  assert_eq!(
+    merged_way_ids_of(&conn, way(EUCLIDES_CROSSING)),
+    Some(EUCLIDES_WAYS.to_vec()),
+    "{REGENERATE}"
+  );
+  assert_eq!(
+    lines_of(&conn, way(EUCLIDES_CROSSING)),
+    before,
+    "one line per way, as the way has it, in the order of the trace"
+  );
+  assert_eq!(
+    rows_of(&conn, &EUCLIDES_WAYS[1..]),
+    0,
+    "the other ways are absorbed"
+  );
+}
+
+// 00.14. `geolite index` alone resolves and indexes and folds nothing: only build, merge and the
+// command itself fold
+#[test]
+#[ignore]
+fn _00_14_geolite_index_alone_does_not_fold() {
+  let w = world();
+  let s = extracted(w, "street_merge_index_alone", "2", &[]);
+  admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
+
+  let stdout = plain(&index_at(w, &s.dir, &[]).stdout);
+
+  assert!(
+    !stdout.contains("merge-admin-levels") && !stdout.contains("street ways into"),
+    "{stdout}"
+  );
+  let conn = s.ledger();
+  assert_eq!(street_rows(&conn), STREETS, "{REGENERATE}");
+  assert_eq!(traced_rows(&conn), 0);
+}
+
 // 01.00. two different post codes are two streets
 #[test]
 #[ignore]
@@ -686,11 +786,7 @@ fn _02_00_it_refuses_a_database_without_a_hierarchy() {
 
   let out = merged_at(w, &s.dir);
 
-  assert!(
-    plain(&out.stderr).contains("admin_levels_hierarchy is missing or incomplete"),
-    "{}",
-    out.stderr
-  );
+  assert_refused(&out, "admin_levels_hierarchy is missing or incomplete");
   assert_eq!(
     count(
       &s.ledger(),
@@ -710,11 +806,61 @@ fn _02_01_it_refuses_an_empty_database() {
 
   let out = merged_at(w, &s.dir);
 
-  assert!(
-    plain(&out.stderr).contains("admin_levels is empty"),
-    "{}",
-    out.stderr
+  assert_refused(&out, "admin_levels is empty");
+}
+
+// 02.02. it needs the hierarchy to cover every row: the ways extracted again after a fold have no
+// edge yet, and it refuses until the hierarchy is resolved again
+#[test]
+#[ignore]
+fn _02_02_it_refuses_a_hierarchy_that_no_longer_covers_every_row() {
+  let w = world();
+  let s = resolved(w, "street_merge_stale_hierarchy");
+  merged_at(w, &s.dir);
+  admin_levels_at(w, &s.dir, "12", &[]);
+  let before = snapshot(&s.ledger());
+
+  let out = merged_at(w, &s.dir);
+
+  assert_refused(&out, "admin_levels_hierarchy is missing or incomplete");
+  assert_eq!(
+    snapshot(&s.ledger()),
+    before,
+    "a refused run writes nothing"
   );
+  assert_eq!(street_rows(&s.ledger()), STREETS, "{REGENERATE}");
+}
+
+// 02.03. a way whose geometry cannot be read warns and is left alone, and the rest still fold: the
+// blob never reaches the real pipeline
+#[test]
+#[ignore]
+fn _02_03_a_way_with_an_unreadable_geometry_is_left_alone_and_the_rest_fold() {
+  let w = world();
+  let s = resolved(w, "street_merge_unreadable_geometry");
+  let shortened = writable(&s.dir)
+    .execute(
+      "UPDATE admin_levels SET wkb = x'0001' WHERE id = ?1",
+      [way(UPPER_WAY)],
+    )
+    .expect("failed to shorten the blob");
+  assert_eq!(shortened, 1, "{REGENERATE}");
+
+  let out = merged_at(w, &s.dir);
+
+  assert!(out.stderr.contains("blob too short"), "{}", out.stderr);
+  let conn = s.ledger();
+  assert_eq!(
+    merged_way_ids_of(&conn, way(LOWER_WAY)),
+    None,
+    "its only neighbour has no line to touch"
+  );
+  assert_eq!(
+    rows_of(&conn, &[UPPER_WAY]),
+    1,
+    "the way that cannot be read keeps its row"
+  );
+  assert_eq!(traced_rows(&conn), PIECES - 1, "{REGENERATE}");
 }
 
 // 03.00. a database built before the column gains it on the next write command, under the same

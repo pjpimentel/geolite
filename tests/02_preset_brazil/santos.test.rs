@@ -1,8 +1,8 @@
 use crate::common::ask::ask;
 use crate::common::harness::{encode, get, scenario, world, world_cell};
 use crate::common::query::{
-  distances, first, leaves, level_at, levels_of, matches, name_at, names_at, point_of, way_ids,
-  wkt_at,
+  distances, first, leaves, level_at, levels_of, matches, name_at, names_at, point_of, street_way,
+  way_ids, wkt_at,
 };
 use geo::{EuclideanDistance, Geometry, Point};
 use geozero::{ToGeo, wkb::SpatiaLiteWkb, wkt::Wkt};
@@ -52,6 +52,15 @@ const NESTED_NUMBERED_POINT: &str = "-23.97214,-46.30811";
 // ancestors of level 10
 const NESTED_POINT: &str = "-23.973439,-46.309747";
 const NESTED_QUERY: &str = "rua aureliano coutinho, conjunto habitacional jau, santos";
+// avenida washington luiz meets avenida general francisco glicério here: two streets at 0 m
+const TWO_AVENUES_POINT: &str = "-23.9574424,-46.327751";
+// rua bento de abreu runs through boqueirão and embaré; three streets meet at its boqueirão point
+const CROSSING_STREET_WAY: u64 = 255_734_641;
+const CROSSING_STREET_IN_BOQUEIRAO: &str = "-23.966762,-46.322142";
+const CROSSING_STREET_IN_EMBARE: &str = "-23.966895,-46.319555";
+// rua castro alves carries 35 on the way that was folded into it; rua euclides da cunha is five ways
+const FOLDED_NUMBERED_QUERY: &str = "rua castro alves, 35, embare";
+const FIVE_WAYS_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
 
 const SQL_SELECT_BOUNDARY: &str = "
   SELECT admin_level, name, wkb
@@ -929,6 +938,73 @@ fn _03_08_the_http_api_answers_the_post_code_of_every_level() {
   w.assert_both(&s, &ask(POST_CODED_STREET), &post_coded_street_answer());
 }
 
+// 03.09. regression guard: the distance is whole metres, so the streets that meet at a point tie,
+// and the id breaks the tie: the order of the answer never depends on the machine
+#[test]
+#[ignore]
+fn _03_09_streets_at_the_same_distance_rank_by_id() {
+  for (point, ways) in [
+    (AVENUE_FAR_POINT, vec![32_338_918, 38_791_115]),
+    (TWO_AVENUES_POINT, vec![32_338_918, 38_794_373]),
+    (
+      CROSSING_STREET_IN_BOQUEIRAO,
+      vec![38_794_576, CROSSING_STREET_WAY, 502_795_198],
+    ),
+  ] {
+    let result = world().run(&[point]);
+    let on_the_point: Vec<u64> = matches(&result)
+      .iter()
+      .filter(|m| m["coordinates_distance_in_meters"] == 0)
+      .filter_map(street_way)
+      .collect();
+    assert_eq!(on_the_point, ways, "the streets at 0 m of {point}");
+  }
+}
+
+// 03.10. regression guard: a street across two neighbourhoods answers a point once, under the
+// neighbourhood that holds the point of the street nearest to it, and not once per neighbourhood
+#[test]
+#[ignore]
+fn _03_10_a_point_answers_a_street_across_two_neighbourhoods_under_the_one_that_holds_it() {
+  for (point, neighbourhood) in [
+    (CROSSING_STREET_IN_BOQUEIRAO, "Boqueirão"),
+    (CROSSING_STREET_IN_EMBARE, "Embaré"),
+  ] {
+    let result = world().run(&[point]);
+    let answers: Vec<&Value> = matches(&result)
+      .iter()
+      .filter(|m| street_way(m) == Some(CROSSING_STREET_WAY))
+      .collect();
+    assert_eq!(answers.len(), 1, "the street answers {point} once");
+    assert_eq!(names_at(answers[0], 10), [neighbourhood]);
+  }
+}
+
+// 03.11. regression guard: the http api names the ways of a folded street exactly as the cli does,
+// and neither names them on a level that is not a fold, the house number included
+#[test]
+#[ignore]
+fn _03_11_the_http_api_names_the_ways_of_a_folded_street_and_never_of_a_house_number() {
+  let w = world();
+  let s = w.start_server();
+  let result = w.assert_both(
+    &s,
+    &ask(FOLDED_NUMBERED_QUERY),
+    &json!({ "matches": [{ "house_number": { "number": "35", "kind": "exact" } }] }),
+  );
+  let top = first(&result);
+  assert_eq!(
+    level_at(top, 12).map(|street| &street["osm_merged_way_ids"]),
+    Some(&json!([255_710_390_u64, 729_205_713_u64]))
+  );
+  for level in [10, 30] {
+    assert!(
+      level_at(top, level).is_some_and(|l| l.get("osm_merged_way_ids").is_none()),
+      "level {level} is not a fold"
+    );
+  }
+}
+
 // 04.00. pipeline integrity: the preset is inferred from the source path, not from a flag
 #[test]
 #[ignore]
@@ -1001,6 +1077,30 @@ fn _05_01_include_wkt_attaches_geometry_to_every_level_but_the_house_number_on_t
     level_at(top, 30).is_some_and(|l| l.get("wkt").is_none()),
     "the house number is a point the service never loads"
   );
+}
+
+// 05.02. contract: the wkt of a folded street and the ways it names describe each other: one line
+// per way, the street's own way first
+#[test]
+#[ignore]
+fn _05_02_the_wkt_of_a_folded_street_has_one_line_per_merged_way() {
+  for (query, ways) in [(TEXT_QUERY, 2), (FIVE_WAYS_QUERY, 5)] {
+    let result = world().query_json(&[query]);
+    let street = level_at(first(&result), 12).expect("the top match is a street");
+    let trace = street["osm_merged_way_ids"]
+      .as_array()
+      .unwrap_or_else(|| panic!("{query:?} answers a folded street"));
+    assert_eq!(trace.len(), ways, "the fixture changed for {query:?}");
+    assert_eq!(trace[0], street["osm_way_id"], "its own way comes first");
+    let wkt = street["wkt"].as_str().expect("the street carries geometry");
+    match Wkt(wkt)
+      .to_geo()
+      .expect("the street geometry must be valid wkt")
+    {
+      Geometry::MultiLineString(lines) => assert_eq!(lines.0.len(), trace.len()),
+      other => panic!("{query:?} answers a street that is not a multi-line: {other:?}"),
+    }
+  }
 }
 
 // 06.00. dead case
