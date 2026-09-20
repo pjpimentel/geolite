@@ -1,5 +1,9 @@
 # changelog
 
+## **planned** - 0.0.18
+
+1. MODIFIED the cli to run a stage as `geolite execute "<command>"` in place of the `extract`, `index` and `optimize` subcommands, so a stage is addressed by its name and the pipeline reads in the order it runs.
+
 ## **planned** - 0.0.17
 
 1. MODIFIED the storage to a single file, without the split between `database.sqlite3` and `database.tantivy`, so a base is one file to copy, publish and merge.

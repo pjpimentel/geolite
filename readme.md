@@ -126,20 +126,24 @@ $ geolite --preset brazil extract osm-house-numbers
 ### index extracted data
 ```bash
 $ geolite index admin-levels-hierarchy
-# folds the ways of one street into one row and clears the two indexes below
-$ geolite optimize merge-admin-levels
 $ geolite --preset brazil index user-friendly-name
 $ geolite index coordinates
 ```
 
-`geolite build` and `geolite merge` run the four steps in this order. `geolite index` without a
-subcommand runs the three index steps and does not merge the streets.
+`geolite index` without a subcommand runs the three steps.
 
 ### optimize data
 ```bash
+# folds the ways of one street into one row: it reads the hierarchy and clears the
+# user-friendly-name and coordinates indexes, which have to be built again after it
+$ geolite optimize merge-admin-levels
 $ geolite optimize delete-intermediary-data
 $ geolite optimize sqlite-file
 ```
+
+`geolite build` and `geolite merge` run `optimize merge-admin-levels` right after
+`index admin-levels-hierarchy`, so the two other indexes are built once, over the rows that stay.
+`geolite index` alone does not merge the streets.
 
 ### query
 ```bash
