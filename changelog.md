@@ -31,7 +31,7 @@
 1. ADDED scenarios for the shapes the real extract never brings (compound and `#` house numbers, `drop_values`, the label and the scale errors), so the battery over real data holds them too.
 1. REMOVED the island of unit tests that was left, as the scenarios above take over each guard, so one regression battery is left.
 
-## **2026-XX-XX** - 0.0.13
+## **2026-09-20** - 0.0.13
 
 1. MODIFIED the similarity, the house number reads, the preset plumbing and the progress report to the domains that own them.
 1. ADDED e2e scenarios for `geolite merge` and for the degraded paths the real pipeline never produces.
