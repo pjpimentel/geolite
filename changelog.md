@@ -15,7 +15,10 @@
 1. MODIFIED the resolver to ask a street folded from several ways one line at a time, so resolving it again writes the edges folding wrote.
 1. MODIFIED the coordinate service to answer a street only under the areas that hold its nearest point, and to rank two streets at the same distance by id, so a street that runs through many areas does not answer once per area.
 1. MODIFIED the text service to answer a street without a number with a point of the street: the one nearest its centroid, or nearest the centre of the area of each path when the street runs through several, so each label answers inside its own area.
-1. MODIFIED the `wkt` of a street folded from several ways to a multi-line.
+1. MODIFIED the `wkt` of a street folded from several ways to a multi-line: always a multi-line, the line of every way as the way has it, and a way already folded is told by its id instead of its coordinates, so two ways drawn over the same points both stay.
+1. ADDED `merged_way_ids` to `admin_levels`, a jsonb array aligned with the lines of a folded street that names the osm way of each line, so the ways whose rows are gone can still be told. an existing database gains the column on the next write command, without a new schema version.
+1. ADDED `osm_merged_way_ids` to the items of `admin_levels` in the response, present only on a street folded from several ways, so each line of its `wkt` can be traced to its way.
+1. MODIFIED `geolite merge` to carry `merged_way_ids` along with the geometry and to accept a source built before the column.
 
 ## **2026-09-19** - 0.0.12
 

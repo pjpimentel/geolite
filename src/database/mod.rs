@@ -178,17 +178,19 @@ pub fn destroy_data(
   conn.execute_batch("VACUUM;").expect("failed to vacuum");
 }
 
-pub(crate) fn has_column(conn: &Connection, table: &str, column: &str) -> bool {
+pub(crate) fn has_column(conn: &Connection, schema: &str, table: &str, column: &str) -> bool {
   const SQL_HAS_COLUMN: &str = "
     SELECT COUNT(*)
-    FROM PRAGMA_TABLE_INFO(?1)
-    WHERE name = ?2
+    FROM PRAGMA_TABLE_INFO(?1, ?2)
+    WHERE name = ?3
   ";
 
   conn
-    .query_row(SQL_HAS_COLUMN, rusqlite::params![table, column], |row| {
-      row.get::<_, i64>(0)
-    })
+    .query_row(
+      SQL_HAS_COLUMN,
+      rusqlite::params![table, schema, column],
+      |row| row.get::<_, i64>(0),
+    )
     .expect("failed to read table info")
     > 0
 }
@@ -219,6 +221,7 @@ pub fn open_write_main(path: &str) -> Connection {
   crate::osm_pbf_file::osm_pbf_files::create_table(&conn);
   crate::osm_pbf_file::repository::add_origin_wkt(&conn);
   crate::admin_level::admin_levels::create_table(&conn);
+  crate::admin_level::repository::add_merged_way_ids(&conn);
   crate::admin_level_hierarchy::admin_levels_hierarchy::create_table(&conn);
   crate::admin_level::spatial_index::create_table(&conn);
   crate::house_number::house_numbers::create_table(&conn);

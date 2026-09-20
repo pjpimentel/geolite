@@ -61,7 +61,10 @@ keep their names; coordinates are rounded to five decimals (`round5`). the ladde
 built once, in `match_sources`: the paths of the ids climbed from the edges, the metadata of the
 ids and their ancestors, and the wkt only when `include_wkt` asks for it (the polygons of countries
 and states are megabytes). every level of the ladder carries its own `post_code`, `null` when the
-area has none, the house number included.
+area has none, the house number included. a street folded from several ways carries
+`osm_merged_way_ids`, the osm way of each line of its `wkt`, in the order of the lines; the key is
+absent everywhere else, and it is read on every query rather than under `include_wkt`, because it
+also says which ways a street stands for when no shape is asked.
 
 **one answer is one path, not one area.** a street inside two neighbourhoods answers twice, once
 per path, and `matches[].id` is the uuid v5 of that path — the area ids from the root down to the
@@ -111,4 +114,5 @@ cut.
 no rule of another concept sits here any more: the similarity is
 `admin_level_hierarchy::search_index::coverage`, the numbers of a street and the 50 m rule are
 `house_number`'s, the rtree read behind the coordinate service is `admin_level::spatial_index::nearest`
-and the wkt of a match comes from `admin_level::repository::wkt_by_ids`.
+and the wkt of a match comes from `admin_level::repository::wkt_by_ids`, the ways of a folded street
+from `merged_way_ids_by_ids` beside it.

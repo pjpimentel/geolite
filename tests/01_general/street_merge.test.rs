@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::admin_level::{admin_levels_at, index_at};
-use crate::common::harness::{decode_wkb, output, plain, query_at, world};
+use crate::common::harness::{decode_wkb, merged_way_ids_of, output, plain, query_at, world};
 use crate::common::query::{level_at, matches, name_at, point_of};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
 use crate::general::world;
 use geo::{Contains, Geometry, LineString, Point};
 
-const LOWER_WAY: u64 = 255_710_390;
-const UPPER_WAY: u64 = 729_205_713;
+pub(crate) const LOWER_WAY: u64 = 255_710_390;
+pub(crate) const UPPER_WAY: u64 = 729_205_713;
 const APART_WAYS: [u64; 2] = [169_924_327, 489_092_642];
 const EUCLIDES_CROSSING: u64 = 38_791_238;
 const EUCLIDES_ACROSS_THE_GAP: u64 = 482_330_396;
@@ -26,8 +26,25 @@ const TEXT_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
 const EUCLIDES_GONZAGA_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
 const EUCLIDES_JOSE_MENINO_QUERY: &str = "rua euclides da cunha, jose menino, santos, sao paulo";
 
-fn way(osm_id: u64) -> i64 {
+pub(crate) fn way(osm_id: u64) -> i64 {
   (osm_id << 1) as i64
+}
+
+// a database as a build before the column left it. sqlite finds where the last column starts by
+// walking back to a comma, so the ddl comment of merged_way_ids must carry none
+pub(crate) fn drop_merged_way_ids(dir: &Path) {
+  let conn = rusqlite::Connection::open(dir.join("database.sqlite3"))
+    .expect("failed to open the scratch database for writing");
+  conn
+    .execute_batch("ALTER TABLE admin_levels DROP COLUMN merged_way_ids")
+    .expect("failed to drop merged_way_ids");
+  assert_eq!(
+    count(
+      &conn,
+      "SELECT COUNT(*) FROM PRAGMA_TABLE_INFO('admin_levels') WHERE name = 'merged_way_ids'"
+    ),
+    0
+  );
 }
 
 fn merged_at(w: &world, dir: &Path) -> output {
@@ -104,8 +121,8 @@ fn snapshot(conn: &rusqlite::Connection) -> (String, String, String) {
   };
   (
     read(
-      "SELECT GROUP_CONCAT(id || ':' || LENGTH(wkb)) FROM \
-       (SELECT id, wkb FROM admin_levels ORDER BY id)",
+      "SELECT GROUP_CONCAT(id || ':' || LENGTH(wkb) || ':' || COALESCE(JSON(merged_way_ids), '')) FROM \
+       (SELECT id, wkb, merged_way_ids FROM admin_levels ORDER BY id)",
     ),
     read(
       "SELECT GROUP_CONCAT(admin_level_id || '>' || COALESCE(parent_id, '')) FROM \
@@ -179,12 +196,34 @@ fn _00_00_ways_that_touch_fold_into_the_smallest_id() {
     "the street keeps the lines of both ways, the smallest id first"
   );
   assert_eq!(
+    merged_way_ids_of(&conn, way(LOWER_WAY)),
+    Some(vec![LOWER_WAY, UPPER_WAY]),
+    "each line is named by the way it came from, in the order of the lines"
+  );
+  assert_eq!(
     count(
       &conn,
       "SELECT COUNT(*) FROM admin_levels WHERE admin_level = 12"
     ),
     STREETS_AFTER,
     "{REGENERATE}"
+  );
+  assert_eq!(
+    count(
+      &conn,
+      "SELECT COUNT(*) FROM admin_levels WHERE merged_way_ids IS NOT NULL"
+    ),
+    PIECES,
+    "every folded street is traced, and nothing else is"
+  );
+  assert_eq!(
+    count(
+      &conn,
+      "SELECT COUNT(*) FROM admin_levels WHERE merged_way_ids IS NOT NULL AND \
+       (TYPEOF(merged_way_ids) != 'blob' OR JSON_ARRAY_LENGTH(merged_way_ids) < 2)"
+    ),
+    0,
+    "the trace is a jsonb array of two ways at least"
   );
 }
 
@@ -207,6 +246,11 @@ fn _00_01_ways_farther_apart_than_the_reach_stay_apart() {
       lines_of(&conn, way(osm_id)),
       lines,
       "way {osm_id} keeps its row; {REGENERATE}"
+    );
+    assert_eq!(
+      merged_way_ids_of(&conn, way(osm_id)),
+      None,
+      "a street that was never folded is not traced"
     );
   }
 }
@@ -444,6 +488,7 @@ fn _00_09_a_way_extracted_again_is_absorbed_again() {
   let s = resolved(w, "street_merge_reextracted");
   merged_at(w, &s.dir);
   let before = snapshot(&s.ledger());
+  let lines_before = lines_of(&s.ledger(), way(LOWER_WAY));
 
   admin_levels_at(w, &s.dir, "12", &[]);
   assert_eq!(
@@ -459,6 +504,11 @@ fn _00_09_a_way_extracted_again_is_absorbed_again() {
   merged_at(w, &s.dir);
 
   assert_eq!(snapshot(&s.ledger()), before);
+  assert_eq!(
+    lines_of(&s.ledger(), way(LOWER_WAY)),
+    lines_before,
+    "a way the street already holds is not folded into it again"
+  );
 }
 
 // 00.10. ways that share a neighbourhood fold into one street that belongs to every neighbourhood
@@ -665,4 +715,58 @@ fn _02_01_it_refuses_an_empty_database() {
     "{}",
     out.stderr
   );
+}
+
+// 03.00. a database built before the column gains it on the next write command, under the same
+// schema version, and the fold traces its streets there
+#[test]
+#[ignore]
+fn _03_00_a_database_without_merged_way_ids_gains_it_on_the_next_write_command() {
+  let w = world();
+  let s = resolved(w, "street_merge_column_added");
+  drop_merged_way_ids(&s.dir);
+  let version = count(&s.ledger(), "PRAGMA user_version");
+
+  merged_at(w, &s.dir);
+
+  let conn = s.ledger();
+  assert_eq!(
+    merged_way_ids_of(&conn, way(LOWER_WAY)),
+    Some(vec![LOWER_WAY, UPPER_WAY])
+  );
+  assert_eq!(
+    count(&conn, "PRAGMA user_version"),
+    version,
+    "no version bump for an added column"
+  );
+}
+
+// 03.01. the answer names the ways of a folded street and of nothing else, and a database that
+// never got the column still answers, without them
+#[test]
+#[ignore]
+fn _03_01_query_still_answers_on_a_database_without_merged_way_ids() {
+  let w = world();
+  let s = resolved(w, "street_merge_column_absent");
+  indexed_and_merged(w, &s.dir);
+  let trace_at = |level: u64| -> Option<serde_json::Value> {
+    let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
+    level_at(&matches(&result)[0], level)
+      .unwrap_or_else(|| panic!("the top match has no level {level}; {REGENERATE}"))
+      .get("osm_merged_way_ids")
+      .cloned()
+  };
+  assert_eq!(
+    trace_at(12),
+    Some(serde_json::json!([LOWER_WAY, UPPER_WAY]))
+  );
+  assert_eq!(
+    trace_at(10),
+    None,
+    "an area that is not a fold carries no key"
+  );
+
+  drop_merged_way_ids(&s.dir);
+
+  assert_eq!(trace_at(12), None);
 }

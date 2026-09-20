@@ -218,6 +218,7 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
             "post_code": null,
             "osm_relation_id": null,
             "osm_way_id": 255710390,
+            "osm_merged_way_ids": [255710390, 729205713],
           },
         ],
         "attributes": {
@@ -279,6 +280,7 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
           "post_code": null,
           "osm_relation_id": null,
           "osm_way_id": 255710390,
+          "osm_merged_way_ids": [255710390, 729205713],
         },
         {
           "level": 30,

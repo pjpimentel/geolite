@@ -25,6 +25,8 @@ pub struct admin_level {
   pub osm_relation_id: Option<u64>,
   pub osm_way_id: Option<u64>,
   #[serde(skip_serializing_if = "Option::is_none")]
+  pub osm_merged_way_ids: Option<Vec<u64>>,
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub wkt: Option<String>,
 }
 
@@ -99,6 +101,7 @@ pub(super) struct leaf<'a> {
 pub(super) struct match_sources {
   paths: HashMap<i64, Vec<Vec<i64>>>,
   pub(super) meta: HashMap<i64, admin_meta_row>,
+  merged_way_ids: HashMap<i64, crate::admin_level::geometry::merged_way_ids>,
   wkt: HashMap<i64, String>,
   boxes: HashMap<i64, bounding_box>,
 }
@@ -113,6 +116,7 @@ impl match_sources {
     meta_ids.sort_unstable();
     meta_ids.dedup();
     let meta = crate::admin_level::repository::load_metadata_by_ids(conn, &meta_ids);
+    let merged_way_ids = crate::admin_level::repository::merged_way_ids_by_ids(conn, &meta_ids);
     // the polygons of countries and states are megabytes of wkt: nothing loads them unless asked
     let wkt = if include_wkt {
       crate::admin_level::repository::wkt_by_ids(conn, &meta_ids)
@@ -122,9 +126,14 @@ impl match_sources {
     match_sources {
       paths,
       meta,
+      merged_way_ids,
       wkt,
       boxes: HashMap::new(),
     }
+  }
+
+  fn merged_way_ids_of(&self, id: i64) -> Option<Vec<u64>> {
+    self.merged_way_ids.get(&id).map(|ways| ways.0.clone())
   }
 
   pub(super) fn load_leaf_boxes(&mut self, conn: &Connection) {
@@ -217,6 +226,7 @@ impl match_sources {
         post_code: a.post_code.clone(),
         osm_relation_id: a.relation_id,
         osm_way_id: a.way_id,
+        osm_merged_way_ids: self.merged_way_ids_of(a.id),
         wkt: self.wkt.get(&a.id).cloned(),
       })
       .collect();
@@ -226,6 +236,7 @@ impl match_sources {
       post_code: self.meta.get(&leaf.id).and_then(|m| m.post_code.clone()),
       osm_relation_id: leaf.relation_id,
       osm_way_id: leaf.way_id,
+      osm_merged_way_ids: self.merged_way_ids_of(leaf.id),
       wkt: self.wkt.get(&leaf.id).cloned(),
     });
     if let Some(number) = house_number {
@@ -235,6 +246,7 @@ impl match_sources {
         post_code: None,
         osm_relation_id: None,
         osm_way_id: None,
+        osm_merged_way_ids: None,
         wkt: None,
       });
     }

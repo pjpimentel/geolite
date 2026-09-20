@@ -549,3 +549,15 @@ pub fn decode_wkb(blob: &[u8]) -> geo::Geometry<f64> {
     .to_geo()
     .unwrap_or_else(|e| panic!("undecodable geometry: {e}"))
 }
+
+// the merged_way_ids column as it is stored: a jsonb array, read back as text
+pub fn merged_way_ids_of(conn: &rusqlite::Connection, id: i64) -> Option<Vec<u64>> {
+  let text: Option<String> = conn
+    .query_row(
+      "SELECT JSON(merged_way_ids) FROM admin_levels WHERE id = ?1",
+      [id],
+      |r| r.get(0),
+    )
+    .unwrap_or_else(|e| panic!("no admin_levels row {id}: {e}"));
+  text.map(|text| serde_json::from_str(&text).expect("merged_way_ids is not a json array of ids"))
+}

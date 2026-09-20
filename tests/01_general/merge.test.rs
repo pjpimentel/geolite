@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::common::harness::{output, query_at, world};
+use crate::common::harness::{merged_way_ids_of, open_sqlite_at, output, query_at, world};
 use crate::extract::{REGENERATE, extracted, stage};
 use crate::general::world;
-use crate::street_merge::indexed_and_merged;
+use crate::street_merge::{LOWER_WAY, UPPER_WAY, drop_merged_way_ids, indexed_and_merged, way};
 
 const TEXT_QUERY: &str = "rua januario dos santos, santos 197";
 const COORDINATES_QUERY: &str = "-23.98202,-46.31005";
@@ -78,6 +78,14 @@ fn merge(w: &world, base_dir: &Path, sources: &[&Path]) -> output {
   )
 }
 
+// the ways the street of two ways is traced to, in a base merged from one source
+fn trace_after_merge(w: &world, base: &str, source: &Path) -> Option<Vec<u64>> {
+  let base_dir = w.scratch(base);
+  let merged = merge(w, &base_dir, &[source]);
+  assert_eq!(merged.status, 0, "merge failed:\n{}", merged.stderr);
+  merged_way_ids_of(&open_sqlite_at(&sqlite_of(&base_dir)), way(LOWER_WAY))
+}
+
 fn stamp_foreign_version(path: &Path) {
   let conn = rusqlite::Connection::open(path).expect("failed to create the sqlite file");
   conn
@@ -125,6 +133,35 @@ fn _00_01_merging_the_same_source_twice_changes_nothing() {
   assert_eq!(merge(w, &twice, &[&areas, &streets, &streets]).status, 0);
 
   assert_eq!(signature(&once), signature(&twice));
+}
+
+// 00.02. a street folded in the source arrives with its trace: the base finds nothing left to fold,
+// so the ways can only have come with the row
+#[test]
+#[ignore]
+fn _00_02_a_folded_street_keeps_its_merged_way_ids_through_a_merge() {
+  let w = world();
+  let source = half(w, "merge_traced_source", "2,4,8,10,12");
+  indexed_and_merged(w, &source);
+
+  assert_eq!(
+    trace_after_merge(w, "merge_traced_base", &source),
+    Some(vec![LOWER_WAY, UPPER_WAY])
+  );
+}
+
+// 00.03. a source built before the column still merges, and the base folds and traces its streets
+#[test]
+#[ignore]
+fn _00_03_a_source_without_merged_way_ids_still_merges() {
+  let w = world();
+  let source = half(w, "merge_untraced_source", "2,4,8,10,12");
+  drop_merged_way_ids(&source);
+
+  assert_eq!(
+    trace_after_merge(w, "merge_untraced_base", &source),
+    Some(vec![LOWER_WAY, UPPER_WAY])
+  );
 }
 
 // 01.00. the command needs at least one source: the parser takes an empty list, so the command

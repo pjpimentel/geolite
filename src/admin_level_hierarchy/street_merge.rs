@@ -7,7 +7,7 @@ use std::ops::Range;
 use super::entity::hierarchy_edges;
 use super::paths::paths_of;
 use super::repository;
-use crate::admin_level::geometry::{fold_lines, lines_of, nearby_pairs};
+use crate::admin_level::geometry::{fold_lines, lines_of, merged_way_ids, nearby_pairs};
 use crate::admin_level::repository::{self as admin_level_repository, name_row};
 use crate::admin_level::{admin_level, admin_level_id, level};
 use crate::house_number::repository as house_number_repository;
@@ -202,6 +202,27 @@ fn load_lines(conn: &Connection, ids: &[i64]) -> HashMap<i64, Vec<LineString<f64
     .collect()
 }
 
+fn load_traced_lines(
+  conn: &Connection,
+  ids: &[i64],
+) -> HashMap<i64, Vec<(u64, LineString<f64>)>> {
+  let mut folded: HashMap<i64, merged_way_ids> = ids
+    .chunks(IDS_PER_READ)
+    .flat_map(|chunk| admin_level_repository::merged_way_ids_by_ids(conn, chunk))
+    .collect();
+  load_lines(conn, ids)
+    .into_iter()
+    .map(|(id, lines)| {
+      let way_ids = folded
+        .remove(&id)
+        .map(|stored| stored.0)
+        .filter(|way_ids| way_ids.len() == lines.len())
+        .unwrap_or_else(|| vec![admin_level_id::from_raw(id as u64).osm_id(); lines.len()]);
+      (id, way_ids.into_iter().zip(lines).collect())
+    })
+    .collect()
+}
+
 pub fn find(conn: &Connection, progress: impl Fn(progress_report)) -> Vec<piece> {
   let streets = admin_level_repository::load_all_names(conn);
   let edges = repository::load_all_edges(conn);
@@ -268,27 +289,29 @@ pub fn fold(conn: &Connection, pieces: &[piece], progress: impl Fn(progress_repo
       .iter()
       .flat_map(|piece| piece.members.iter().copied())
       .collect();
-    let mut lines = load_lines(conn, &ids);
-    let mut survivors: Vec<admin_level> = Vec::with_capacity(batch.len());
+    let mut lines = load_traced_lines(conn, &ids);
+    let mut survivors: Vec<(admin_level, merged_way_ids)> = Vec::with_capacity(batch.len());
     let mut rewired: Vec<hierarchy_edges> = Vec::new();
     let mut moves: Vec<(i64, i64)> = Vec::new();
     for piece in batch {
-      let parts: Vec<LineString<f64>> = piece
+      let members = piece
         .members
         .iter()
-        .flat_map(|id| lines.remove(id).unwrap_or_default())
-        .collect();
-      let Some(geometry) = fold_lines(parts) else {
+        .map(|id| lines.remove(id).unwrap_or_default());
+      let Some((geometry, way_ids)) = fold_lines(members) else {
         continue;
       };
-      survivors.push(admin_level {
-        id: admin_level_id::from_raw(piece.survivor() as u64),
-        level: level::street,
-        wkb: geometry.into(),
-        name: piece.name.clone(),
-        country_iso_code: None,
-        post_code: piece.post_code.clone(),
-      });
+      survivors.push((
+        admin_level {
+          id: admin_level_id::from_raw(piece.survivor() as u64),
+          level: level::street,
+          wkb: geometry.into(),
+          name: piece.name.clone(),
+          country_iso_code: None,
+          post_code: piece.post_code.clone(),
+        },
+        way_ids,
+      ));
       if piece.parents_changed {
         rewired.push(hierarchy_edges {
           admin_level_id: piece.survivor(),
@@ -298,7 +321,7 @@ pub fn fold(conn: &Connection, pieces: &[piece], progress: impl Fn(progress_repo
       moves.extend(piece.absorbed().iter().map(|&id| (id, piece.survivor())));
     }
 
-    admin_level_repository::batch_upsert(conn, &survivors);
+    admin_level_repository::batch_upsert_folded(conn, &survivors);
     repository::replace_parents(conn, &rewired);
     report.numbers_moved += house_number_repository::repoint_streets(conn, &moves) as u64;
     // the numbers move before the rows go: house_numbers.admin_level_id cascades on delete

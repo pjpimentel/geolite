@@ -50,8 +50,17 @@ pure function of the source and never an insert-order rowid, and `osm_id()` and 
 back. the row carries it from the stage that builds it (`from_way` or `from_relation`), so a row
 without an origin cannot be built; `batch_upsert` writes the `relation_id`/`way_id` columns back
 from `kind()` and `osm_id()`. a street folded from several ways (`optimize merge-admin-levels`, in
-`admin_level_hierarchy`) keeps the id of the smallest of them and its `way_id`, and the others are
-gone.
+`admin_level_hierarchy`) keeps the id of the smallest of them and its `way_id`, and the rows of the
+others are gone.
+
+the ways stay named in `merged_way_ids`, a jsonb array aligned by position with the lines of the
+geometry: element `i` is the osm way line `i` came from, the street's own way first. it is `NULL` on
+a row that was never folded, and there is no relation counterpart because only ways fold. it
+describes the `wkb`, so the two are written by the same statement: `batch_upsert` writes `NULL`
+beside the geometry and `batch_upsert_folded`, which only the street merge calls, writes the ways,
+and a row a stage writes again loses the fold and its trace together. `add_merged_way_ids` gives the
+column to a database built before it on the next writable open, and `merged_way_ids_by_ids` answers
+nothing over a read-only database that never got it, so a query keeps answering there.
 
 ## the shape — `geometry`
 
@@ -66,8 +75,12 @@ persistence imported it, and a repository importing from the query layer is the 
 for the exact test and its `bounding_box` for the rtree. `parse_bounding_wkt` is its one parse,
 the cli `value_parser` and the http check alike, and it takes only a polygon or a multipolygon.
 `mbr_of` reads the box of a blob without decoding it. `nearby_pairs` finds which lines touch or come
-within a reach of each other, and `fold_lines` puts lines in one geometry without repeating one it
-already has: the two pieces of the street merge.
+within a reach of each other, and `fold_lines` puts the lines of the members of a piece in one
+multi-line — always a multi-line, each line as its way has it, never stitched and never dropped —
+and answers the way of each line beside it: the two pieces of the street merge. a way the geometry
+already holds is told by its id, not by its coordinates, and is not folded again. `merged_way_ids`
+is that answer and the type of the column: json text on the way in, under `JSONB(?n)`, and read back
+through `JSON(merged_way_ids)`.
 
 ## the rtree — `spatial_index`
 
@@ -115,7 +128,8 @@ each stage reads its candidates through the element repositories (`osm_relation:
 the member ways of each relation into rings (`geometry::assemble_rings`), closes each ring that
 comes back to its start into a polygon wound clockwise, the way spatialite's `st_buildarea` does,
 and falls back to a multi-line when nothing closes; a place way closes into one polygon by the same
-rule; a street is a line, even when the way is a ring, and a multi-line once its ways are folded.
+rule; a street is a line, even when the way is a ring, and always a multi-line, one line per way,
+once its ways are folded.
 
 ## the rules — `rules`
 

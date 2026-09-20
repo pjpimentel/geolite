@@ -7,6 +7,7 @@ pub(crate) fn admin_level_at(level: u8, name: &str) -> admin_level {
     post_code: None,
     osm_relation_id: None,
     osm_way_id: None,
+    osm_merged_way_ids: None,
     wkt: None,
   }
 }

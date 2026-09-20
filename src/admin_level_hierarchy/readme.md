@@ -100,8 +100,11 @@ absorbed still join, which is what a second run would find: a second run finds n
 with no area never folds, since nothing says it is one street.
 
 the row that survives is the one with the smallest id of the piece, and it keeps that way. its
-geometry is the multi-line of every line, without a line it already has, so folding again what was
-folded changes nothing. its areas are the reduced union of the areas of its ways, which is what the
+geometry is always a multi-line holding the line of every way as the way has it, its own first and
+the others in id order, and `merged_way_ids` names the way of each line by position, so the ways
+whose rows are gone can still be told. a way the street already holds is told by its id, not by its
+coordinates, and is not folded again: two ways drawn over the same points both stay, and folding
+again what was folded changes nothing. its areas are the reduced union of the areas of its ways, which is what the
 resolver answers on the folded geometry. a street across two neighbourhoods is one row with two
 parents and answers once under each. the numbers of a way move to the survivor before its row goes,
 because `house_numbers.admin_level_id` cascades on delete, and the edges of the ways that go leave

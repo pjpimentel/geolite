@@ -109,7 +109,8 @@ take their persistence out of `src/database`, which owns no table any more.
   the file to find, and it is the anchor a release is compared against, byte for byte, with
   `sed -n '/^const SQL_CREATE: /,/^";$/p'`: a difference there is a schema change. one that only
   adds a nullable column is applied to existing databases by the connection lifecycle — an
-  `ALTER TABLE` guarded by `database::has_column`, as `add_origin_wkt` does — and keeps
+  `ALTER TABLE` guarded by `database::has_column`, as `add_origin_wkt` and `add_merged_way_ids` do
+  — and keeps
   `SCHEMA_VERSION`; a change that makes builds incompatible bumps it.
 - `table` is `pub(crate)`: only the connection lifecycle creates tables, and only the stage that
   fills a table creates its indexes. everything else a repository exposes is `pub`.

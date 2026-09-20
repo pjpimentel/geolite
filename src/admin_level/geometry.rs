@@ -1,7 +1,7 @@
 use geo::{BoundingRect, Contains, Coord, Geometry, Line, LineString, MultiLineString, Point};
 use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
 use rstar::{RTree, primitives::GeomWithData};
-use rusqlite::types::{FromSql, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
+use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 pub struct admin_geometry(pub Geometry<f64>);
@@ -211,25 +211,44 @@ pub fn nearby_pairs(members: &[Vec<LineString<f64>>], reach_in_meters: f64) -> V
   pairs.into_iter().collect()
 }
 
-pub fn fold_lines(lines: Vec<LineString<f64>>) -> Option<Geometry<f64>> {
-  let mut seen: HashSet<Vec<(u64, u64)>> = HashSet::new();
-  let mut kept: Vec<LineString<f64>> = lines
-    .into_iter()
-    .filter(|line| {
-      seen.insert(
-        line
-          .0
-          .iter()
-          .map(|coord| (coord.x.to_bits(), coord.y.to_bits()))
-          .collect(),
-      )
-    })
-    .collect();
-  match kept.len() {
-    0 => None,
-    1 => kept.pop().map(Geometry::LineString),
-    _ => Some(Geometry::MultiLineString(MultiLineString(kept))),
+pub struct merged_way_ids(pub Vec<u64>);
+
+impl ToSql for merged_way_ids {
+  fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+    serde_json::to_string(&self.0)
+      .map(ToSqlOutput::from)
+      .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
   }
+}
+
+impl FromSql for merged_way_ids {
+  fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+    serde_json::from_str(value.as_str()?)
+      .map(Self)
+      .map_err(|e| FromSqlError::Other(Box::new(e)))
+  }
+}
+
+pub fn fold_lines(
+  members: impl IntoIterator<Item = Vec<(u64, LineString<f64>)>>,
+) -> Option<(Geometry<f64>, merged_way_ids)> {
+  let mut folded: HashSet<u64> = HashSet::new();
+  let mut way_ids: Vec<u64> = Vec::new();
+  let mut lines: Vec<LineString<f64>> = Vec::new();
+  for member in members {
+    let from = way_ids.len();
+    for (way_id, line) in member {
+      if !folded.contains(&way_id) {
+        way_ids.push(way_id);
+        lines.push(line);
+      }
+    }
+    folded.extend(&way_ids[from..]);
+  }
+  (!lines.is_empty()).then_some((
+    Geometry::MultiLineString(MultiLineString(lines)),
+    merged_way_ids(way_ids),
+  ))
 }
 
 #[derive(Clone, Copy)]

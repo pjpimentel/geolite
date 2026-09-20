@@ -1,7 +1,7 @@
 use geo::Geometry;
 use rusqlite::Connection;
 
-use crate::common::harness::decode_wkb;
+use crate::common::harness::{decode_wkb, merged_way_ids_of};
 use crate::common::query::{first, level_at, matches, name_at};
 use crate::santos::world;
 
@@ -128,13 +128,16 @@ fn _00_00_every_street_is_a_line_or_a_fold_of_lines_even_when_the_way_is_a_ring(
   let streets = ids_where(&conn, "SELECT id FROM admin_levels WHERE admin_level = 12");
   assert_eq!(streets.len() as i64, STREETS, "{REGENERATE}");
   for id in &streets {
-    assert!(
-      matches!(
-        geometry_of(&conn, *id),
-        Geometry::LineString(_) | Geometry::MultiLineString(_)
-      ),
-      "street {id} is not a line"
-    );
+    match (geometry_of(&conn, *id), merged_way_ids_of(&conn, *id)) {
+      (Geometry::LineString(_), None) => {}
+      (Geometry::MultiLineString(lines), Some(ways)) => {
+        assert_eq!(lines.0.len(), ways.len(), "street {id}: one way per line");
+        assert_eq!(way(ways[0]), *id, "street {id}: its own way comes first");
+      }
+      (other, ways) => {
+        panic!("street {id} is neither a line nor a traced fold: {other:?}, {ways:?}")
+      }
+    }
   }
   match geometry_of(&conn, way(92_741_038)) {
     Geometry::MultiLineString(lines) => {
