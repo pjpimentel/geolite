@@ -223,3 +223,16 @@ pub fn repoint_streets(conn: &Connection, moves: &[(i64, i64)]) -> usize {
   tx.commit().expect("failed to commit");
   total
 }
+
+pub fn any(conn: &Connection) -> bool {
+  const SQL_ANY: &str = "
+    SELECT EXISTS (
+      SELECT 1
+      FROM house_numbers
+    )
+  ";
+
+  conn
+    .query_row(SQL_ANY, [], |row| row.get::<_, bool>(0))
+    .expect("failed to query house_numbers for a row")
+}

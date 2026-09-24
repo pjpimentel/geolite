@@ -43,8 +43,8 @@ fn half(w: &world, name: &str, levels: &str) -> PathBuf {
     &[
       "--preset",
       "brazil",
-      "extract",
-      "osm-admin-levels",
+      "exec",
+      "extract-osm-admin-levels",
       "--admin-level",
       levels,
     ],
@@ -53,7 +53,7 @@ fn half(w: &world, name: &str, levels: &str) -> PathBuf {
     stage(
       w,
       &s.dir,
-      &["--preset", "brazil", "extract", "osm-house-numbers"],
+      &["--preset", "brazil", "exec", "extract-osm-house-numbers"],
     );
   }
   s.dir

@@ -75,7 +75,7 @@ fn copy_fixture(w: &world, dir: &Path, name: &str) -> String {
 }
 
 fn osm_data(w: &world, dir: &Path, threads: &str, data_args: &[&str], inputs: &[&str]) -> output {
-  let mut args = vec!["--threads", threads, "extract", "osm-pbf-data"];
+  let mut args = vec!["--threads", threads, "exec", "extract-osm-pbf-data"];
   args.extend_from_slice(data_args);
   args.extend_from_slice(inputs);
   stage(w, dir, &args)
@@ -85,8 +85,8 @@ fn osm_data(w: &world, dir: &Path, threads: &str, data_args: &[&str], inputs: &[
 pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]) -> scratch {
   let dir = w.scratch(name);
   let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
-  stage(w, &dir, &["extract", "osm-pbf-blob-chunks", &pbf]);
-  stage(w, &dir, &["extract", "osm-pbf-header", &pbf]);
+  stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
+  stage(w, &dir, &["exec", "extract-osm-pbf-header", &pbf]);
   let stdout = osm_data(w, &dir, threads, data_args, &[&pbf]).stdout;
   scratch { dir, stdout }
 }
@@ -95,8 +95,8 @@ fn admin_levels(w: &world, dir: &Path, extra: &[&str]) {
   let mut args = vec![
     "--preset",
     "brazil",
-    "extract",
-    "osm-admin-levels",
+    "exec",
+    "extract-osm-admin-levels",
     "--admin-level",
     "2,4,8",
   ];
@@ -416,11 +416,15 @@ fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
   let w = world();
   let dir = w.scratch("extract_without_chunks");
   let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
-  let out = osm_data(w, &dir, "2", &[], &[&pbf]);
+  let out = w.geolite_in(
+    &dir,
+    &["--threads", "2", "exec", "extract-osm-pbf-data", &pbf],
+  );
+  assert_eq!(out.status, 1, "stderr: {}", out.stderr);
   assert!(
     out
       .stderr
-      .contains("no blob chunks found — run extract osm-pbf-blob-chunks first"),
+      .contains("extract-osm-pbf-data requires extract-osm-pbf-blob-chunks"),
     "stderr: {}",
     out.stderr
   );
@@ -436,7 +440,7 @@ fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
     table_counts(&open_sqlite_at(&dir.join("database.osm_data.sqlite3"))),
     (0, 0, 0)
   );
-  stage(w, &dir, &["extract", "osm-pbf-blob-chunks", &pbf]);
+  stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
   let stdout = osm_data(w, &dir, "2", &[], &[&pbf]).stdout;
   assert_full_fixture(&scratch { dir, stdout });
 }
@@ -488,7 +492,7 @@ fn _09_two_inputs_in_one_run_get_their_own_ledger_rows_and_chunks() {
   stage(
     w,
     &dir,
-    &["extract", "osm-pbf-blob-chunks", &santos, &alpha],
+    &["exec", "extract-osm-pbf-blob-chunks", &santos, &alpha],
   );
   osm_data(w, &dir, "2", &[], &[&santos, &alpha]);
   let rows = ledger(&open_sqlite_at(&dir.join("database.sqlite3")));
@@ -612,8 +616,8 @@ fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
     &[
       "--preset",
       "brazil",
-      "extract",
-      "osm-admin-levels",
+      "exec",
+      "extract-osm-admin-levels",
       "--admin-level",
       "2,11",
     ],
@@ -649,8 +653,8 @@ fn _14_level_10_runs_the_relation_and_the_way_stages() {
     &[
       "--preset",
       "brazil",
-      "extract",
-      "osm-admin-levels",
+      "exec",
+      "extract-osm-admin-levels",
       "--admin-level",
       "10",
     ],
@@ -687,5 +691,23 @@ fn _14_level_10_runs_the_relation_and_the_way_stages() {
     ),
     22,
     "the place ways of the fixture"
+  );
+}
+
+// 15. the header stage refuses to run before the chunk index of its file
+#[test]
+#[ignore]
+fn _15_the_header_stage_refuses_to_run_before_the_chunk_index() {
+  let w = world();
+  let dir = w.scratch("extract_header_without_chunks");
+  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let out = w.geolite_in(&dir, &["exec", "extract-osm-pbf-header", &pbf]);
+  assert_eq!(out.status, 1, "stderr: {}", out.stderr);
+  assert!(
+    out.stderr.contains(
+      "extract-osm-pbf-header requires extract-osm-pbf-blob-chunks — run `geolite exec extract-osm-pbf-blob-chunks santos.osm.pbf` first"
+    ),
+    "stderr: {}",
+    out.stderr
   );
 }

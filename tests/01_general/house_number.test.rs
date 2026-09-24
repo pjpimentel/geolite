@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::admin_level::{admin_levels_at, index_at};
 use crate::common::harness::{decode_wkb, output, plain, query_at, world};
 use crate::common::query::{first, levels_of};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
@@ -16,7 +17,7 @@ const NUMBERED_STREET: &str = "rua januario dos santos, santos";
 const NUMBERED_STREET_ID: i64 = 256_305_358;
 
 fn house_numbers_at(w: &world, dir: &Path, extra: &[&str]) -> output {
-  let mut args = vec!["--preset", "brazil", "extract", "osm-house-numbers"];
+  let mut args = vec!["--preset", "brazil", "exec", "extract-osm-house-numbers"];
   args.extend_from_slice(extra);
   stage(w, dir, &args)
 }
@@ -30,8 +31,8 @@ fn linked(w: &world, name: &str) -> (scratch, output) {
     &[
       "--preset",
       "brazil",
-      "extract",
-      "osm-admin-levels",
+      "exec",
+      "extract-osm-admin-levels",
       "--admin-level",
       "12",
     ],
@@ -44,7 +45,7 @@ fn linked(w: &world, name: &str) -> (scratch, output) {
 fn indexed(w: &world, name: &str) -> scratch {
   let (s, _) = linked(w, name);
   for index in ["admin-levels-hierarchy", "user-friendly-name"] {
-    stage(w, &s.dir, &["--preset", "brazil", "index", index]);
+    index_at(w, &s.dir, index);
   }
   s
 }
@@ -307,6 +308,7 @@ fn _00_07_a_stage_without_candidates_reports_zero() {
     "2",
     &["--tags-ignore-list", "addr:housenumber"],
   );
+  admin_levels_at(w, &s.dir, "12", &[]);
   let out = house_numbers_at(w, &s.dir, &[]);
   assert!(
     extracted_line(&out.stdout, 0),
@@ -314,6 +316,27 @@ fn _00_07_a_stage_without_candidates_reports_zero() {
     out.stdout
   );
   assert_eq!(count(&s.ledger(), "SELECT COUNT(*) FROM house_numbers"), 0);
+}
+
+// 00.08. the intermediary data is what the numbers are linked from: deleting it before the link
+// is refused
+#[test]
+#[ignore]
+fn _00_08_the_intermediary_data_cannot_be_deleted_before_the_house_numbers_are_linked() {
+  let w = world();
+  let s = extracted(w, "house_number_delete_before_link", "2", &[]);
+  admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
+  let out = w.geolite_in(&s.dir, &["exec", "optimize-delete-intermediary-data"]);
+  assert_eq!(out.status, 1, "stderr: {}", out.stderr);
+  assert!(
+    out
+      .stderr
+      .contains("optimize-delete-intermediary-data requires extract-osm-house-numbers"),
+    "stderr: {}",
+    out.stderr
+  );
+  assert!(s.dir.join("database.osm_data.sqlite3").is_file());
 }
 
 // 01.00. the `#` prefix is a number only where the preset allows it

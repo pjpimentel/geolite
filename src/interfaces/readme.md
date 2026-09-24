@@ -15,6 +15,10 @@ and dispatches; `http-server` is a subcommand that binds the port and hands over
 any other interface is launched the same way, as a subcommand of the cli. the preset travels whole,
 so a new policy of it reaches the domain without widening a signature on the way.
 
+`exec <group>-<stage>` runs one stage of the pipeline by its name, after asserting that the stages
+it requires ran: [`cli/exec`](cli/exec/readme.md) holds the stages, what each one requires and the
+evidence it reads. `build` and `merge` chain the same handlers.
+
 every long pass of the domain reports a `progress_report`, and `cli/progress` draws all
 of them with one bar: `bar(prefix, label)` and `advance`.
 

@@ -14,8 +14,8 @@ pub(crate) fn admin_levels_at(w: &world, dir: &Path, levels: &str, extra: &[&str
   let mut args = vec![
     "--preset",
     "brazil",
-    "extract",
-    "osm-admin-levels",
+    "exec",
+    "extract-osm-admin-levels",
     "--admin-level",
     levels,
   ];
@@ -23,10 +23,21 @@ pub(crate) fn admin_levels_at(w: &world, dir: &Path, levels: &str, extra: &[&str
   stage(w, dir, &args)
 }
 
-pub(crate) fn index_at(w: &world, dir: &Path, stages: &[&str]) -> output {
-  let mut args = vec!["--preset", "brazil", "index"];
-  args.extend_from_slice(stages);
-  stage(w, dir, &args)
+pub(crate) fn index_at(w: &world, dir: &Path, index: &str) -> output {
+  let name = format!("index-{index}");
+  stage(w, dir, &["--preset", "brazil", "exec", &name])
+}
+
+// the three index stages in order, with their stdout joined
+pub(crate) fn indexed(w: &world, dir: &Path) -> String {
+  [
+    "admin-levels-hierarchy",
+    "user-friendly-name",
+    "coordinates",
+  ]
+  .iter()
+  .map(|index| index_at(w, dir, index).stdout)
+  .collect()
 }
 
 fn level_counts(conn: &rusqlite::Connection) -> Vec<(u8, i64)> {
@@ -159,7 +170,7 @@ fn _00_03_recreate_empties_the_hierarchy_and_the_rtree() {
   let w = world();
   let s = extracted(w, "admin_level_recreate_derived", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
-  index_at(w, &s.dir, &[]);
+  indexed(w, &s.dir);
   assert_eq!(hierarchy_count(&s), COUNTRY_STATE_CITY, "{REGENERATE}");
   assert_eq!(rtree_count(&s), COUNTRY_STATE_CITY);
   assert!(s.dir.join("database.tantivy").is_dir());
@@ -222,7 +233,7 @@ fn _00_05_a_row_outside_the_scale_is_skipped_with_a_warning() {
     assert_eq!(changed, 1, "{REGENERATE}");
   }
 
-  let out = index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  let out = index_at(w, &s.dir, "admin-levels-hierarchy");
   let warning =
     format!("warn: admin_levels row {SANTOS_ID} carries level 11, outside the scale; skipped");
   assert!(out.stderr.contains(&warning), "stderr: {}", out.stderr);
@@ -242,9 +253,9 @@ fn _01_00_index_coordinates_boxes_every_row_and_is_idempotent() {
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
   assert_eq!(rtree_count(&s), 0, "extraction leaves the rtree empty");
 
-  index_at(w, &s.dir, &["coordinates"]);
+  index_at(w, &s.dir, "coordinates");
   assert_eq!(rtree_count(&s), COUNTRY_STATE_CITY, "{REGENERATE}");
-  index_at(w, &s.dir, &["coordinates"]);
+  index_at(w, &s.dir, "coordinates");
   assert_eq!(
     rtree_count(&s),
     COUNTRY_STATE_CITY,
@@ -260,26 +271,26 @@ fn _02_00_the_hierarchy_stage_is_deterministic() {
   let s = extracted(w, "admin_level_hierarchy_twice", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
 
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
   let first_run = hierarchy_rows(&s.ledger());
   assert_eq!(first_run.len() as i64, EVERY_EDGE, "{REGENERATE}");
 
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
   assert!(
     hierarchy_rows(&s.ledger()) == first_run,
     "the second run must write the same edges"
   );
 }
 
-// 02.02. the index run names every stage it finished, in order
+// 02.02. each index stage names what it finished, in order
 #[test]
 #[ignore]
-fn _02_02_the_index_run_names_every_stage_it_finished() {
+fn _02_02_each_index_stage_names_what_it_finished() {
   let w = world();
   let s = extracted(w, "index_every_stage", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
-  let stdout = plain(&index_at(w, &s.dir, &[]).stdout);
+  let stdout = plain(&indexed(w, &s.dir));
   assert_in_order(
     &stdout,
     &[
@@ -301,15 +312,21 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
   let s = extracted(w, "admin_level_search_source", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
-  index_at(w, &s.dir, &["user-friendly-name"]);
-  let empty = query_at(w, &s.dir, "brazil", "santos");
+  let refused = w.geolite_in(
+    &s.dir,
+    &["--preset", "brazil", "exec", "index-user-friendly-name"],
+  );
+  assert_eq!(refused.status, 1, "stderr: {}", refused.stderr);
   assert!(
-    matches(&empty).is_empty(),
-    "without hierarchy rows there is nothing to find, got {empty}"
+    refused
+      .stderr
+      .contains("index-user-friendly-name requires index-admin-levels-hierarchy"),
+    "without hierarchy rows there is nothing to index, stderr: {}",
+    refused.stderr
   );
 
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
-  index_at(w, &s.dir, &["user-friendly-name"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
+  index_at(w, &s.dir, "user-friendly-name");
   let found = query_at(w, &s.dir, "brazil", "santos");
   let top = first(&found);
   assert_eq!(levels_of(top).last(), Some(&8));
@@ -324,7 +341,7 @@ fn _03_00_an_unreadable_geometry_warns_and_drops_the_row() {
   let w = world();
   let s = extracted(w, "admin_level_unreadable_geometry", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
-  index_at(w, &s.dir, &[]);
+  indexed(w, &s.dir);
   {
     let conn = rusqlite::Connection::open(s.dir.join("database.sqlite3"))
       .expect("failed to open the scratch database for writing");

@@ -69,7 +69,7 @@ pub fn serve(
     crate::admin_level_hierarchy::search_index::load(Path::new(index_path), boosts).map(Arc::new);
   if index.is_none() {
     eprintln!(
-      "\x1b[1;33mwarn\x1b[0m: tantivy index not found at {index_path} — text_to_address disabled; run `geolite index user-friendly-name` to enable"
+      "\x1b[1;33mwarn\x1b[0m: tantivy index not found at {index_path} — text_to_address disabled; run `geolite exec index-user-friendly-name` to enable"
     );
   }
 

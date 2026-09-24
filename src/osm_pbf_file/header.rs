@@ -22,7 +22,7 @@ pub struct header_output {
 
 pub fn run(pbf: &str, conn: &rusqlite::Connection, file_id: u32) -> header_output {
   let chunk = blob_index::get_header_chunk(conn, file_id)
-    .expect("no header chunk found in sqlite — run extract osm-pbf-blob-chunks first");
+    .expect("no header chunk indexed for the file");
 
   let mut file = fs::File::open(pbf).expect("failed to open pbf file");
   file

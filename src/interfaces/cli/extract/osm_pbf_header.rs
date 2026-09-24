@@ -1,5 +1,6 @@
-use super::resolved_input;
 use std::io::Write;
+
+use crate::interfaces::cli::exec::stages::stage;
 
 pub fn command_handler_extract_osm_pbf_header(
   data_path: &str,
@@ -10,19 +11,16 @@ pub fn command_handler_extract_osm_pbf_header(
   let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
   for (i, input) in inputs.iter().enumerate() {
-    let Some(resolved_input {
-      path: osm_pbf_file_path,
-      name: fname,
-      id: _,
-    }) = super::resolve_input(&conn, data_path, i, input)
-    else {
+    let Some(resolved) = super::resolve_input(&conn, data_path, i, input) else {
       continue;
     };
+    stage::extract_osm_pbf_header.require(&conn, Some(&resolved));
+    let fname = &resolved.name;
 
     print!("\x1b[1;32mextracting\x1b[0m header from {fname}...");
     let _ = std::io::stdout().flush();
 
-    let hdr = file.extract_osm_header(&osm_pbf_file_path);
+    let hdr = file.extract_osm_header(&resolved.path);
 
     println!(" done");
 

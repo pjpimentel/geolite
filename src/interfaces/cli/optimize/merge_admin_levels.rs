@@ -3,23 +3,13 @@ use std::path::Path;
 use std::time::Instant;
 
 use crate::admin_level_hierarchy::street_merge;
+use crate::interfaces::cli::exec::stages::stage;
 use crate::interfaces::cli::progress;
 
 pub fn command_handler_optimize_merge_admin_levels(sqlite_path: &str, index_path: &str) -> bool {
   crate::interfaces::cli::require_sqlite(sqlite_path);
   let conn = crate::database::open_write(sqlite_path);
-  if crate::admin_level::repository::count_with_geometry(&conn) == 0 {
-    eprintln!("\x1b[1;31merror\x1b[0m: admin_levels is empty — run extract first");
-    return false;
-  }
-  if crate::admin_level_hierarchy::repository::count(&conn) == 0
-    || crate::admin_level_hierarchy::repository::pending_total(&conn) > 0
-  {
-    eprintln!(
-      "\x1b[1;31merror\x1b[0m: admin_levels_hierarchy is missing or incomplete — run `geolite index admin-levels-hierarchy` first"
-    );
-    return false;
-  }
+  stage::optimize_merge_admin_levels.require(&conn, None);
   let start = Instant::now();
 
   let bar = progress::bar("finding", "street pieces");

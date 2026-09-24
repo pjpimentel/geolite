@@ -1,9 +1,5 @@
 # changelog
 
-## **planned** - 0.0.18
-
-1. MODIFIED the cli to run a stage as `geolite execute "<command>"` in place of the `extract`, `index` and `optimize` subcommands, so a stage is addressed by its name and the pipeline reads in the order it runs.
-
 ## **planned** - 0.0.17
 
 1. MODIFIED the storage to a single file, without the split between `database.sqlite3` and `database.tantivy`, so a base is one file to copy, publish and merge.
@@ -34,6 +30,7 @@
 1. ADDED scenarios that pin the thresholds of the hierarchy resolution and the defaults of `src/admin_level/rules.rs`, so a change of rule cannot pass green.
 1. ADDED scenarios for the shapes the real extract never brings (compound and `#` house numbers, `drop_values`, the label and the scale errors), so the battery over real data holds them too.
 1. REMOVED the island of unit tests that was left, as the scenarios above take over each guard, so one regression battery is left.
+1. MODIFIED the cli to run one stage as `geolite exec <group>-<stage>` in place of the `extract`, `index` and `optimize` subcommands and their aggregate runs, each stage refusing to run before the stages it requires, so a stage is addressed by its name and cannot run out of order.
 
 ## **2026-09-20** - 0.0.13
 

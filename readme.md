@@ -116,34 +116,34 @@ $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:la
 ### extract each data from a pbf file
 ```bash
 $ geolite osm-pbf-file download brazil
-$ geolite extract osm-pbf-blob-chunks brazil
-$ geolite extract osm-pbf-header brazil
-$ geolite extract osm-pbf-data brazil
-$ geolite --preset brazil extract osm-admin-levels
-$ geolite --preset brazil extract osm-house-numbers
+$ geolite exec extract-osm-pbf-blob-chunks brazil
+$ geolite exec extract-osm-pbf-header brazil
+$ geolite exec extract-osm-pbf-data brazil
+$ geolite --preset brazil exec extract-osm-admin-levels
+$ geolite --preset brazil exec extract-osm-house-numbers
 ```
 
 ### index extracted data
 ```bash
-$ geolite index admin-levels-hierarchy
-$ geolite --preset brazil index user-friendly-name
-$ geolite index coordinates
+$ geolite exec index-admin-levels-hierarchy
+$ geolite --preset brazil exec index-user-friendly-name
+$ geolite exec index-coordinates
 ```
-
-`geolite index` without a subcommand runs the three steps.
 
 ### optimize data
 ```bash
 # folds the ways of one street into one row: it reads the hierarchy and clears the
 # user-friendly-name and coordinates indexes, which have to be built again after it
-$ geolite optimize merge-admin-levels
-$ geolite optimize delete-intermediary-data
-$ geolite optimize sqlite-file
+$ geolite exec optimize-merge-admin-levels
+$ geolite exec optimize-delete-intermediary-data
+$ geolite exec optimize-sqlite-file
 ```
 
-`geolite build` and `geolite merge` run `optimize merge-admin-levels` right after
-`index admin-levels-hierarchy`, so the two other indexes are built once, over the rows that stay.
-`geolite index` alone does not merge the streets.
+`geolite exec` runs one stage per call and refuses a stage whose requirements did not run, naming
+the one to run first; `geolite exec --help` lists the stages in the order the pipeline runs.
+`geolite build` and `geolite merge` run `optimize-merge-admin-levels` right after
+`index-admin-levels-hierarchy`, so the two other indexes are built once, over the rows that stay.
+no index stage folds the streets on its own.
 
 ### query
 ```bash

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::admin_level::{admin_levels_at, index_at};
+use crate::admin_level::{admin_levels_at, index_at, indexed};
 use crate::common::harness::{decode_wkb, merged_way_ids_of, output, plain, query_at, world};
 use crate::common::query::{level_at, matches, name_at, point_of};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
@@ -68,7 +68,16 @@ fn traced_rows(conn: &rusqlite::Connection) -> i64 {
 }
 
 fn assert_refused(out: &output, reason: &str) {
+  assert_eq!(out.status, 1, "stderr: {}", out.stderr);
   assert!(plain(&out.stderr).contains(reason), "{}", out.stderr);
+}
+
+// the merge stage run where it is expected to refuse, so the exit code is the scenario's to assert
+fn merge_refused(w: &world, dir: &Path) -> output {
+  w.geolite_in(
+    dir,
+    &["--preset", "brazil", "exec", "optimize-merge-admin-levels"],
+  )
 }
 
 pub(crate) fn merged_summary() -> String {
@@ -98,15 +107,15 @@ fn merged_at(w: &world, dir: &Path) -> output {
   stage(
     w,
     dir,
-    &["--preset", "brazil", "optimize", "merge-admin-levels"],
+    &["--preset", "brazil", "exec", "optimize-merge-admin-levels"],
   )
 }
 
 pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
-  index_at(w, dir, &["admin-levels-hierarchy"]);
+  index_at(w, dir, "admin-levels-hierarchy");
   merged_at(w, dir);
-  index_at(w, dir, &["user-friendly-name"]);
-  index_at(w, dir, &["coordinates"]);
+  index_at(w, dir, "user-friendly-name");
+  index_at(w, dir, "coordinates");
 }
 
 // the streets and the house numbers of a scratch, the hierarchy resolved and nothing merged yet
@@ -116,9 +125,9 @@ fn resolved(w: &world, name: &str) -> scratch {
   stage(
     w,
     &s.dir,
-    &["--preset", "brazil", "extract", "osm-house-numbers"],
+    &["--preset", "brazil", "exec", "extract-osm-house-numbers"],
   );
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
   s
 }
 
@@ -417,8 +426,8 @@ fn _00_05_a_second_run_changes_nothing_and_keeps_the_indexes() {
   let w = world();
   let s = resolved(w, "street_merge_twice");
   merged_at(w, &s.dir);
-  index_at(w, &s.dir, &["user-friendly-name"]);
-  index_at(w, &s.dir, &["coordinates"]);
+  index_at(w, &s.dir, "user-friendly-name");
+  index_at(w, &s.dir, "coordinates");
   let rtree = count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree");
   let before = snapshot(&s.ledger());
 
@@ -442,15 +451,16 @@ fn _00_05_a_second_run_changes_nothing_and_keeps_the_indexes() {
 fn _00_06_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
   let w = world();
   let s = resolved(w, "street_merge_clears");
-  index_at(w, &s.dir, &["user-friendly-name"]);
-  index_at(w, &s.dir, &["coordinates"]);
+  index_at(w, &s.dir, "user-friendly-name");
+  index_at(w, &s.dir, "coordinates");
   assert!(s.dir.join("database.tantivy").is_dir());
 
   let out = merged_at(w, &s.dir);
 
   assert!(
-    plain(&out.stdout)
-      .contains("next run `geolite index user-friendly-name` and `geolite index coordinates`"),
+    plain(&out.stdout).contains(
+      "next run `geolite exec index-user-friendly-name` and `geolite exec index-coordinates`"
+    ),
     "{}",
     out.stdout
   );
@@ -477,8 +487,8 @@ fn _00_06_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
     asked.stderr
   );
 
-  index_at(w, &s.dir, &["user-friendly-name"]);
-  index_at(w, &s.dir, &["coordinates"]);
+  index_at(w, &s.dir, "user-friendly-name");
+  index_at(w, &s.dir, "coordinates");
   let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
   assert_eq!(matches(&result).len(), 1, "the street answers once");
 }
@@ -518,7 +528,7 @@ fn _00_08_resolving_the_hierarchy_again_keeps_the_edges_of_the_folded_streets() 
   merged_at(w, &s.dir);
   let before = snapshot(&s.ledger());
 
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
 
   assert_eq!(snapshot(&s.ledger()), before);
   let again = plain(&merged_at(w, &s.dir).stdout);
@@ -545,7 +555,7 @@ fn _00_09_a_way_extracted_again_is_absorbed_again() {
     "every absorbed way is a row again"
   );
 
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
   merged_at(w, &s.dir);
 
   assert_eq!(snapshot(&s.ledger()), before);
@@ -689,16 +699,16 @@ fn _00_13_a_street_of_many_ways_keeps_every_line_in_the_order_of_its_trace() {
   );
 }
 
-// 00.14. `geolite index` alone resolves and indexes and folds nothing: only build, merge and the
-// command itself fold
+// 00.14. the three index stages resolve and index and fold nothing: only build, merge and the
+// stage itself fold
 #[test]
 #[ignore]
-fn _00_14_geolite_index_alone_does_not_fold() {
+fn _00_14_the_index_stages_alone_do_not_fold() {
   let w = world();
   let s = extracted(w, "street_merge_index_alone", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
 
-  let stdout = plain(&index_at(w, &s.dir, &[]).stdout);
+  let stdout = plain(&indexed(w, &s.dir));
 
   assert!(
     !stdout.contains("merge-admin-levels") && !stdout.contains("street ways into"),
@@ -784,9 +794,12 @@ fn _02_00_it_refuses_a_database_without_a_hierarchy() {
   let s = extracted(w, "street_merge_no_hierarchy", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
 
-  let out = merged_at(w, &s.dir);
+  let out = merge_refused(w, &s.dir);
 
-  assert_refused(&out, "admin_levels_hierarchy is missing or incomplete");
+  assert_refused(
+    &out,
+    "optimize-merge-admin-levels requires index-admin-levels-hierarchy",
+  );
   assert_eq!(
     count(
       &s.ledger(),
@@ -797,16 +810,19 @@ fn _02_00_it_refuses_a_database_without_a_hierarchy() {
   );
 }
 
-// 02.01. it needs rows to fold: without any it says so
+// 02.01. it needs rows to fold: an empty database has no hierarchy to require
 #[test]
 #[ignore]
 fn _02_01_it_refuses_an_empty_database() {
   let w = world();
   let s = extracted(w, "street_merge_empty", "2", &[]);
 
-  let out = merged_at(w, &s.dir);
+  let out = merge_refused(w, &s.dir);
 
-  assert_refused(&out, "admin_levels is empty");
+  assert_refused(
+    &out,
+    "optimize-merge-admin-levels requires index-admin-levels-hierarchy",
+  );
 }
 
 // 02.02. it needs the hierarchy to cover every row: the ways extracted again after a fold have no
@@ -820,9 +836,12 @@ fn _02_02_it_refuses_a_hierarchy_that_no_longer_covers_every_row() {
   admin_levels_at(w, &s.dir, "12", &[]);
   let before = snapshot(&s.ledger());
 
-  let out = merged_at(w, &s.dir);
+  let out = merge_refused(w, &s.dir);
 
-  assert_refused(&out, "admin_levels_hierarchy is missing or incomplete");
+  assert_refused(
+    &out,
+    "optimize-merge-admin-levels requires index-admin-levels-hierarchy",
+  );
   assert_eq!(
     snapshot(&s.ledger()),
     before,

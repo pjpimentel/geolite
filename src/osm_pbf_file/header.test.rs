@@ -186,7 +186,7 @@ fn _07_decodes_uncompressed_header_blob() {
 }
 
 #[test]
-#[should_panic(expected = "no header chunk found")]
+#[should_panic(expected = "no header chunk indexed")]
 fn _08_panics_when_no_header_chunk_is_indexed() {
   let temp = pbf_fixtures::temp_scene("hd_00_08");
   pbf_fixtures::write_pbf(&temp.pbf_path, &[]);
