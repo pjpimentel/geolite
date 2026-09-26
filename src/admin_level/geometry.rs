@@ -306,6 +306,3 @@ pub fn parse_bounding_wkt(s: &str) -> Result<bounding_geometry, String> {
   Ok(bounding_geometry { geometry, envelope })
 }
 
-#[cfg(test)]
-#[path = "geometry.test.rs"]
-mod tests;

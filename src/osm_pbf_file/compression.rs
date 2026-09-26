@@ -19,6 +19,3 @@ pub fn decompress(blob: &blob_msg) -> Vec<u8> {
   panic!("unsupported blob compression");
 }
 
-#[cfg(test)]
-#[path = "compression.test.rs"]
-mod tests;

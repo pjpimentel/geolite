@@ -24,15 +24,8 @@ use clap::{Parser, Subcommand};
 use exec::exec_commands;
 use osm_pbf_file::osm_pbf_file_commands;
 
-// indicatif draws straight to stderr, outside libtest's output capture, so live bars would
-// pollute `cargo test` output; under test every bar becomes hidden. the real binary keeps the
-// default stderr target.
 pub(crate) fn progress_draw_target() -> indicatif::ProgressDrawTarget {
-  if cfg!(test) {
-    indicatif::ProgressDrawTarget::hidden()
-  } else {
-    indicatif::ProgressDrawTarget::stderr()
-  }
+  indicatif::ProgressDrawTarget::stderr()
 }
 
 fn default_threads() -> u8 {

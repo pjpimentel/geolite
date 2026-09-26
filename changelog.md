@@ -28,8 +28,9 @@
 
 1. ADDED scenarios that pin the thresholds of the hierarchy resolution and the defaults of `src/admin_level/rules.rs`, so a change of rule cannot pass green.
 1. ADDED scenarios for the shapes the real extract never brings (compound and `#` house numbers, `drop_values`, the label and the scale errors), so the battery over real data holds them too.
-1. REMOVED the island of unit tests that was left, as the scenarios above take over each guard, so one regression battery is left.
+1. REMOVED the island of unit tests that was left, with the code that served only them, as the scenarios of this version take over each guard, so one regression battery is left.
 1. MODIFIED the cli to run one stage as `geolite exec <group>-<stage>` in place of the `extract`, `index` and `optimize` subcommands and their aggregate runs, each stage refusing to run before the stages it requires, so a stage is addressed by its name and cannot run out of order.
+1. ADDED scenarios for the guards the unit tests held alone: the road leaving its neighbourhood into the next city, a neighbourhood over two cities, a suffixed number as typed, the header columns of the ledger and the pbf files a stage cannot read, so the island leaves nothing behind.
 
 ## **2026-09-20** - 0.0.13
 

@@ -224,3 +224,32 @@ fn _00_02_one_sample_inside_hangs_a_street_and_a_border_promotes_only_deeper() {
     "the border of a neighbourhood, deeper than the city entered, promotes the street into it"
   );
 }
+
+// 00.03. a neighbourhood over two cities hangs from both, with four columns of its grid in each,
+// and a street inside it hangs from the neighbourhood alone
+#[test]
+#[ignore]
+fn _00_03_a_neighbourhood_over_two_cities_hangs_from_both_and_its_street_from_it() {
+  let w = world();
+  let conn = resolved(
+    w,
+    "hierarchy_two_cities",
+    &[
+      area(COUNTRY, 2, "Country", [-10.0, -10.0], [20.0, 10.0]),
+      area(2, 8, "City West", [-2.0, -2.0], [0.8, 2.0]),
+      area(3, 8, "City East", [0.8, -2.0], [3.6, 2.0]),
+      area(4, 10, "Across", [0.0, -1.2], [1.6, 0.4]),
+      street(10, "Inner Street", &[[0.4, -0.4], [0.6, -0.4]]),
+    ],
+  );
+
+  assert_eq!(
+    parents_of(&conn, relation(4)),
+    vec![relation(2), relation(3)],
+    "32 of 65 samples in each city, both past the tenth"
+  );
+  assert_eq!(parents_of(&conn, way(10)), vec![relation(4)]);
+  for city in [2, 3] {
+    assert_eq!(parents_of(&conn, relation(city)), vec![relation(COUNTRY)]);
+  }
+}

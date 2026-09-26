@@ -20,19 +20,6 @@ const SQL_CREATE_INDEXES: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS admin_levels_hierarchy;";
 
-// `IS` answers the roots for a null parent and the children for a given one, through the index
-// in both cases; `=` would never match a null
-const SQL_NODES_UNDER: &str = "
-  SELECT al.id, al.admin_level, al.name
-  FROM admin_levels al
-  WHERE al.id IN (
-    SELECT admin_level_id
-    FROM admin_levels_hierarchy
-    WHERE parent_id IS ?1
-  )
-  ORDER BY al.admin_level ASC, al.name ASC, al.id ASC
-";
-
 const SQL_INSERT_EDGE: &str = "
   INSERT OR IGNORE INTO admin_levels_hierarchy (
     admin_level_id,
@@ -123,6 +110,19 @@ pub fn children_of(conn: &Connection, parent_id: i64) -> Vec<node> {
 }
 
 fn nodes_under(conn: &Connection, parent_id: Option<i64>) -> Vec<node> {
+  // `IS` answers the roots for a null parent and the children for a given one, through the index
+  // in both cases; `=` would never match a null
+  const SQL_NODES_UNDER: &str = "
+    SELECT al.id, al.admin_level, al.name
+    FROM admin_levels al
+    WHERE al.id IN (
+      SELECT admin_level_id
+      FROM admin_levels_hierarchy
+      WHERE parent_id IS ?1
+    )
+    ORDER BY al.admin_level ASC, al.name ASC, al.id ASC
+  ";
+
   let mut stmt = conn
     .prepare(SQL_NODES_UNDER)
     .expect("failed to prepare nodes under a parent");
@@ -307,6 +307,3 @@ pub fn replace_parents(conn: &Connection, rows: &[hierarchy_edges]) {
   tx.commit().expect("failed to commit");
 }
 
-#[cfg(test)]
-#[path = "repository.test.rs"]
-mod tests;

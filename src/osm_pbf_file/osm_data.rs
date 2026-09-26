@@ -112,14 +112,6 @@ fn decoded_blob_bytes(blob: &decoded_blob) -> usize {
   nodes_stack + nodes_heap + ways_stack + ways_heap + rels_stack + rels_heap
 }
 
-pub(crate) struct worker_progress {
-  pub thread_id: usize,
-  pub chunks_processed: usize,
-  pub node_count: usize,
-  pub way_count: usize,
-  pub relation_count: usize,
-}
-
 pub struct progress {
   pub total_chunks: usize,
   pub chunks_done: usize,
@@ -131,8 +123,6 @@ pub struct progress {
   pub relations_written: usize,
   pub bytes_flushed: usize,
   pub flushes_done: usize,
-  #[allow(dead_code)]
-  pub(crate) workers: Vec<worker_progress>,
 }
 
 pub fn run(
@@ -190,15 +180,6 @@ pub fn run(
     let mut relations_written: usize = 0;
     let mut bytes_flushed: usize = 0;
     let mut flushes_done: usize = 0;
-    let mut worker_states: Vec<worker_progress> = (0..worker_threads)
-      .map(|i| worker_progress {
-        thread_id: i as usize,
-        chunks_processed: 0,
-        node_count: 0,
-        way_count: 0,
-        relation_count: 0,
-      })
-      .collect();
     for event in prog_rx.into_iter() {
       match event {
         prog_event::decoded(counts) => {
@@ -206,11 +187,6 @@ pub fn run(
           ways_decoded += counts.ways;
           relations_decoded += counts.relations;
           chunks_done += 1;
-          let w = &mut worker_states[counts.thread_id];
-          w.node_count += counts.nodes;
-          w.way_count += counts.ways;
-          w.relation_count += counts.relations;
-          w.chunks_processed += 1;
         }
         prog_event::flushed(counts) => {
           nodes_written += counts.nodes;
@@ -231,28 +207,17 @@ pub fn run(
         relations_written,
         bytes_flushed,
         flushes_done,
-        workers: worker_states
-          .iter()
-          .map(|w| worker_progress {
-            thread_id: w.thread_id,
-            chunks_processed: w.chunks_processed,
-            node_count: w.node_count,
-            way_count: w.way_count,
-            relation_count: w.relation_count,
-          })
-          .collect(),
       });
     }
     (nodes_decoded, ways_decoded, relations_decoded)
   });
 
   let mut handles = Vec::new();
-  for thread_id in 0..worker_threads as usize {
+  for _ in 0..worker_threads {
     handles.push(decode_thread(
       read_q.clone(),
       write_buf.clone(),
       opts.clone(),
-      thread_id,
       prog_tx.clone(),
     ));
   }
@@ -424,7 +389,6 @@ fn decode_thread(
   read_q: Arc<raw_queue>,
   write_buf: Arc<write_buffer>,
   opts: Arc<data_opts>,
-  thread_id: usize,
   prog_tx: std::sync::mpsc::Sender<prog_event>,
 ) -> std::thread::JoinHandle<()> {
   std::thread::spawn(move || {
@@ -433,7 +397,6 @@ fn decode_thread(
       let blob = decode_raw_blob(&raw, &opts, &mut encoder);
       let bytes = decoded_blob_bytes(&blob);
       let counts = blob_counts {
-        thread_id,
         nodes: blob.nodes.len(),
         ways: blob.ways.len(),
         relations: blob.relations.len(),
@@ -445,7 +408,6 @@ fn decode_thread(
 }
 
 struct blob_counts {
-  thread_id: usize,
   nodes: usize,
   ways: usize,
   relations: usize,
@@ -557,6 +519,3 @@ fn writer_thread(
   })
 }
 
-#[cfg(test)]
-#[path = "osm_data.test.rs"]
-mod tests;

@@ -6,10 +6,6 @@ mod input;
 mod label;
 mod text;
 
-#[cfg(test)]
-#[path = "fixtures.test.rs"]
-pub(crate) mod fixtures;
-
 use crate::admin_level::geometry::bounding_geometry;
 use crate::admin_level::level;
 use crate::admin_level_hierarchy::tantivy_index;

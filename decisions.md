@@ -1,5 +1,9 @@
 # decisions
 
+## **2026-09-26**
+
+1. the e2e battery over real data is the only regression battery: no unit tests are written, and each guard lives in a scenario.
+
 ## **2026-09-05**
 
 1. added e2e tests to ensure regression quality.

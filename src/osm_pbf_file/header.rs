@@ -89,6 +89,3 @@ pub fn run(pbf: &str, conn: &rusqlite::Connection, file_id: u32) -> header_outpu
   }
 }
 
-#[cfg(test)]
-#[path = "header.test.rs"]
-mod tests;

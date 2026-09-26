@@ -88,6 +88,3 @@ pub fn decode_dense(
   elements
 }
 
-#[cfg(test)]
-#[path = "decoder.test.rs"]
-mod tests;

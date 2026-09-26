@@ -724,6 +724,7 @@ fn _16_a_level_list_is_refused_with_its_reason() {
     ("0", "level 0 is not supported"),
     ("13", "level 13 is not supported"),
     ("", "at least one level required"),
+    ("  ", "at least one level required"),
     (" , ", "at least one level required"),
   ] {
     let out = w.geolite_in(
@@ -746,4 +747,62 @@ fn _16_a_level_list_is_refused_with_its_reason() {
       out.stderr
     );
   }
+}
+
+// 17. a pbf a stage cannot read fails aloud: an unsupported compression, a truncated file, a file
+// that is gone
+#[test]
+#[ignore]
+fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
+  let w = world();
+
+  let dir = w.scratch("extract_unsupported_compression");
+  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let mut bytes = std::fs::read(&pbf).expect("failed to read the copy");
+  assert_eq!(
+    bytes[19], 0x1a,
+    "the zlib_data key of the header blob; {REGENERATE}"
+  );
+  bytes[19] = 0x22;
+  std::fs::write(&pbf, &bytes).expect("failed to write the copy");
+  stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
+  let out = w.geolite_in(&dir, &["exec", "extract-osm-pbf-header", &pbf]);
+  assert_ne!(out.status, 0, "stderr: {}", out.stderr);
+  assert!(
+    out.stderr.contains("unsupported blob compression"),
+    "stderr: {}",
+    out.stderr
+  );
+
+  let dir = w.scratch("extract_truncated_pbf");
+  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let mut bytes = std::fs::read(&pbf).expect("failed to read the copy");
+  bytes.truncate(bytes.len() - 1_000);
+  std::fs::write(&pbf, &bytes).expect("failed to write the copy");
+  stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
+  let out = w.geolite_in(
+    &dir,
+    &["--threads", "2", "exec", "extract-osm-pbf-data", &pbf],
+  );
+  assert_ne!(out.status, 0, "stderr: {}", out.stderr);
+  assert!(
+    out.stderr.contains("failed to read blob data"),
+    "stderr: {}",
+    out.stderr
+  );
+
+  let dir = w.scratch("extract_missing_pbf");
+  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
+  std::fs::remove_file(&pbf).expect("failed to delete the copy");
+  let out = w.geolite_in(
+    &dir,
+    &["--threads", "2", "exec", "extract-osm-pbf-data", "1"],
+  );
+  assert_ne!(out.status, 0, "stderr: {}", out.stderr);
+  assert!(
+    out.stderr.contains("failed to open pbf file"),
+    "stderr: {}",
+    out.stderr
+  );
 }

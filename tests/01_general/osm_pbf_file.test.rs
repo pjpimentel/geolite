@@ -947,3 +947,64 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
     "the built database is whole"
   );
 }
+
+// 20. the header stage stores the feature lists as json and leaves the fields the fixture lacks
+// null
+#[test]
+#[ignore]
+fn _20_the_header_stage_stores_the_features_as_json_and_leaves_the_absent_fields_null() {
+  const SQL_HEADER_COLUMNS: &str = "
+    SELECT JSON(osm_header_required_features),
+      JSON(osm_header_optional_features),
+      osm_header_bbox_wkt,
+      osm_header_source,
+      osm_header_osmosis_replication_timestamp,
+      osm_header_osmosis_replication_sequence_number,
+      osm_header_osmosis_replication_base_url
+    FROM osm_pbf_files
+  ";
+
+  struct header_row {
+    required: Option<String>,
+    optional: Option<String>,
+    bbox: Option<String>,
+    source: Option<String>,
+    timestamp: Option<i64>,
+    sequence: Option<i64>,
+    base_url: Option<String>,
+  }
+
+  let w = world();
+  let header = w
+    .open_sqlite()
+    .query_row(SQL_HEADER_COLUMNS, [], |r| {
+      Ok(header_row {
+        required: r.get(0)?,
+        optional: r.get(1)?,
+        bbox: r.get(2)?,
+        source: r.get(3)?,
+        timestamp: r.get(4)?,
+        sequence: r.get(5)?,
+        base_url: r.get(6)?,
+      })
+    })
+    .expect("failed to read the header columns");
+  assert_eq!(
+    header.required.as_deref(),
+    Some(r#"["OsmSchema-V0.6","DenseNodes"]"#),
+    "{REGENERATE}"
+  );
+  assert_eq!(
+    header.optional.as_deref(),
+    Some(r#"["Sort.Type_then_ID"]"#),
+    "{REGENERATE}"
+  );
+  assert!(
+    header.bbox.is_none()
+      && header.source.is_none()
+      && header.timestamp.is_none()
+      && header.sequence.is_none()
+      && header.base_url.is_none(),
+    "the fixture header carries no bbox, source or osmosis fields; {REGENERATE}"
+  );
+}

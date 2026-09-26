@@ -13,6 +13,9 @@ const EMBARE: i64 = 8_565_765;
 const BOQUEIRAO: i64 = 8_565_761;
 const JOSE_MENINO: i64 = 8_565_771;
 const MARAPE: i64 = 8_565_773;
+const RANGONI_ROAD: i64 = 63_176_392;
+const GUARUJA: i64 = 596_927;
+const MONTE_CABRAO: i64 = 2_446_148_556;
 const STREETS: i64 = 7_195;
 const STATES: usize = 27;
 const PLACE_WAYS: usize = 22;
@@ -458,4 +461,29 @@ fn _03_02_the_country_is_the_only_root_and_an_area_lists_what_is_directly_inside
     vec![APARECIDA],
     "one step down from Aparecida"
   );
+}
+
+// 03.03. the tree: a road leaving its neighbourhood into the next city keeps both branches, the
+// neighbourhood and the city it runs into, never the city the neighbourhood is in
+#[test]
+#[ignore]
+fn _03_03_a_road_leaving_its_neighbourhood_into_the_next_city_keeps_both_branches() {
+  let conn = world().open_sqlite();
+  assert_eq!(
+    parents_of(&conn, RANGONI_ROAD),
+    vec![GUARUJA, MONTE_CABRAO],
+    "{REGENERATE}"
+  );
+  let paths: Vec<Vec<String>> = paths_of(&conn, RANGONI_ROAD)
+    .iter()
+    .map(|path| names_of(&conn, path))
+    .collect();
+  let expected: Vec<Vec<String>> = [
+    vec!["Guarujá", "São Paulo", "Brasil"],
+    vec!["Monte Cabrão", "Santos", "São Paulo", "Brasil"],
+  ]
+  .iter()
+  .map(|path| path.iter().map(|name| name.to_string()).collect())
+  .collect();
+  assert_eq!(paths, expected, "{REGENERATE}");
 }

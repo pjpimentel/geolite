@@ -61,6 +61,7 @@ const CROSSING_STREET_IN_EMBARE: &str = "-23.966895,-46.319555";
 // rua castro alves carries 35 on the way that was folded into it; rua euclides da cunha is five ways
 const FOLDED_NUMBERED_QUERY: &str = "rua castro alves, 35, embare";
 const FIVE_WAYS_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
+const SUFFIXED_QUERY: &str = "rua inglaterra";
 
 const SQL_SELECT_BOUNDARY: &str = "
   SELECT admin_level, name, wkb
@@ -526,6 +527,26 @@ fn _00_16_a_street_of_several_ways_answers_a_point_on_the_street() {
     distance < 0.00002,
     "the point is {distance} degrees away from the street"
   );
+}
+
+// 00.17. result quality: a suffixed number matches its stored form whatever the case typed
+#[test]
+#[ignore]
+fn _00_17_a_suffixed_number_matches_its_stored_form_whatever_the_case_typed() {
+  for typed in ["40a", "40A"] {
+    let result = world().run(&[&format!("{SUFFIXED_QUERY} {typed}")]);
+    assert_eq!(
+      name_at(first(&result), 12).as_deref(),
+      Some("Rua Inglaterra"),
+      "{typed}: the street ranks first"
+    );
+    assert_eq!(
+      first(&result)["house_number"],
+      json!({ "number": typed, "kind": "exact" }),
+      "{typed}: the fixture stores 40A on Rua Inglaterra"
+    );
+    assert!(levels_of(first(&result)).contains(&30), "{typed}");
+  }
 }
 
 // 01.00. precision guarantee

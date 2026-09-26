@@ -95,6 +95,3 @@ impl PartialOrd for level {
   }
 }
 
-#[cfg(test)]
-#[path = "scale.test.rs"]
-mod tests;

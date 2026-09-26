@@ -29,6 +29,3 @@ pub fn decode(ways: &[way_msg], strings: &[&str], tags: &tag_policy) -> Vec<osm_
   elements
 }
 
-#[cfg(test)]
-#[path = "decoder.test.rs"]
-mod tests;
