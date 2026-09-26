@@ -1274,3 +1274,44 @@ fn _02_18_the_old_group_subcommands_exit_two() {
     assert_eq!(w.geolite(&[old]).status, 2, "{old}");
   }
 }
+
+// 02.19. dead case: an invalid friendly name format names its fault, the same on both surfaces
+#[test]
+#[ignore]
+fn _02_19_an_invalid_friendly_name_format_names_its_fault_on_both_surfaces() {
+  let w = world();
+  let s = w.start_server();
+  for (format, fault) in [
+    (
+      "{foo}",
+      "friendly_name_format: unknown field 'foo' (expected 'admin_level_<N>_name' or 'house_number')",
+    ),
+    (
+      "{admin_level_x_name}",
+      "friendly_name_format: invalid admin level 'x' (expected an integer 0-255)",
+    ),
+    (
+      "{admin_level_999_name}",
+      "friendly_name_format: invalid admin level '999' (expected an integer 0-255)",
+    ),
+    (
+      "{admin_level_2_name",
+      "friendly_name_format: unterminated placeholder (missing closing '}')",
+    ),
+  ] {
+    let out = w.geolite(&["query", ANY_TEXT, "--friendly-name-format", format]);
+    assert_eq!(out.status, 2, "{format}: stderr: {}", out.stderr);
+    assert!(
+      out.stderr.contains(fault),
+      "{format}: stderr: {}",
+      out.stderr
+    );
+
+    let r = get(
+      s.port,
+      &ask(ANY_TEXT).friendly_name_format(format).http_path(),
+    );
+    assert_eq!(r.status, 400, "{format}: body: {}", r.text());
+    assert_eq!(r.json()["error"], fault, "{format}");
+  }
+}

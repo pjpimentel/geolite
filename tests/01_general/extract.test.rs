@@ -711,3 +711,39 @@ fn _15_the_header_stage_refuses_to_run_before_the_chunk_index() {
     out.stderr
   );
 }
+
+// 16. the list of levels is refused with its reason: not a number, off the scale, or empty
+#[test]
+#[ignore]
+fn _16_a_level_list_is_refused_with_its_reason() {
+  let w = world();
+  let dir = w.scratch("extract_refused_levels");
+  for (levels, reason) in [
+    ("x", "'x' is not a level number"),
+    ("256", "'256' is not a level number"),
+    ("0", "level 0 is not supported"),
+    ("13", "level 13 is not supported"),
+    ("", "at least one level required"),
+    (" , ", "at least one level required"),
+  ] {
+    let out = w.geolite_in(
+      &dir,
+      &[
+        "--preset",
+        "brazil",
+        "exec",
+        "extract-osm-admin-levels",
+        "--admin-level",
+        levels,
+      ],
+    );
+    assert_eq!(out.status, 1, "{levels:?}: stderr: {}", out.stderr);
+    assert!(
+      out
+        .stderr
+        .contains(&format!("invalid --admin-level: {reason}")),
+      "{levels:?}: stderr: {}",
+      out.stderr
+    );
+  }
+}
