@@ -30,7 +30,7 @@ impl scratch {
     open_sqlite_at(&self.dir.join("database.sqlite3"))
   }
 
-  fn osm_data(&self) -> rusqlite::Connection {
+  pub(crate) fn osm_data(&self) -> rusqlite::Connection {
     open_sqlite_at(&self.dir.join("database.osm_data.sqlite3"))
   }
 
@@ -68,7 +68,7 @@ pub(crate) fn stage(w: &world, dir: &Path, args: &[&str]) -> output {
   out
 }
 
-fn copy_fixture(w: &world, dir: &Path, name: &str) -> String {
+pub(crate) fn copy_fixture(w: &world, dir: &Path, name: &str) -> String {
   let target = dir.join(name);
   std::fs::copy(&w.pbf, &target).expect("failed to copy the fixture");
   target.to_string_lossy().into_owned()

@@ -26,7 +26,6 @@
 
 ## **planned** - 0.0.14
 
-1. ADDED an e2e scenario that reads the `EXPLAIN QUERY PLAN` of the relation candidates and of the hierarchy reads, so a rewritten query cannot lose its index in silence.
 1. ADDED scenarios that pin the thresholds of the hierarchy resolution and the defaults of `src/admin_level/rules.rs`, so a change of rule cannot pass green.
 1. ADDED scenarios for the shapes the real extract never brings (compound and `#` house numbers, `drop_values`, the label and the scale errors), so the battery over real data holds them too.
 1. REMOVED the island of unit tests that was left, as the scenarios above take over each guard, so one regression battery is left.

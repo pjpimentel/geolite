@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::common::harness::{assert_in_order, output, plain, query_at, world};
@@ -93,6 +94,49 @@ fn hierarchy_count(s: &scratch) -> i64 {
 
 fn rtree_count(s: &scratch) -> i64 {
   count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree")
+}
+
+fn way_ids(conn: &rusqlite::Connection, sql: &str, params: impl rusqlite::Params) -> BTreeSet<i64> {
+  conn
+    .prepare(sql)
+    .expect("failed to prepare")
+    .query_map(params, |r| r.get(0))
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read a way id"))
+    .collect()
+}
+
+fn ways_at_level(conn: &rusqlite::Connection, level: u8) -> BTreeSet<i64> {
+  const SQL_WAYS_AT_LEVEL: &str = "
+    SELECT way_id
+    FROM admin_levels
+    WHERE admin_level = ?1
+      AND way_id IS NOT NULL
+  ";
+
+  way_ids(conn, SQL_WAYS_AT_LEVEL, [level])
+}
+
+// the named ways of the osm data that a rule selects, the rule written as sql over the payload
+fn named_ways_where(conn: &rusqlite::Connection, rule: &str) -> BTreeSet<i64> {
+  let sql = format!(
+    "
+    SELECT id
+    FROM osm_ways
+    WHERE JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
+      AND ({rule})
+    "
+  );
+  way_ids(conn, &sql, [])
+}
+
+fn assert_same_ways(actual: &BTreeSet<i64>, expected: &BTreeSet<i64>) {
+  let missing: Vec<&i64> = expected.difference(actual).take(5).collect();
+  let extra: Vec<&i64> = actual.difference(expected).take(5).collect();
+  assert!(
+    missing.is_empty() && extra.is_empty(),
+    "ways the rule selects but the level lacks: {missing:?}; rows the rule does not select: {extra:?}"
+  );
 }
 
 // 00.00. the stage is incremental: a second run finds every candidate already processed
@@ -242,6 +286,63 @@ fn _00_05_a_row_outside_the_scale_is_skipped_with_a_warning() {
     COUNTRY_STATE_CITY - 1,
     "every area but the skipped one gets a hierarchy row"
   );
+}
+
+// 00.06. the default include of level 10 is exactly the named ways tagged place=neighbourhood or
+// place=suburb, and the fixture brings both values
+#[test]
+#[ignore]
+fn _00_06_level_10_takes_exactly_the_named_place_neighbourhood_and_suburb_ways() {
+  const INCLUDED: &str = "JSON_EXTRACT(payload, '$.tags.place') IN ('neighbourhood', 'suburb')";
+
+  let w = world();
+  let s = extracted(w, "rules_level_ten", "2", &[]);
+  admin_levels_at(w, &s.dir, "10", &[]);
+
+  let data = s.osm_data();
+  assert_same_ways(
+    &ways_at_level(&s.ledger(), 10),
+    &named_ways_where(&data, INCLUDED),
+  );
+  for value in ["neighbourhood", "suburb"] {
+    let rule = format!("JSON_EXTRACT(payload, '$.tags.place') = '{value}'");
+    assert!(
+      !named_ways_where(&data, &rule).is_empty(),
+      "the fixture holds a named place={value} way; {REGENERATE}"
+    );
+  }
+}
+
+// 00.07. the default exclude of level 12 leaves every named way but the place ways of level 10,
+// the parks, the buildings and the waterways, and each exclude bites on the fixture
+#[test]
+#[ignore]
+fn _00_07_level_12_takes_every_named_way_but_the_excluded_ones() {
+  const EXCLUDED: [&str; 4] = [
+    "JSON_EXTRACT(payload, '$.tags.place') IN ('neighbourhood', 'suburb')",
+    "JSON_EXTRACT(payload, '$.tags.leisure') = 'park'",
+    "JSON_EXTRACT(payload, '$.tags.building') IS NOT NULL",
+    "JSON_EXTRACT(payload, '$.tags.waterway') IS NOT NULL",
+  ];
+
+  let w = world();
+  let s = extracted(w, "rules_level_twelve", "2", &[]);
+  admin_levels_at(w, &s.dir, "12", &[]);
+
+  let data = s.osm_data();
+  let kept = EXCLUDED
+    .map(|rule| format!("NOT COALESCE(({rule}), 0)"))
+    .join(" AND ");
+  assert_same_ways(
+    &ways_at_level(&s.ledger(), 12),
+    &named_ways_where(&data, &kept),
+  );
+  for rule in EXCLUDED {
+    assert!(
+      !named_ways_where(&data, rule).is_empty(),
+      "the fixture holds a named way where {rule}; {REGENERATE}"
+    );
+  }
 }
 
 // 01.00. the rtree is filled by its own stage, one box per row, and rebuilt from scratch each time

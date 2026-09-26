@@ -144,7 +144,7 @@ fn lines_of(conn: &rusqlite::Connection, id: i64) -> Vec<LineString<f64>> {
   }
 }
 
-fn parents_of(conn: &rusqlite::Connection, id: i64) -> Vec<i64> {
+pub(crate) fn parents_of(conn: &rusqlite::Connection, id: i64) -> Vec<i64> {
   conn
     .prepare(
       "SELECT parent_id FROM admin_levels_hierarchy \
