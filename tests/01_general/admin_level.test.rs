@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::common::harness::{assert_in_order, output, plain, query_at, world};
@@ -14,8 +15,8 @@ pub(crate) fn admin_levels_at(w: &world, dir: &Path, levels: &str, extra: &[&str
   let mut args = vec![
     "--preset",
     "brazil",
-    "extract",
-    "osm-admin-levels",
+    "exec",
+    "extract-osm-admin-levels",
     "--admin-level",
     levels,
   ];
@@ -23,10 +24,21 @@ pub(crate) fn admin_levels_at(w: &world, dir: &Path, levels: &str, extra: &[&str
   stage(w, dir, &args)
 }
 
-pub(crate) fn index_at(w: &world, dir: &Path, stages: &[&str]) -> output {
-  let mut args = vec!["--preset", "brazil", "index"];
-  args.extend_from_slice(stages);
-  stage(w, dir, &args)
+pub(crate) fn index_at(w: &world, dir: &Path, index: &str) -> output {
+  let name = format!("index-{index}");
+  stage(w, dir, &["--preset", "brazil", "exec", &name])
+}
+
+// the three index stages in order, with their stdout joined
+pub(crate) fn indexed(w: &world, dir: &Path) -> String {
+  [
+    "admin-levels-hierarchy",
+    "user-friendly-name",
+    "coordinates",
+  ]
+  .iter()
+  .map(|index| index_at(w, dir, index).stdout)
+  .collect()
 }
 
 fn level_counts(conn: &rusqlite::Connection) -> Vec<(u8, i64)> {
@@ -82,6 +94,49 @@ fn hierarchy_count(s: &scratch) -> i64 {
 
 fn rtree_count(s: &scratch) -> i64 {
   count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree")
+}
+
+fn way_ids(conn: &rusqlite::Connection, sql: &str, params: impl rusqlite::Params) -> BTreeSet<i64> {
+  conn
+    .prepare(sql)
+    .expect("failed to prepare")
+    .query_map(params, |r| r.get(0))
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read a way id"))
+    .collect()
+}
+
+fn ways_at_level(conn: &rusqlite::Connection, level: u8) -> BTreeSet<i64> {
+  const SQL_WAYS_AT_LEVEL: &str = "
+    SELECT way_id
+    FROM admin_levels
+    WHERE admin_level = ?1
+      AND way_id IS NOT NULL
+  ";
+
+  way_ids(conn, SQL_WAYS_AT_LEVEL, [level])
+}
+
+// the named ways of the osm data that a rule selects, the rule written as sql over the payload
+fn named_ways_where(conn: &rusqlite::Connection, rule: &str) -> BTreeSet<i64> {
+  let sql = format!(
+    "
+    SELECT id
+    FROM osm_ways
+    WHERE JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
+      AND ({rule})
+    "
+  );
+  way_ids(conn, &sql, [])
+}
+
+fn assert_same_ways(actual: &BTreeSet<i64>, expected: &BTreeSet<i64>) {
+  let missing: Vec<&i64> = expected.difference(actual).take(5).collect();
+  let extra: Vec<&i64> = actual.difference(expected).take(5).collect();
+  assert!(
+    missing.is_empty() && extra.is_empty(),
+    "ways the rule selects but the level lacks: {missing:?}; rows the rule does not select: {extra:?}"
+  );
 }
 
 // 00.00. the stage is incremental: a second run finds every candidate already processed
@@ -159,7 +214,7 @@ fn _00_03_recreate_empties_the_hierarchy_and_the_rtree() {
   let w = world();
   let s = extracted(w, "admin_level_recreate_derived", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
-  index_at(w, &s.dir, &[]);
+  indexed(w, &s.dir);
   assert_eq!(hierarchy_count(&s), COUNTRY_STATE_CITY, "{REGENERATE}");
   assert_eq!(rtree_count(&s), COUNTRY_STATE_CITY);
   assert!(s.dir.join("database.tantivy").is_dir());
@@ -180,9 +235,24 @@ fn _00_03_recreate_empties_the_hierarchy_and_the_rtree() {
 fn _00_04_the_stage_names_every_level_of_the_scale() {
   let w = world();
   let s = extracted(w, "admin_level_names", "2", &[]);
-  let out = plain(&admin_levels_at(w, &s.dir, "2,4,8", &[]).stdout);
+  let out =
+    plain(&admin_levels_at(w, &s.dir, "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 30", &[]).stdout);
 
-  let headers = ["level 2 (country)", "level 4 (state)", "level 8 (city)"];
+  let headers = [
+    "level 1 (continent)",
+    "level 2 (country)",
+    "level 3 (region)",
+    "level 4 (state)",
+    "level 5 (district)",
+    "level 6 (county)",
+    "level 7 (municipality)",
+    "level 8 (city)",
+    "level 9 (locality)",
+    "level 10 (neighborhood)",
+    "level 12 (street)",
+    "level 14 (address)",
+    "level 30 (house_number)",
+  ];
   let positions: Vec<usize> = headers
     .iter()
     .map(|h| {
@@ -222,7 +292,7 @@ fn _00_05_a_row_outside_the_scale_is_skipped_with_a_warning() {
     assert_eq!(changed, 1, "{REGENERATE}");
   }
 
-  let out = index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  let out = index_at(w, &s.dir, "admin-levels-hierarchy");
   let warning =
     format!("warn: admin_levels row {SANTOS_ID} carries level 11, outside the scale; skipped");
   assert!(out.stderr.contains(&warning), "stderr: {}", out.stderr);
@@ -231,6 +301,63 @@ fn _00_05_a_row_outside_the_scale_is_skipped_with_a_warning() {
     COUNTRY_STATE_CITY - 1,
     "every area but the skipped one gets a hierarchy row"
   );
+}
+
+// 00.06. the default include of level 10 is exactly the named ways tagged place=neighbourhood or
+// place=suburb, and the fixture brings both values
+#[test]
+#[ignore]
+fn _00_06_level_10_takes_exactly_the_named_place_neighbourhood_and_suburb_ways() {
+  const INCLUDED: &str = "JSON_EXTRACT(payload, '$.tags.place') IN ('neighbourhood', 'suburb')";
+
+  let w = world();
+  let s = extracted(w, "rules_level_ten", "2", &[]);
+  admin_levels_at(w, &s.dir, "10", &[]);
+
+  let data = s.osm_data();
+  assert_same_ways(
+    &ways_at_level(&s.ledger(), 10),
+    &named_ways_where(&data, INCLUDED),
+  );
+  for value in ["neighbourhood", "suburb"] {
+    let rule = format!("JSON_EXTRACT(payload, '$.tags.place') = '{value}'");
+    assert!(
+      !named_ways_where(&data, &rule).is_empty(),
+      "the fixture holds a named place={value} way; {REGENERATE}"
+    );
+  }
+}
+
+// 00.07. the default exclude of level 12 leaves every named way but the place ways of level 10,
+// the parks, the buildings and the waterways, and each exclude bites on the fixture
+#[test]
+#[ignore]
+fn _00_07_level_12_takes_every_named_way_but_the_excluded_ones() {
+  const EXCLUDED: [&str; 4] = [
+    "JSON_EXTRACT(payload, '$.tags.place') IN ('neighbourhood', 'suburb')",
+    "JSON_EXTRACT(payload, '$.tags.leisure') = 'park'",
+    "JSON_EXTRACT(payload, '$.tags.building') IS NOT NULL",
+    "JSON_EXTRACT(payload, '$.tags.waterway') IS NOT NULL",
+  ];
+
+  let w = world();
+  let s = extracted(w, "rules_level_twelve", "2", &[]);
+  admin_levels_at(w, &s.dir, "12", &[]);
+
+  let data = s.osm_data();
+  let kept = EXCLUDED
+    .map(|rule| format!("NOT COALESCE(({rule}), 0)"))
+    .join(" AND ");
+  assert_same_ways(
+    &ways_at_level(&s.ledger(), 12),
+    &named_ways_where(&data, &kept),
+  );
+  for rule in EXCLUDED {
+    assert!(
+      !named_ways_where(&data, rule).is_empty(),
+      "the fixture holds a named way where {rule}; {REGENERATE}"
+    );
+  }
 }
 
 // 01.00. the rtree is filled by its own stage, one box per row, and rebuilt from scratch each time
@@ -242,9 +369,9 @@ fn _01_00_index_coordinates_boxes_every_row_and_is_idempotent() {
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
   assert_eq!(rtree_count(&s), 0, "extraction leaves the rtree empty");
 
-  index_at(w, &s.dir, &["coordinates"]);
+  index_at(w, &s.dir, "coordinates");
   assert_eq!(rtree_count(&s), COUNTRY_STATE_CITY, "{REGENERATE}");
-  index_at(w, &s.dir, &["coordinates"]);
+  index_at(w, &s.dir, "coordinates");
   assert_eq!(
     rtree_count(&s),
     COUNTRY_STATE_CITY,
@@ -260,26 +387,26 @@ fn _02_00_the_hierarchy_stage_is_deterministic() {
   let s = extracted(w, "admin_level_hierarchy_twice", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
 
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
   let first_run = hierarchy_rows(&s.ledger());
   assert_eq!(first_run.len() as i64, EVERY_EDGE, "{REGENERATE}");
 
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
   assert!(
     hierarchy_rows(&s.ledger()) == first_run,
     "the second run must write the same edges"
   );
 }
 
-// 02.02. the index run names every stage it finished, in order
+// 02.02. each index stage names what it finished, in order
 #[test]
 #[ignore]
-fn _02_02_the_index_run_names_every_stage_it_finished() {
+fn _02_02_each_index_stage_names_what_it_finished() {
   let w = world();
   let s = extracted(w, "index_every_stage", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
-  let stdout = plain(&index_at(w, &s.dir, &[]).stdout);
+  let stdout = plain(&indexed(w, &s.dir));
   assert_in_order(
     &stdout,
     &[
@@ -301,15 +428,21 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
   let s = extracted(w, "admin_level_search_source", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
-  index_at(w, &s.dir, &["user-friendly-name"]);
-  let empty = query_at(w, &s.dir, "brazil", "santos");
+  let refused = w.geolite_in(
+    &s.dir,
+    &["--preset", "brazil", "exec", "index-user-friendly-name"],
+  );
+  assert_eq!(refused.status, 1, "stderr: {}", refused.stderr);
   assert!(
-    matches(&empty).is_empty(),
-    "without hierarchy rows there is nothing to find, got {empty}"
+    refused
+      .stderr
+      .contains("index-user-friendly-name requires index-admin-levels-hierarchy"),
+    "without hierarchy rows there is nothing to index, stderr: {}",
+    refused.stderr
   );
 
-  index_at(w, &s.dir, &["admin-levels-hierarchy"]);
-  index_at(w, &s.dir, &["user-friendly-name"]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
+  index_at(w, &s.dir, "user-friendly-name");
   let found = query_at(w, &s.dir, "brazil", "santos");
   let top = first(&found);
   assert_eq!(levels_of(top).last(), Some(&8));
@@ -324,7 +457,7 @@ fn _03_00_an_unreadable_geometry_warns_and_drops_the_row() {
   let w = world();
   let s = extracted(w, "admin_level_unreadable_geometry", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
-  index_at(w, &s.dir, &[]);
+  indexed(w, &s.dir);
   {
     let conn = rusqlite::Connection::open(s.dir.join("database.sqlite3"))
       .expect("failed to open the scratch database for writing");

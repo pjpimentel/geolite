@@ -1103,6 +1103,25 @@ fn _05_02_the_wkt_of_a_folded_street_has_one_line_per_merged_way() {
   }
 }
 
+// 05.03. contract: a last placeholder that is missing leaves no separator behind, and an empty
+// format names nothing
+#[test]
+#[ignore]
+fn _05_03_a_missing_last_placeholder_leaves_no_separator_and_an_empty_format_names_nothing() {
+  let w = world();
+  let s = w.start_server();
+  w.assert_both(
+    &s,
+    &ask(TEXT_QUERY).friendly_name_format("{admin_level_12_name}, {admin_level_6_name}"),
+    &json!({ "matches": [{ "friendly_name": "Rua Castro Alves" }] }),
+  );
+  w.assert_both(
+    &s,
+    &ask(TEXT_QUERY).friendly_name_format(""),
+    &json!({ "matches": [{ "friendly_name": "" }] }),
+  );
+}
+
 // 06.00. dead case
 #[test]
 #[ignore]

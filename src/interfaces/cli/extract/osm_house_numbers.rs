@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use crate::house_number::{house_number_link, house_number_policy, house_numbers};
 use crate::database::table;
+use crate::interfaces::cli::exec::stages::stage;
 use crate::interfaces::cli::progress;
 
 pub fn command_handler_extract_osm_house_numbers(
@@ -13,6 +14,7 @@ pub fn command_handler_extract_osm_house_numbers(
     crate::database::destroy_data(sqlite_path, false, false, false, true);
   }
   let conn = crate::database::open_write(sqlite_path);
+  stage::extract_osm_house_numbers.require(&conn, None);
 
   let bar = progress::bar("extracting", "house-numbers");
 

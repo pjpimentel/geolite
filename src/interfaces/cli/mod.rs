@@ -1,4 +1,5 @@
 pub mod build;
+pub mod exec;
 pub mod extract;
 pub mod http_server;
 pub mod index;
@@ -20,9 +21,7 @@ pub(crate) fn require_sqlite(path: &str) {
 }
 
 use clap::{Parser, Subcommand};
-use extract::extract_commands;
-use index::index_commands;
-use optimize::optimize_commands;
+use exec::exec_commands;
 use osm_pbf_file::osm_pbf_file_commands;
 
 // indicatif draws straight to stderr, outside libtest's output capture, so live bars would
@@ -91,20 +90,9 @@ enum commands {
     #[arg(long, name = "ls-endpoint", help = "overrides the geofabrik index url")]
     ls_endpoint: Option<String>,
   },
-  #[command(override_usage = "geolite extract [OPTIONS] <COMMAND> [OSM_PBF_FILE_PATH]")]
-  extract {
-    #[arg(long, default_value_t = false)]
-    recreate: bool,
+  exec {
     #[command(subcommand)]
-    command: extract_commands,
-  },
-  index {
-    #[command(subcommand)]
-    command: Option<index_commands>,
-  },
-  optimize {
-    #[command(subcommand)]
-    command: Option<optimize_commands>,
+    command: exec_commands,
   },
   query {
     #[arg(allow_hyphen_values = true)]
@@ -227,25 +215,14 @@ pub fn run() {
         )
       }
     },
-    commands::extract { command, recreate } => extract::command_handler_extract(
+    commands::exec { command } => exec::command_handler_exec(
       &args.data_path,
       &args.threads,
       &sqlite_path,
+      &index_path,
       command,
-      &recreate,
       &preset,
     ),
-    commands::index { command } => {
-      index::command_handler_index(
-        &sqlite_path,
-        &index_path,
-        command,
-        &preset.index_user_friendly_name,
-      )
-    }
-    commands::optimize { command } => {
-      optimize::command_handler_optimize(&args.data_path, &sqlite_path, &index_path, command)
-    }
     commands::query {
       input,
       friendly_name_format,

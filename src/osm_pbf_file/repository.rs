@@ -509,3 +509,31 @@ pub fn update_house_numbers_count(conn: &Connection) {
     .execute(SQL_UPDATE_HOUSE_NUMBERS_COUNT, [])
     .expect("failed to update osm_pbf_files house_numbers_count");
 }
+
+pub fn any_osm_data_extracted(conn: &Connection) -> bool {
+  const SQL_ANY_OSM_DATA_EXTRACTED: &str = "
+    SELECT EXISTS (
+      SELECT 1
+      FROM osm_pbf_files
+      WHERE osm_data_extracted_at IS NOT NULL
+    )
+  ";
+
+  conn
+    .query_row(SQL_ANY_OSM_DATA_EXTRACTED, [], |row| row.get::<_, bool>(0))
+    .expect("failed to query osm_pbf_files for an extracted file")
+}
+
+pub fn any_house_numbers_counted(conn: &Connection) -> bool {
+  const SQL_ANY_HOUSE_NUMBERS_COUNTED: &str = "
+    SELECT EXISTS (
+      SELECT 1
+      FROM osm_pbf_files
+      WHERE house_numbers_count IS NOT NULL
+    )
+  ";
+
+  conn
+    .query_row(SQL_ANY_HOUSE_NUMBERS_COUNTED, [], |row| row.get::<_, bool>(0))
+    .expect("failed to query osm_pbf_files for a house numbers count")
+}

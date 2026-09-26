@@ -6,6 +6,7 @@ use crate::admin_level::{
   admin_level, extract_event, extract_opts, extract_step, extraction_rules, level,
 };
 use crate::database::table;
+use crate::interfaces::cli::exec::stages::stage as exec_stage;
 use crate::interfaces::cli::progress;
 use crate::progress_report;
 
@@ -121,6 +122,7 @@ pub fn command_handler_extract_osm_admin_levels(
   }
 
   let conn = crate::database::open_write(sqlite_path);
+  exec_stage::extract_osm_admin_levels.require(&conn, None);
   let opts = extract_opts {
     threads: (*threads).max(1) as usize,
     name_priority,

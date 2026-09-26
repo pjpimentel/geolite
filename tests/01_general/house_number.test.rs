@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use crate::admin_level::{admin_levels_at, index_at};
 use crate::common::harness::{decode_wkb, output, plain, query_at, world};
 use crate::common::query::{first, levels_of};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
@@ -14,28 +15,26 @@ const SUFFIXED: &str = "40A";
 const BRAZIL_DROPS: &str = "'s/n', 'sn', 's/nº', 's/no', 's/n.', 's n'";
 const NUMBERED_STREET: &str = "rua januario dos santos, santos";
 const NUMBERED_STREET_ID: i64 = 256_305_358;
+const INJECTED_STREET: &str = "Rua Januário dos Santos";
+const INJECTED_POINT: (f64, f64) = (-23.98202, -46.31005);
+const FIRST_INJECTED_NODE: i64 = 9_000_000_001;
 
 fn house_numbers_at(w: &world, dir: &Path, extra: &[&str]) -> output {
-  let mut args = vec!["--preset", "brazil", "extract", "osm-house-numbers"];
+  let mut args = vec!["--preset", "brazil", "exec", "extract-osm-house-numbers"];
   args.extend_from_slice(extra);
   stage(w, dir, &args)
 }
 
-// the three stages of the file, then the streets and the house numbers, in a scratch of its own
-fn linked(w: &world, name: &str) -> (scratch, output) {
+// the three stages of the file, then the streets, in a scratch of its own
+fn streets(w: &world, name: &str) -> scratch {
   let s = extracted(w, name, "2", &[]);
-  stage(
-    w,
-    &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "extract",
-      "osm-admin-levels",
-      "--admin-level",
-      "12",
-    ],
-  );
+  admin_levels_at(w, &s.dir, "12", &[]);
+  s
+}
+
+// the streets and the house numbers of the fixture
+fn linked(w: &world, name: &str) -> (scratch, output) {
+  let s = streets(w, name);
   let out = house_numbers_at(w, &s.dir, &[]);
   (s, out)
 }
@@ -44,7 +43,7 @@ fn linked(w: &world, name: &str) -> (scratch, output) {
 fn indexed(w: &world, name: &str) -> scratch {
   let (s, _) = linked(w, name);
   for index in ["admin-levels-hierarchy", "user-friendly-name"] {
-    stage(w, &s.dir, &["--preset", "brazil", "index", index]);
+    index_at(w, &s.dir, index);
   }
   s
 }
@@ -99,6 +98,65 @@ fn assert_full_table(s: &scratch) {
     Some(HOUSE_NUMBERS),
     "the ledger must follow the table"
   );
+}
+
+// the streets of the fixture, then one node per number on the numbered street, then the house
+// numbers: the shapes the fixture never brings, through the real stage
+fn injected(w: &world, name: &str, numbers: &[&str]) -> (scratch, output) {
+  const SQL_INSERT_NODE: &str = "
+    INSERT INTO osm_nodes (
+      id,
+      osm_pbf_chunk_id,
+      payload
+    ) VALUES (
+      ?1,
+      NULL,
+      JSONB(?2)
+    )
+  ";
+
+  let s = streets(w, name);
+  {
+    let conn = rusqlite::Connection::open(s.dir.join("database.osm_data.sqlite3"))
+      .expect("failed to open the scratch osm data for writing");
+    for (offset, number) in numbers.iter().enumerate() {
+      let payload = json!({
+        "lat": INJECTED_POINT.0,
+        "lon": INJECTED_POINT.1,
+        "tags": { "addr:housenumber": number, "addr:street": INJECTED_STREET }
+      })
+      .to_string();
+      conn
+        .execute(
+          SQL_INSERT_NODE,
+          rusqlite::params![FIRST_INJECTED_NODE + offset as i64, payload],
+        )
+        .expect("failed to insert the node");
+    }
+  }
+  let out = house_numbers_at(w, &s.dir, &[]);
+  (s, out)
+}
+
+fn injected_numbers(conn: &rusqlite::Connection, count: usize) -> Vec<(i64, String)> {
+  const SQL_INJECTED_NUMBERS: &str = "
+    SELECT node_id, number
+    FROM house_numbers
+    WHERE node_id >= ?1
+      AND node_id < ?2
+    ORDER BY node_id
+  ";
+
+  conn
+    .prepare(SQL_INJECTED_NUMBERS)
+    .expect("failed to prepare")
+    .query_map(
+      [FIRST_INJECTED_NODE, FIRST_INJECTED_NODE + count as i64],
+      |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .expect("failed to query")
+    .map(|r| r.expect("failed to read a house number"))
+    .collect()
 }
 
 // 00.00. the stage links every candidate it can and names the count it stored
@@ -307,6 +365,7 @@ fn _00_07_a_stage_without_candidates_reports_zero() {
     "2",
     &["--tags-ignore-list", "addr:housenumber"],
   );
+  admin_levels_at(w, &s.dir, "12", &[]);
   let out = house_numbers_at(w, &s.dir, &[]);
   assert!(
     extracted_line(&out.stdout, 0),
@@ -314,6 +373,27 @@ fn _00_07_a_stage_without_candidates_reports_zero() {
     out.stdout
   );
   assert_eq!(count(&s.ledger(), "SELECT COUNT(*) FROM house_numbers"), 0);
+}
+
+// 00.08. the intermediary data is what the numbers are linked from: deleting it before the link
+// is refused
+#[test]
+#[ignore]
+fn _00_08_the_intermediary_data_cannot_be_deleted_before_the_house_numbers_are_linked() {
+  let w = world();
+  let s = extracted(w, "house_number_delete_before_link", "2", &[]);
+  admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
+  index_at(w, &s.dir, "admin-levels-hierarchy");
+  let out = w.geolite_in(&s.dir, &["exec", "optimize-delete-intermediary-data"]);
+  assert_eq!(out.status, 1, "stderr: {}", out.stderr);
+  assert!(
+    out
+      .stderr
+      .contains("optimize-delete-intermediary-data requires extract-osm-house-numbers"),
+    "stderr: {}",
+    out.stderr
+  );
+  assert!(s.dir.join("database.osm_data.sqlite3").is_file());
 }
 
 // 01.00. the `#` prefix is a number only where the preset allows it
@@ -389,5 +469,104 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
       .get("house_number")
       .is_none(),
     "brazil reads no number in '82-52'"
+  );
+}
+
+// 01.02. the stage keeps, drops and canonizes the shapes the fixture never brings, as the policy
+// of the preset says: brazil drops its non-values, the default keeps them
+#[test]
+#[ignore]
+fn _01_02_the_stage_keeps_drops_and_canonizes_the_shapes_the_fixture_never_brings() {
+  type shape = (&'static str, Option<&'static str>, Option<&'static str>);
+  const SHAPES: [shape; 20] = [
+    ("  100  ", Some("100"), Some("100")),
+    ("12 a", Some("12A"), Some("12A")),
+    ("12-a", Some("12A"), Some("12A")),
+    ("12a", Some("12A"), Some("12A")),
+    ("12A", Some("12A"), Some("12A")),
+    ("12-14", Some("12-14"), Some("12-14")),
+    ("Lote 5", Some("Lote 5"), Some("Lote 5")),
+    ("82-52", Some("82-52"), Some("82-52")),
+    ("25B-48", Some("25B-48"), Some("25B-48")),
+    ("16i56", Some("16i56"), Some("16i56")),
+    ("", None, None),
+    ("   ", None, None),
+    ("s/n", None, Some("s/n")),
+    ("S/N", None, Some("S/N")),
+    ("  s/n  ", None, Some("s/n")),
+    ("Sn", None, Some("Sn")),
+    ("s/nº", None, Some("s/nº")),
+    ("s/no", None, Some("s/no")),
+    ("s/n.", None, Some("s/n.")),
+    ("s n", None, Some("s n")),
+  ];
+  let stored = |under: fn(&shape) -> Option<&'static str>| {
+    SHAPES
+      .iter()
+      .enumerate()
+      .filter_map(|(offset, shape)| {
+        under(shape).map(|number| (FIRST_INJECTED_NODE + offset as i64, number.to_string()))
+      })
+      .collect::<Vec<(i64, String)>>()
+  };
+
+  let w = world();
+  let raws: Vec<&str> = SHAPES.iter().map(|shape| shape.0).collect();
+  let (s, out) = injected(w, "house_number_shapes", &raws);
+  let under_brazil = stored(|shape| shape.1);
+  assert!(
+    extracted_line(&out.stdout, HOUSE_NUMBERS + under_brazil.len() as i64),
+    "stdout: {}",
+    out.stdout
+  );
+  assert_eq!(
+    injected_numbers(&s.ledger(), SHAPES.len()),
+    under_brazil,
+    "under brazil"
+  );
+
+  let out = stage(
+    w,
+    &s.dir,
+    &["exec", "extract-osm-house-numbers", "--recreate"],
+  );
+  let under_default = stored(|shape| shape.2);
+  assert!(
+    extracted_line(&out.stdout, HOUSE_NUMBERS + under_default.len() as i64),
+    "stdout: {}",
+    out.stdout
+  );
+  assert_eq!(
+    injected_numbers(&s.ledger(), SHAPES.len()),
+    under_default,
+    "under the default preset, which drops no value"
+  );
+}
+
+// 01.03. a compound number matches its stored value whatever the case of its letter and whether
+// its parts are hyphenated, and only where the policy reads compounds
+#[test]
+#[ignore]
+fn _01_03_a_compound_number_matches_across_its_letter_case_and_separator() {
+  let w = world();
+  let (s, _) = injected(w, "house_number_compound_keys", &["25B-48", "16i56"]);
+  for index in ["admin-levels-hierarchy", "user-friendly-name"] {
+    index_at(w, &s.dir, index);
+  }
+
+  for typed in ["25b-48", "16I56", "16i-56"] {
+    let result = asked(w, &s.dir, "colombia", typed);
+    assert_eq!(
+      first(&result)["house_number"],
+      json!({ "number": typed, "kind": "exact" }),
+      "{typed}"
+    );
+    assert!(levels_of(first(&result)).contains(&30), "{typed}");
+  }
+  assert!(
+    first(&asked(w, &s.dir, "brazil", "16I56"))
+      .get("house_number")
+      .is_none(),
+    "brazil reads no number in '16I56'"
   );
 }

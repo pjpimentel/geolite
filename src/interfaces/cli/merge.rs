@@ -1,4 +1,5 @@
 use crate::database::table;
+use crate::interfaces::cli::exec::stages::stage;
 use crate::interfaces::cli::index::command_handler_index_and_merge;
 
 fn require_compatible_version(label: &str, path: &str) {
@@ -68,12 +69,12 @@ pub fn command_handler_merge(
   // rebuild every derived artifact (hierarchy + rtree + tantivy) from the unified set; each index
   // step clears and rebuilds from scratch, so no stale rows survive the merge.
   println!();
-  println!("\x1b[2m── index\x1b[0m");
+  println!("\x1b[2m── {}\x1b[0m", stage::index_admin_levels_hierarchy.name());
   command_handler_index_and_merge(base, index_path, &preset.index_user_friendly_name);
 
   // compact the resulting file (ANALYZE / PRAGMA optimize / wal_checkpoint / VACUUM).
   println!();
-  println!("\x1b[2m── optimize\x1b[0m");
+  println!("\x1b[2m── {}\x1b[0m", stage::optimize_sqlite_file.name());
   let conn = crate::database::open_write_main(base);
   let (bytes_before, bytes_after) = crate::database::compact(&conn);
   println!("\x1b[1;32moptimized\x1b[0m {bytes_before} → {bytes_after} bytes");
