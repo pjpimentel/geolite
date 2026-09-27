@@ -61,13 +61,13 @@ jobs:
           tool: cargo-llvm-cov
 
       - name: cargo test e2e with coverage
-        run: cargo llvm-cov --release --no-report --test '*' -- --ignored --nocapture
+        run: cargo llvm-cov --profile e2e --no-report --test '*' -- --ignored --nocapture
 
       - name: lcov report
-        run: cargo llvm-cov report --release --lcov --output-path lcov.info
+        run: cargo llvm-cov report --profile e2e --lcov --output-path lcov.info
 
       - name: build maldives
-        run: ./target/llvm-cov-target/release/geolite build maldives
+        run: ./target/llvm-cov-target/e2e/geolite build maldives
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2

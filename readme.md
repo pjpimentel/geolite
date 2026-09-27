@@ -175,7 +175,7 @@ $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:la
 
 ### run the end-to-end suite
 ```bash
-$ cargo test --release --test '*' -- --ignored --nocapture
+$ cargo test --profile e2e --test '*' -- --ignored --nocapture
 ```
 
 ## question and answers

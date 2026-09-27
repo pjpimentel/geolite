@@ -19,11 +19,10 @@
 
 1. MODIFIED `house_number::resolution` to interpolate along the street and to extrapolate from one reference, so a number lands on its most probable point instead of the centroid.
 1. ADDED a data exporter, as a sql dump of the domain tables and as `.osm.pbf`, so the data travels to another database and sub-extracts need no osmium.
-1. ADDED `src/lib.rs`, with `main.rs` reduced to `cli::run`, so geolite can be used as a dependency.
 1. ADDED a study of removing each direct dependency, measured in own code, transitive crates and binary size, so which ones stay is decided by numbers.
-1. MODIFIED the workflows to reuse the binary of the quality check in the docker images and in `cargo publish`, so the binary tested is the binary shipped.
+1. MODIFIED the e2e battery to build under an `e2e` profile that unwinds, so the quality check compiles the dependencies once.
 
-## **planned** - 0.0.14
+## **2026-09-26** - - 0.0.14
 
 1. ADDED e2e scenarios for every guard the unit tests held alone: the hierarchy thresholds, the defaults of `src/admin_level/rules.rs`, the house number shapes the fixture never brings, the label and scale errors, and the pbf files a stage cannot read, so the battery over real data holds them too.
 1. REMOVED the unit tests that were left, with the code that served only them, so one regression battery is left.
