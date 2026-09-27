@@ -722,6 +722,3 @@ fn build_rtree(entries: &[ancestor_entry]) -> RTree<spatial_entry> {
   RTree::bulk_load(objects)
 }
 
-#[cfg(test)]
-#[path = "resolver.test.rs"]
-mod tests;

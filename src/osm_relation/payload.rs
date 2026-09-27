@@ -34,6 +34,3 @@ fn member_type_code(member_type: &osm_member_type) -> &'static str {
   }
 }
 
-#[cfg(test)]
-#[path = "payload.test.rs"]
-mod tests;

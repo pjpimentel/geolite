@@ -49,7 +49,7 @@ low bit set for relations: a way and a relation that share an osm id stay distin
 pure function of the source and never an insert-order rowid, and `osm_id()` and `kind()` read it
 back. the row carries it from the stage that builds it (`from_way` or `from_relation`), so a row
 without an origin cannot be built; `batch_upsert` writes the `relation_id`/`way_id` columns back
-from `kind()` and `osm_id()`. a street folded from several ways (`optimize merge-admin-levels`, in
+from `kind()` and `osm_id()`. a street folded from several ways (`optimize-merge-admin-levels`, in
 `admin_level_hierarchy`) keeps the id of the smallest of them and its `way_id`, and the rows of the
 others are gone.
 

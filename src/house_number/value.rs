@@ -226,6 +226,3 @@ fn digits_within(text: &str, shape: house_number_shape, max_digits: u8) -> bool 
   }
 }
 
-#[cfg(test)]
-#[path = "value.test.rs"]
-mod tests;

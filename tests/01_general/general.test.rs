@@ -3,7 +3,7 @@ use crate::common::harness::{
   assert_in_order, encode, get, plain, request, scenario, world, world_cell,
 };
 use crate::common::query::{first, matches};
-use crate::extract::REGENERATE;
+use crate::extract::{REGENERATE, extracted};
 use crate::house_number::HOUSE_NUMBERS;
 use crate::street_merge::{NUMBERS_MOVED, merged_summary};
 use serde_json::{Value, json};
@@ -45,13 +45,17 @@ fn _00_01_build_prints_every_stage_banner_in_order() {
   let stdout = &w.build_stdout;
   let stages = [
     "── download",
-    "── extract blob-chunks",
-    "── extract header",
-    "── extract osm-data",
-    "── extract admin-levels",
-    "── extract house-numbers",
-    "── index",
-    "── optimize",
+    "── extract-osm-pbf-blob-chunks",
+    "── extract-osm-pbf-header",
+    "── extract-osm-pbf-data",
+    "── extract-osm-admin-levels",
+    "── extract-osm-house-numbers",
+    "── index-admin-levels-hierarchy",
+    "── optimize-merge-admin-levels",
+    "── index-user-friendly-name",
+    "── index-coordinates",
+    "── optimize-delete-intermediary-data",
+    "── optimize-sqlite-file",
   ];
   let mut previous = 0usize;
   for stage in stages {
@@ -242,7 +246,7 @@ fn _00_10_the_build_reports_the_house_numbers_it_linked_and_the_optimize_steps()
   let mut at = 0;
   for line in [
     house_numbers.as_str(),
-    "── optimize",
+    "── optimize-delete-intermediary-data",
     "deleted osm_data.sqlite3",
     "deleted 1 tables in",
     "optimizing sqlite file...",
@@ -267,13 +271,14 @@ fn _00_11_the_build_folds_the_streets_between_the_hierarchy_and_the_search_index
     &stdout,
     &[
       "indexed hierarchy in",
-      "── optimize merge-admin-levels",
+      "── optimize-merge-admin-levels",
       merged_summary().as_str(),
       numbers_moved.as_str(),
-      "── index",
+      "── index-user-friendly-name",
       "indexed user-friendly-name in",
+      "── index-coordinates",
       "indexed coordinates in",
-      "── optimize",
+      "── optimize-delete-intermediary-data",
     ],
   );
 }
@@ -385,13 +390,12 @@ fn _01_07_help_lists_every_subcommand() {
   assert_eq!(out.status, 0);
   for command in [
     "osm-pbf-file",
-    "extract",
-    "index",
-    "optimize",
+    "exec",
     "query",
     "http-server",
     "build",
     "merge",
+    "tui",
   ] {
     assert!(
       out.stdout.contains(command),
@@ -815,6 +819,31 @@ fn _01_25_the_response_schema_documents_the_merged_way_ids() {
   );
 }
 
+// 01.26. contract
+#[test]
+#[ignore]
+fn _01_26_exec_help_lists_the_stages_in_pipeline_order() {
+  let w = world();
+  let out = w.geolite(&["exec", "--help"]);
+  assert_eq!(out.status, 0);
+  assert_in_order(
+    &out.stdout,
+    &[
+      "extract-osm-pbf-blob-chunks",
+      "extract-osm-pbf-header",
+      "extract-osm-pbf-data",
+      "extract-osm-admin-levels",
+      "extract-osm-house-numbers",
+      "index-admin-levels-hierarchy",
+      "optimize-merge-admin-levels",
+      "index-user-friendly-name",
+      "index-coordinates",
+      "optimize-delete-intermediary-data",
+      "optimize-sqlite-file",
+    ],
+  );
+}
+
 // 02.00. dead case
 #[test]
 #[ignore]
@@ -1235,4 +1264,77 @@ fn _05_00_match_id_names_the_path_and_repeats_across_runs() {
     .map(|m| m["id"].as_str().expect("id must be a string").to_string())
     .collect();
   assert_eq!(again, ids, "the same question answers the same ids");
+}
+
+// 02.18. dead case
+#[test]
+#[ignore]
+fn _02_18_the_old_group_subcommands_exit_two() {
+  let w = world();
+  for old in ["extract", "index", "optimize"] {
+    assert_eq!(w.geolite(&[old]).status, 2, "{old}");
+  }
+}
+
+// 02.19. dead case: an invalid friendly name format names its fault, the same on both surfaces
+#[test]
+#[ignore]
+fn _02_19_an_invalid_friendly_name_format_names_its_fault_on_both_surfaces() {
+  let w = world();
+  let s = w.start_server();
+  for (format, fault) in [
+    (
+      "{foo}",
+      "friendly_name_format: unknown field 'foo' (expected 'admin_level_<N>_name' or 'house_number')",
+    ),
+    (
+      "{admin_level_x_name}",
+      "friendly_name_format: invalid admin level 'x' (expected an integer 0-255)",
+    ),
+    (
+      "{admin_level_999_name}",
+      "friendly_name_format: invalid admin level '999' (expected an integer 0-255)",
+    ),
+    (
+      "{admin_level_2_name",
+      "friendly_name_format: unterminated placeholder (missing closing '}')",
+    ),
+  ] {
+    let out = w.geolite(&["query", ANY_TEXT, "--friendly-name-format", format]);
+    assert_eq!(out.status, 2, "{format}: stderr: {}", out.stderr);
+    assert!(
+      out.stderr.contains(fault),
+      "{format}: stderr: {}",
+      out.stderr
+    );
+
+    let r = get(
+      s.port,
+      &ask(ANY_TEXT).friendly_name_format(format).http_path(),
+    );
+    assert_eq!(r.status, 400, "{format}: body: {}", r.text());
+    assert_eq!(r.json()["error"], fault, "{format}");
+  }
+}
+
+// 02.20. dead case: the tui asks for a build when there is no data, whether the database is
+// missing or holds no hierarchy
+#[test]
+#[ignore]
+fn _02_20_the_tui_asks_for_a_build_when_there_is_no_data() {
+  let w = world();
+  let without_database = w.scratch("tui_no_database");
+  let without_hierarchy = extracted(w, "tui_no_hierarchy", "2", &[]);
+  for dir in [without_database.as_path(), without_hierarchy.dir.as_path()] {
+    let out = w.geolite_in(dir, &["tui"]);
+    assert_eq!(out.status, 1, "{}: stderr: {}", dir.display(), out.stderr);
+    assert!(
+      out
+        .stderr
+        .contains("first you need to build the data using geolite build"),
+      "{}: stderr: {}",
+      dir.display(),
+      out.stderr
+    );
+  }
 }

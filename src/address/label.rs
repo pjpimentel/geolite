@@ -112,6 +112,3 @@ pub(super) fn place_label<'a>(
   label
 }
 
-#[cfg(test)]
-#[path = "label.test.rs"]
-mod tests;

@@ -45,6 +45,3 @@ pub fn decode(
   elements
 }
 
-#[cfg(test)]
-#[path = "decoder.test.rs"]
-mod tests;

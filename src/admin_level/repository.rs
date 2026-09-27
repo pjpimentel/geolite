@@ -347,6 +347,22 @@ pub fn load_all_names(conn: &Connection) -> Vec<name_row> {
     .collect()
 }
 
+pub fn levels_present(conn: &Connection) -> Vec<level> {
+  const SQL_LEVELS_PRESENT: &str = "
+    SELECT DISTINCT admin_level
+    FROM admin_levels
+    ORDER BY admin_level
+  ";
+
+  conn
+    .prepare(SQL_LEVELS_PRESENT)
+    .expect("failed to prepare the levels present")
+    .query_map([], |row| row.get::<_, u8>(0))
+    .expect("failed to query the levels present")
+    .filter_map(|raw| level::new(raw.expect("failed to read a level")))
+    .collect()
+}
+
 pub fn count_with_geometry(conn: &Connection) -> i64 {
   const SQL_COUNT_WITH_GEOMETRY: &str = "
     SELECT COUNT(*)

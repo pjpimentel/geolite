@@ -20,19 +20,6 @@ const SQL_CREATE_INDEXES: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS admin_levels_hierarchy;";
 
-// `IS` answers the roots for a null parent and the children for a given one, through the index
-// in both cases; `=` would never match a null
-const SQL_NODES_UNDER: &str = "
-  SELECT al.id, al.admin_level, al.name
-  FROM admin_levels al
-  WHERE al.id IN (
-    SELECT admin_level_id
-    FROM admin_levels_hierarchy
-    WHERE parent_id IS ?1
-  )
-  ORDER BY al.admin_level ASC, al.name ASC, al.id ASC
-";
-
 const SQL_INSERT_EDGE: &str = "
   INSERT OR IGNORE INTO admin_levels_hierarchy (
     admin_level_id,
@@ -110,19 +97,45 @@ pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
     .collect()
 }
 
-// the reads of the directory view: nothing in the binary walks the tree yet, the tui and the
-// places api of the backlog will
-#[allow(dead_code)]
+pub fn children_count_by_parent(conn: &Connection) -> HashMap<i64, usize> {
+  const SQL_CHILDREN_COUNT_BY_PARENT: &str = "
+    SELECT parent_id, COUNT(*)
+    FROM admin_levels_hierarchy
+    WHERE parent_id IS NOT NULL
+    GROUP BY parent_id
+  ";
+
+  conn
+    .prepare(SQL_CHILDREN_COUNT_BY_PARENT)
+    .expect("failed to prepare the children count by parent")
+    .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, usize>(1)?)))
+    .expect("failed to query the children count by parent")
+    .map(|r| r.expect("failed to read a children count"))
+    .collect()
+}
+
 pub fn roots(conn: &Connection) -> Vec<node> {
   nodes_under(conn, None)
 }
 
-#[allow(dead_code)]
 pub fn children_of(conn: &Connection, parent_id: i64) -> Vec<node> {
   nodes_under(conn, Some(parent_id))
 }
 
 fn nodes_under(conn: &Connection, parent_id: Option<i64>) -> Vec<node> {
+  // `IS` answers the roots for a null parent and the children for a given one, through the index
+  // in both cases; `=` would never match a null
+  const SQL_NODES_UNDER: &str = "
+    SELECT al.id, al.admin_level, al.name
+    FROM admin_levels al
+    WHERE al.id IN (
+      SELECT admin_level_id
+      FROM admin_levels_hierarchy
+      WHERE parent_id IS ?1
+    )
+    ORDER BY al.admin_level ASC, al.name ASC, al.id ASC
+  ";
+
   let mut stmt = conn
     .prepare(SQL_NODES_UNDER)
     .expect("failed to prepare nodes under a parent");
@@ -307,6 +320,3 @@ pub fn replace_parents(conn: &Connection, rows: &[hierarchy_edges]) {
   tx.commit().expect("failed to commit");
 }
 
-#[cfg(test)]
-#[path = "repository.test.rs"]
-mod tests;

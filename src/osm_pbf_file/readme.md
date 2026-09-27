@@ -87,7 +87,7 @@ transfer, the ledger and the progress bar share.
 file's blob chunks, clears the four download columns (`path`, `size_bytes`, `md5`,
 `downloaded_at`) and removes the file. the row stays, with its header and its counts — the ledger
 still says what was extracted from the file, it just no longer points at a file that is gone, so
-nothing resolves to it. `optimize delete-intermediary-data` is this for every `.osm.pbf` under
+nothing resolves to it. `optimize-delete-intermediary-data` is this for every `.osm.pbf` under
 `data_path`, followed by `database::remove_osm_data_files`, which drops the whole `osm_data`
 sibling (chunks, nodes, ways, relations) in one go; the sibling goes last because a writable
 connection recreates it.
@@ -128,7 +128,7 @@ thread.
 
 ## the osm data — `osm_data`
 
-the stage behind `extract osm-pbf-data`, and the file's `extract_osm_data` use case:
+the stage behind `geolite exec extract-osm-pbf-data`, and the file's `extract_osm_data` use case:
 
 1. reads every data blob range recorded in `osm_pbf_blob_chunks`
 1. decompresses and decodes each blob into a primitive block, and each group into nodes (plain and

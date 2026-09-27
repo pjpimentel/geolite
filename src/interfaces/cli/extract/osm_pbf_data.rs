@@ -1,4 +1,4 @@
-use super::resolved_input;
+use crate::interfaces::cli::exec::stages::stage;
 use crate::osm_pbf_file::data_opts;
 use crate::osm_tag::tag_policy;
 use crate::database::table;
@@ -73,28 +73,17 @@ pub fn command_handler_extract_osm_pbf_data(
   let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
   for (i, input) in inputs.iter().enumerate() {
-    let Some(resolved_input {
-      path: osm_pbf_file_path,
-      name: fname,
-      id: file_id,
-    }) = super::resolve_input(&conn, data_path, i, input)
-    else {
+    let Some(resolved) = super::resolve_input(&conn, data_path, i, input) else {
       continue;
     };
+    stage::extract_osm_pbf_data.require(&conn, Some(&resolved));
+    let osm_pbf_file_path = &resolved.path;
+    let fname = &resolved.name;
     println!("\x1b[1;32mfile\x1b[0m {osm_pbf_file_path}");
 
     print!("\x1b[1;32mloading\x1b[0m blob-chunks index...");
     let _ = std::io::stdout().flush();
-    let chunk_count = crate::osm_pbf_file::blob_index::count_by_file_id(&conn, file_id);
-
-    if chunk_count == 0 {
-      println!();
-      eprintln!(
-        "\x1b[1;31merror\x1b[0m: no blob chunks found — run extract osm-pbf-blob-chunks first"
-      );
-      continue;
-    }
-
+    let chunk_count = crate::osm_pbf_file::blob_index::count_by_file_id(&conn, resolved.id);
     println!(" done ({chunk_count} chunks)");
 
     let decoder_threads = threads.saturating_sub(1).max(1);
@@ -137,7 +126,7 @@ pub fn command_handler_extract_osm_pbf_data(
     let write_conn = crate::database::open_write(sqlite_path);
     let counts = file
       .extract_osm_data(
-        &osm_pbf_file_path,
+        osm_pbf_file_path,
         write_conn,
         data_opts {
           include_nodes,

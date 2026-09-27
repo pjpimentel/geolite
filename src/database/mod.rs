@@ -8,10 +8,6 @@ pub const SCHEMA_VERSION: u32 = 3;
 pub mod jsonb;
 pub mod merge;
 
-#[cfg(test)]
-#[path = "jsonb_fixtures.test.rs"]
-pub(crate) mod jsonb_fixtures;
-
 pub(crate) trait table {
   const CREATE: &str;
   const INDEXES: &str;

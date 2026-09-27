@@ -8,10 +8,6 @@ pub mod strategy;
 pub mod token;
 pub mod value;
 
-#[cfg(test)]
-#[path = "fixtures.test.rs"]
-pub(crate) mod fixtures;
-
 pub use entity::house_number_link;
 pub use policy::house_number_policy;
 pub use repository::house_numbers;

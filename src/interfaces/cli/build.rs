@@ -5,6 +5,7 @@ use crate::interfaces::cli::extract::{
   osm_pbf_data::command_handler_extract_osm_pbf_data,
   osm_pbf_header::command_handler_extract_osm_pbf_header,
 };
+use crate::interfaces::cli::exec::stages::stage;
 use crate::interfaces::cli::index::command_handler_index_and_merge;
 use crate::interfaces::cli::optimize::command_handler_optimize;
 use crate::interfaces::cli::osm_pbf_file::download::command_handler_osm_pbf_file_download;
@@ -64,15 +65,15 @@ pub fn command_handler_build(
   }
 
   println!();
-  println!("\x1b[2m── extract blob-chunks\x1b[0m");
+  println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_pbf_blob_chunks.name());
   command_handler_extract_osm_pbf_blob_chunks(data_path, sqlite_path, &inputs, false);
 
   println!();
-  println!("\x1b[2m── extract header\x1b[0m");
+  println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_pbf_header.name());
   command_handler_extract_osm_pbf_header(data_path, sqlite_path, &inputs);
 
   println!();
-  println!("\x1b[2m── extract osm-data\x1b[0m");
+  println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_pbf_data.name());
   command_handler_extract_osm_pbf_data(
     data_path,
     sqlite_path,
@@ -89,7 +90,7 @@ pub fn command_handler_build(
   );
 
   println!();
-  println!("\x1b[2m── extract admin-levels\x1b[0m");
+  println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_admin_levels.name());
   command_handler_extract_osm_admin_levels(
     sqlite_path,
     preset.extract_osm_admin_levels.admin_levels,
@@ -100,14 +101,14 @@ pub fn command_handler_build(
   );
 
   println!();
-  println!("\x1b[2m── extract house-numbers\x1b[0m");
+  println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_house_numbers.name());
   command_handler_extract_osm_house_numbers(sqlite_path, false, preset.house_numbers);
 
   println!();
-  println!("\x1b[2m── index\x1b[0m");
+  println!("\x1b[2m── {}\x1b[0m", stage::index_admin_levels_hierarchy.name());
   command_handler_index_and_merge(sqlite_path, index_path, &preset.index_user_friendly_name);
 
   println!();
-  println!("\x1b[2m── optimize\x1b[0m");
-  command_handler_optimize(data_path, sqlite_path, index_path, None);
+  println!("\x1b[2m── {}\x1b[0m", stage::optimize_delete_intermediary_data.name());
+  command_handler_optimize(data_path, sqlite_path, index_path);
 }

@@ -13,6 +13,9 @@ const EMBARE: i64 = 8_565_765;
 const BOQUEIRAO: i64 = 8_565_761;
 const JOSE_MENINO: i64 = 8_565_771;
 const MARAPE: i64 = 8_565_773;
+const RANGONI_ROAD: i64 = 63_176_392;
+const GUARUJA: i64 = 596_927;
+const MONTE_CABRAO: i64 = 2_446_148_556;
 const STREETS: i64 = 7_195;
 const STATES: usize = 27;
 const PLACE_WAYS: usize = 22;
@@ -457,5 +460,162 @@ fn _03_02_the_country_is_the_only_root_and_an_area_lists_what_is_directly_inside
     parents_of(&conn, way(196_616_079)),
     vec![APARECIDA],
     "one step down from Aparecida"
+  );
+}
+
+// 03.03. the tree: a road leaving its neighbourhood into the next city keeps both branches, the
+// neighbourhood and the city it runs into, never the city the neighbourhood is in
+#[test]
+#[ignore]
+fn _03_03_a_road_leaving_its_neighbourhood_into_the_next_city_keeps_both_branches() {
+  let conn = world().open_sqlite();
+  assert_eq!(
+    parents_of(&conn, RANGONI_ROAD),
+    vec![GUARUJA, MONTE_CABRAO],
+    "{REGENERATE}"
+  );
+  let paths: Vec<Vec<String>> = paths_of(&conn, RANGONI_ROAD)
+    .iter()
+    .map(|path| names_of(&conn, path))
+    .collect();
+  let expected: Vec<Vec<String>> = [
+    vec!["Guarujá", "São Paulo", "Brasil"],
+    vec!["Monte Cabrão", "Santos", "São Paulo", "Brasil"],
+  ]
+  .iter()
+  .map(|path| path.iter().map(|name| name.to_string()).collect())
+  .collect();
+  assert_eq!(paths, expected, "{REGENERATE}");
+}
+
+// the rows of a listing printed without a terminal, cut by the widths the line of dashes draws:
+// the level, the places inside (blank for a street) and the name, which may hold any spacing
+fn listed(stdout: &str) -> Vec<(String, String, String)> {
+  let mut lines = stdout.lines().skip(1);
+  let widths: Vec<usize> = lines
+    .next()
+    .unwrap_or("")
+    .split("  ")
+    .map(str::len)
+    .collect();
+  let &[level_w, inside_w, _] = widths.as_slice() else {
+    return Vec::new();
+  };
+  lines
+    .map(|line| {
+      let chars: Vec<char> = line.chars().collect();
+      let cut = |from: usize, to: usize| -> String {
+        chars[from.min(chars.len())..to.min(chars.len())]
+          .iter()
+          .collect::<String>()
+          .trim()
+          .to_string()
+      };
+      let inside_from = level_w + 2;
+      let name_from = inside_from + inside_w + 2;
+      (
+        cut(0, level_w),
+        cut(inside_from, inside_from + inside_w),
+        cut(name_from, chars.len()),
+      )
+    })
+    .collect()
+}
+
+// 03.04. the tree: without a terminal the tui prints the folder of a path, the roots by default,
+// walking the downward reads over the fixture level by level, the places lacking a level first,
+// each folder counting the places directly inside it
+#[test]
+#[ignore]
+fn _03_04_the_tui_lists_the_roots_and_the_folders_of_a_path_when_stdout_is_not_a_terminal() {
+  let w = world();
+  let roots = w.geolite(&["tui"]);
+  assert_eq!(roots.status, 0, "stderr: {}", roots.stderr);
+  assert_eq!(
+    listed(&roots.stdout),
+    vec![(
+      "country".to_string(),
+      "27".to_string(),
+      "Brasil".to_string()
+    )],
+    "the one root and its states; {REGENERATE}"
+  );
+
+  let state = w.geolite(&["tui", "Brasil/São Paulo"]);
+  assert_eq!(state.status, 0, "stderr: {}", state.stderr);
+  let rows = listed(&state.stdout);
+  assert_eq!(
+    rows.first(),
+    Some(&(
+      "city".to_string(),
+      "2327".to_string(),
+      "no city".to_string()
+    )),
+    "the places lacking a city come first, in a folder of their own; {REGENERATE}"
+  );
+  assert_eq!(rows.len() - 1, 12, "{REGENERATE}");
+  assert!(rows[1..].iter().all(|(level, _, _)| level == "city"));
+  assert!(
+    rows
+      .iter()
+      .any(|(_, inside, name)| name == "Santos" && inside == "265"),
+    "a city counts the places directly inside it; {REGENERATE}"
+  );
+
+  let santos = w.geolite(&["tui", "Brasil/São Paulo/Santos"]);
+  assert_eq!(santos.status, 0, "stderr: {}", santos.stderr);
+  let rows = listed(&santos.stdout);
+  assert_eq!(
+    rows.first(),
+    Some(&(
+      "neighborhood".to_string(),
+      "232".to_string(),
+      "no neighborhood".to_string()
+    )),
+    "the streets lacking a neighbourhood come first, in a folder of their own; {REGENERATE}"
+  );
+  assert_eq!(rows.len() - 1, 33, "{REGENERATE}");
+  assert!(
+    rows[1..]
+      .iter()
+      .all(|(level, _, _)| level == "neighborhood")
+  );
+  assert!(rows.iter().any(|(_, _, name)| name == "Aparecida"));
+  assert_eq!(
+    w.geolite(&["tui", "brasil/são paulo/santos"]).stdout,
+    santos.stdout,
+    "the case of a path is ignored"
+  );
+
+  let outside = w.geolite(&["tui", "Brasil/São Paulo/Santos/no neighborhood"]);
+  assert_eq!(outside.status, 0, "stderr: {}", outside.stderr);
+  let rows = listed(&outside.stdout);
+  assert_eq!(rows.len(), 232, "{REGENERATE}");
+  assert!(
+    rows
+      .iter()
+      .all(|(level, inside, _)| level == "street" && inside.is_empty()),
+    "the streets of the city inside no neighbourhood, counting nothing"
+  );
+
+  let cubatao = w.geolite(&["tui", "Brasil/São Paulo/Cubatão"]);
+  assert_eq!(cubatao.status, 0, "stderr: {}", cubatao.stderr);
+  assert_eq!(
+    cubatao.stdout.trim(),
+    "no places under Brasil / São Paulo / Cubatão",
+    "a clipped city holds nothing"
+  );
+}
+
+// 03.05. the tree: a path that leads nowhere is refused, naming the segment and the folder
+#[test]
+#[ignore]
+fn _03_05_the_tui_refuses_an_unknown_path() {
+  let out = world().geolite(&["tui", "Brasil/Nowhere"]);
+  assert_eq!(out.status, 1, "stderr: {}", out.stderr);
+  assert!(
+    out.stderr.contains("no 'Nowhere' under 'Brasil'"),
+    "stderr: {}",
+    out.stderr
   );
 }

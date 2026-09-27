@@ -10,10 +10,9 @@
 
 ## **planned** - 0.0.16
 
-1. ADDED a tui that walks the admin levels like folders, runs queries and shows the ledger counters, so the data is explored in the terminal.
+1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
 1. REMOVED the web ui served at `/` by `http-server`, so the server serves only the api.
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
-1. ADDED e2e coverage for the downward reads of the hierarchy beside their first consumer, so they debut covered over real data.
 1. ADDED a query cache to `http-server` and `query`, bounded by a cli option, so a repeated question answers at once.
 
 ## **planned** - 0.0.15
@@ -26,10 +25,11 @@
 
 ## **planned** - 0.0.14
 
-1. ADDED an e2e scenario that reads the `EXPLAIN QUERY PLAN` of the relation candidates and of the hierarchy reads, so a rewritten query cannot lose its index in silence.
-1. ADDED scenarios that pin the thresholds of the hierarchy resolution and the defaults of `src/admin_level/rules.rs`, so a change of rule cannot pass green.
-1. ADDED scenarios for the shapes the real extract never brings (compound and `#` house numbers, `drop_values`, the label and the scale errors), so the battery over real data holds them too.
-1. REMOVED the island of unit tests that was left, as the scenarios above take over each guard, so one regression battery is left.
+1. ADDED e2e scenarios for every guard the unit tests held alone: the hierarchy thresholds, the defaults of `src/admin_level/rules.rs`, the house number shapes the fixture never brings, the label and scale errors, and the pbf files a stage cannot read, so the battery over real data holds them too.
+1. REMOVED the unit tests that were left, with the code that served only them, so one regression battery is left.
+1. MODIFIED the cli to run one stage as `geolite exec <group>-<stage>` in place of the `extract`, `index` and `optimize` subcommands (not backward compatible), each stage refusing to run before the ones it requires, so a stage is addressed by its name and cannot run out of order.
+1. ADDED `geolite tui`, the admin levels walked like folders one at a time as `ls -la` lists them, each folder counting the places inside it, the places lacking a level grouped first in a folder of their own and the listing narrowed by the text typed in a filter above it, in a column at most 100 wide, that prints the folder of a path when stdout is not a terminal and asks for `geolite build` when there is no data, so the data is explored from the terminal.
+1. ADDED e2e scenarios for `geolite tui` over the fixture: the roots, the folders of a path, the refusal without data and the unknown path, so the downward reads of the hierarchy debut covered over real data.
 
 ## **2026-09-20** - 0.0.13
 

@@ -2,17 +2,7 @@ pub mod delete_intermediary_data;
 pub mod merge_admin_levels;
 pub mod sqlite_file;
 
-use clap::Subcommand;
-
-#[derive(Subcommand)]
-pub enum optimize_commands {
-  #[command(name = "delete-intermediary-data")]
-  delete_intermediary_data,
-  #[command(name = "sqlite-file")]
-  sqlite_file { pbf_or_sqlite: String },
-  #[command(name = "merge-admin-levels")]
-  merge_admin_levels,
-}
+use crate::interfaces::cli::exec::stages::stage;
 
 fn file_size(path: &str) -> u64 {
   std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
@@ -67,42 +57,26 @@ fn print_sqlite_sizes(label: &str, sqlite_path: &str, index_path: &str) {
   );
 }
 
-pub fn command_handler_optimize(
-  data_path: &str,
-  sqlite_path: &str,
-  index_path: &str,
-  command: Option<optimize_commands>,
-) {
+pub(super) fn with_sqlite_sizes(sqlite_path: &str, index_path: &str, stage: impl FnOnce()) {
   print_sqlite_sizes("before", sqlite_path, index_path);
   println!();
-  match command {
-    None => {
-      if !delete_intermediary_data::command_handler_optimize_delete_intermediary_data(
-        data_path,
-        sqlite_path,
-      ) {
-        return;
-      }
-      println!();
-      sqlite_file::command_handler_optimize_sqlite_file(sqlite_path);
-    }
-    Some(optimize_commands::delete_intermediary_data) => {
-      delete_intermediary_data::command_handler_optimize_delete_intermediary_data(
-        data_path,
-        sqlite_path,
-      );
-    }
-    Some(optimize_commands::sqlite_file { .. }) => {
-      sqlite_file::command_handler_optimize_sqlite_file(sqlite_path)
-    }
-    Some(optimize_commands::merge_admin_levels) => {
-      if merge_admin_levels::command_handler_optimize_merge_admin_levels(sqlite_path, index_path) {
-        println!(
-          "\x1b[1;33mnext\x1b[0m run `geolite index user-friendly-name` and `geolite index coordinates`"
-        );
-      }
-    }
+  stage();
+  println!();
+  print_sqlite_sizes("after ", sqlite_path, index_path);
+}
+
+pub fn command_handler_optimize(data_path: &str, sqlite_path: &str, index_path: &str) {
+  print_sqlite_sizes("before", sqlite_path, index_path);
+  println!();
+  if !delete_intermediary_data::command_handler_optimize_delete_intermediary_data(
+    data_path,
+    sqlite_path,
+  ) {
+    return;
   }
+  println!();
+  println!("\x1b[2m── {}\x1b[0m", stage::optimize_sqlite_file.name());
+  sqlite_file::command_handler_optimize_sqlite_file(sqlite_path);
   println!();
   print_sqlite_sizes("after ", sqlite_path, index_path);
 }

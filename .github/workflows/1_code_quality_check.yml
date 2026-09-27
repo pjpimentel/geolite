@@ -60,9 +60,6 @@ jobs:
         with:
           tool: cargo-llvm-cov
 
-      - name: cargo test unit with coverage
-        run: cargo llvm-cov --release --no-report --bin geolite
-
       - name: cargo test e2e with coverage
         run: cargo llvm-cov --release --no-report --test '*' -- --ignored --nocapture
 

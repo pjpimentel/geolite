@@ -27,7 +27,6 @@ proposito = "proposito"
 relevante = "relevante"
 saem = "saem"
 sequencial = "sequencial"
-ser = "ser"
 sinal = "sinal"
 tema = "tema"
 termo = "termo"
@@ -43,5 +42,3 @@ flate = "flate"
 # crate name a planned changelog item cites
 ratatui = "ratatui"
 
-# test fixture token
-seh = "seh"

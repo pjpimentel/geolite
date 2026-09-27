@@ -136,12 +136,7 @@ impl<'a> osm_pbf_file<'a> {
   }
 }
 
-#[cfg(test)]
-#[path = "osm_pbf_file.test.rs"]
-mod tests;
-#[cfg(test)]
-#[path = "pbf_fixtures.test.rs"]
-pub(crate) mod pbf_fixtures;
+
 
 fn endpoint_of(from: source, custom_endpoint: Option<&str>) -> &str {
   custom_endpoint

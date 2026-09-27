@@ -193,7 +193,7 @@ fn _01_a_write_command_refuses_a_database_stamped_with_another_schema_version() 
   }
   let out = w.geolite_in(
     &dir,
-    &["extract", "osm-pbf-header", &w.pbf.to_string_lossy()],
+    &["exec", "extract-osm-pbf-header", &w.pbf.to_string_lossy()],
   );
   assert_ne!(
     out.status, 0,
@@ -476,7 +476,10 @@ fn _08_a_file_extracted_before_being_downloaded_takes_the_download_origin() {
   let bytes = fixture_bytes(w);
   std::fs::write(dir.join("alpha.osm.pbf"), &bytes).expect("failed to copy the fixture");
 
-  let out = w.geolite_in(&dir, &["extract", "osm-pbf-blob-chunks", "alpha.osm.pbf"]);
+  let out = w.geolite_in(
+    &dir,
+    &["exec", "extract-osm-pbf-blob-chunks", "alpha.osm.pbf"],
+  );
   assert_eq!(out.status, 0, "stderr: {}", out.stderr);
   let before = ledger(&database(&dir));
   assert_eq!(before.len(), 1);
@@ -522,13 +525,9 @@ fn _09_extract_resolves_a_downloaded_file_by_its_geofabrik_id() {
   let s = stub::start(INDEX, vec![("alpha.osm.pbf", fixture_bytes(w))]);
   download(w, &dir, &s.url("/index.json"), "alpha");
 
-  for stage in ["osm-pbf-blob-chunks", "osm-pbf-header"] {
-    let out = w.geolite_in(&dir, &["extract", stage, "alpha"]);
-    assert_eq!(
-      out.status, 0,
-      "extract {stage} alpha failed:\n{}",
-      out.stderr
-    );
+  for stage in ["extract-osm-pbf-blob-chunks", "extract-osm-pbf-header"] {
+    let out = w.geolite_in(&dir, &["exec", stage, "alpha"]);
+    assert_eq!(out.status, 0, "exec {stage} alpha failed:\n{}", out.stderr);
   }
   let conn = database(&dir);
   let rows = ledger(&conn);
@@ -569,7 +568,7 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
     "build {url} failed:\n{}\n{}",
     out.stdout, out.stderr
   );
-  for banner in ["── download", "saved", "── extract blob-chunks"] {
+  for banner in ["── download", "saved", "── extract-osm-pbf-blob-chunks"] {
     assert!(
       out.stdout.contains(banner),
       "stdout lacks {banner}:\n{}",
@@ -613,7 +612,10 @@ fn _11_re_running_a_stage_without_recreate_keeps_one_ledger_row_and_one_chunk_se
 
   let mut seen = Vec::new();
   for _ in 0..2 {
-    let out = w.geolite_in(&dir, &["extract", "osm-pbf-blob-chunks", "santos.osm.pbf"]);
+    let out = w.geolite_in(
+      &dir,
+      &["exec", "extract-osm-pbf-blob-chunks", "santos.osm.pbf"],
+    );
     assert_eq!(out.status, 0, "stderr: {}", out.stderr);
     let rows = ledger(&database(&dir));
     assert_eq!(rows.len(), 1);
@@ -859,7 +861,7 @@ fn _17_a_path_like_input_is_refused_without_asking_the_catalogue() {
 fn _18_extract_resolves_a_ledger_id_and_names_an_unknown_one() {
   let w = world();
   let s = extracted(w, "resolve_by_ledger_id", "2", &[]);
-  let out = plain(&stage(w, &s.dir, &["extract", "osm-pbf-header", "1"]).stdout);
+  let out = plain(&stage(w, &s.dir, &["exec", "extract-osm-pbf-header", "1"]).stdout);
   for line in [
     "resolving '1'... done",
     "extracting header from santos.osm.pbf... done",
@@ -867,7 +869,7 @@ fn _18_extract_resolves_a_ledger_id_and_names_an_unknown_one() {
     assert!(out.contains(line), "missing {line:?} in:\n{out}");
   }
 
-  let unknown = w.geolite_in(&s.dir, &["extract", "osm-pbf-header", "999"]);
+  let unknown = w.geolite_in(&s.dir, &["exec", "extract-osm-pbf-header", "999"]);
   assert_eq!(unknown.status, 0, "stderr: {}", unknown.stderr);
   assert!(
     plain(&unknown.stderr).contains("could not resolve '999'"),
@@ -932,7 +934,7 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
   assert_eq!(admins, count(&conn, "SELECT COUNT(*) FROM admin_levels"));
   assert_eq!(houses, count(&conn, "SELECT COUNT(*) FROM house_numbers"));
 
-  let unresolved = w.geolite_in(&dir, &["extract", "osm-pbf-header", "1"]);
+  let unresolved = w.geolite_in(&dir, &["exec", "extract-osm-pbf-header", "1"]);
   assert!(
     plain(&unresolved.stderr).contains("could not resolve '1'"),
     "the deleted file resolves to nothing:\n{}",
@@ -943,5 +945,66 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
     first(&result)["house_number"]["kind"],
     "exact",
     "the built database is whole"
+  );
+}
+
+// 20. the header stage stores the feature lists as json and leaves the fields the fixture lacks
+// null
+#[test]
+#[ignore]
+fn _20_the_header_stage_stores_the_features_as_json_and_leaves_the_absent_fields_null() {
+  const SQL_HEADER_COLUMNS: &str = "
+    SELECT JSON(osm_header_required_features),
+      JSON(osm_header_optional_features),
+      osm_header_bbox_wkt,
+      osm_header_source,
+      osm_header_osmosis_replication_timestamp,
+      osm_header_osmosis_replication_sequence_number,
+      osm_header_osmosis_replication_base_url
+    FROM osm_pbf_files
+  ";
+
+  struct header_row {
+    required: Option<String>,
+    optional: Option<String>,
+    bbox: Option<String>,
+    source: Option<String>,
+    timestamp: Option<i64>,
+    sequence: Option<i64>,
+    base_url: Option<String>,
+  }
+
+  let w = world();
+  let header = w
+    .open_sqlite()
+    .query_row(SQL_HEADER_COLUMNS, [], |r| {
+      Ok(header_row {
+        required: r.get(0)?,
+        optional: r.get(1)?,
+        bbox: r.get(2)?,
+        source: r.get(3)?,
+        timestamp: r.get(4)?,
+        sequence: r.get(5)?,
+        base_url: r.get(6)?,
+      })
+    })
+    .expect("failed to read the header columns");
+  assert_eq!(
+    header.required.as_deref(),
+    Some(r#"["OsmSchema-V0.6","DenseNodes"]"#),
+    "{REGENERATE}"
+  );
+  assert_eq!(
+    header.optional.as_deref(),
+    Some(r#"["Sort.Type_then_ID"]"#),
+    "{REGENERATE}"
+  );
+  assert!(
+    header.bbox.is_none()
+      && header.source.is_none()
+      && header.timestamp.is_none()
+      && header.sequence.is_none()
+      && header.base_url.is_none(),
+    "the fixture header carries no bbox, source or osmosis fields; {REGENERATE}"
   );
 }

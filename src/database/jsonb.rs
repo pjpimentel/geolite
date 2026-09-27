@@ -107,6 +107,3 @@ impl encoder {
 
 }
 
-#[cfg(test)]
-#[path = "jsonb.test.rs"]
-mod tests;

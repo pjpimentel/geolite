@@ -2,6 +2,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
+use crate::interfaces::cli::exec::stages::stage;
 use crate::interfaces::cli::progress;
 
 pub fn command_handler_index_user_friendly_name(
@@ -11,10 +12,7 @@ pub fn command_handler_index_user_friendly_name(
 ) {
   crate::interfaces::cli::require_sqlite(sqlite_path);
   let conn = crate::database::open_write(sqlite_path);
-  if crate::admin_level::repository::count_with_geometry(&conn) == 0 {
-    eprintln!("\x1b[1;31merror\x1b[0m: admin_levels is empty — run extract first");
-    return;
-  }
+  stage::index_user_friendly_name.require(&conn, None);
   let path = Path::new(index_path);
   print!("\x1b[1;32mclearing\x1b[0m user-friendly-name...");
   let _ = std::io::stdout().flush();

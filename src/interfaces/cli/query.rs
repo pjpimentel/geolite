@@ -18,7 +18,7 @@ pub fn command_handler_query(
     Some(i) => i,
     None => {
       eprintln!(
-        "\x1b[1;31merror\x1b[0m: tantivy index not found at {index_path} — run `geolite index user-friendly-name` first"
+        "\x1b[1;31merror\x1b[0m: tantivy index not found at {index_path} — run `geolite exec index-user-friendly-name` first"
       );
       std::process::exit(1);
     }

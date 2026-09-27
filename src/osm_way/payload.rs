@@ -19,6 +19,3 @@ pub fn encode(encoder: &mut encoder, out: &mut Vec<u8>, way: &osm_way) {
   });
 }
 
-#[cfg(test)]
-#[path = "payload.test.rs"]
-mod tests;

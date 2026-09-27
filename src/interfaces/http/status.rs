@@ -31,7 +31,6 @@ pub(crate) fn build(
   assemble(file, index.is_some(), probe_coordinates(conn))
 }
 
-// pure assembly, separated so the is_ok truth table is testable without a real tantivy index.
 fn assemble(file: &str, text_to_address: bool, coordinates_to_address: bool) -> status_output {
   let database = database_status {
     file: file.to_string(),
