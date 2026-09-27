@@ -27,7 +27,7 @@
 
 1. ADDED e2e scenarios for every guard the unit tests held alone: the hierarchy thresholds, the defaults of `src/admin_level/rules.rs`, the house number shapes the fixture never brings, the label and scale errors, and the pbf files a stage cannot read, so the battery over real data holds them too.
 1. REMOVED the unit tests that were left, with the code that served only them, so one regression battery is left.
-1. MODIFIED the cli to run one stage as `geolite exec <group>-<stage>` in place of the `extract`, `index` and `optimize` subcommands, each stage refusing to run before the ones it requires, so a stage is addressed by its name and cannot run out of order.
+1. MODIFIED the cli to run one stage as `geolite exec <group>-<stage>` in place of the `extract`, `index` and `optimize` subcommands (not backward compatible), each stage refusing to run before the ones it requires, so a stage is addressed by its name and cannot run out of order.
 1. ADDED `geolite tui`, the admin levels walked like folders one at a time as `ls -la` lists them, each folder counting the places inside it, the places lacking a level grouped first in a folder of their own and the listing narrowed by the text typed in a filter above it, in a column at most 100 wide, that prints the folder of a path when stdout is not a terminal and asks for `geolite build` when there is no data, so the data is explored from the terminal.
 1. ADDED e2e scenarios for `geolite tui` over the fixture: the roots, the folders of a path, the refusal without data and the unknown path, so the downward reads of the hierarchy debut covered over real data.
 
