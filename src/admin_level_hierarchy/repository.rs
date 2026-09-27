@@ -97,14 +97,27 @@ pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
     .collect()
 }
 
-// the reads of the directory view: nothing in the binary walks the tree yet, the tui and the
-// places api of the backlog will
-#[allow(dead_code)]
+pub fn children_count_by_parent(conn: &Connection) -> HashMap<i64, usize> {
+  const SQL_CHILDREN_COUNT_BY_PARENT: &str = "
+    SELECT parent_id, COUNT(*)
+    FROM admin_levels_hierarchy
+    WHERE parent_id IS NOT NULL
+    GROUP BY parent_id
+  ";
+
+  conn
+    .prepare(SQL_CHILDREN_COUNT_BY_PARENT)
+    .expect("failed to prepare the children count by parent")
+    .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, usize>(1)?)))
+    .expect("failed to query the children count by parent")
+    .map(|r| r.expect("failed to read a children count"))
+    .collect()
+}
+
 pub fn roots(conn: &Connection) -> Vec<node> {
   nodes_under(conn, None)
 }
 
-#[allow(dead_code)]
 pub fn children_of(conn: &Connection, parent_id: i64) -> Vec<node> {
   nodes_under(conn, Some(parent_id))
 }

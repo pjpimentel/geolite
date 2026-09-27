@@ -17,7 +17,7 @@ parent_id)`, and an area has one row per parent. that is a table of its own and 
 | | `admin_levels_rtree` | `admin_levels_hierarchy` |
 |---|---|---|
 | what it stores | a bounding box, recomputable in milliseconds | which area contains which, answered by sampled geometry |
-| who reads it | only `admin_level`'s own coordinate query | the tantivy index, the query path, the street merge and the cli's `optimize-*` stages |
+| who reads it | only `admin_level`'s own coordinate query | the tantivy index, the query path, the street merge, the cli's `optimize-*` stages and the tui |
 
 the tantivy document is one per **path**, not per admin level — a path, not the area, is the unit
 of search and the unit of an answer, which is why the search index lives here and not in
@@ -28,7 +28,7 @@ of search and the unit of an answer, which is why the search index lives here an
 the table stores nothing but the edge. a root has one row with a `parent_id` of `NULL`, so an area
 that is resolved always has a row and `roots()` is a read of the index rather than a scan for
 absence. the index `admin_levels_hierarchy_search_by_parent` covers both directions of the walk:
-`children_of(id)` and `roots()` read it, `parents_of(id)` reads the primary key.
+`children_of(id)` and `roots()` read it, for the tui that walks the tree like folders, `parents_of(id)` reads the primary key.
 
 everything longer than one step is derived. `paths::paths_of(id, edges)` enumerates the paths of
 an area up to the roots — most specific first and without the area itself — taking the parents in

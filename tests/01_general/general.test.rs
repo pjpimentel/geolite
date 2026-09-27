@@ -3,7 +3,7 @@ use crate::common::harness::{
   assert_in_order, encode, get, plain, request, scenario, world, world_cell,
 };
 use crate::common::query::{first, matches};
-use crate::extract::REGENERATE;
+use crate::extract::{REGENERATE, extracted};
 use crate::house_number::HOUSE_NUMBERS;
 use crate::street_merge::{NUMBERS_MOVED, merged_summary};
 use serde_json::{Value, json};
@@ -395,6 +395,7 @@ fn _01_07_help_lists_every_subcommand() {
     "http-server",
     "build",
     "merge",
+    "tui",
   ] {
     assert!(
       out.stdout.contains(command),
@@ -1313,5 +1314,27 @@ fn _02_19_an_invalid_friendly_name_format_names_its_fault_on_both_surfaces() {
     );
     assert_eq!(r.status, 400, "{format}: body: {}", r.text());
     assert_eq!(r.json()["error"], fault, "{format}");
+  }
+}
+
+// 02.20. dead case: the tui asks for a build when there is no data, whether the database is
+// missing or holds no hierarchy
+#[test]
+#[ignore]
+fn _02_20_the_tui_asks_for_a_build_when_there_is_no_data() {
+  let w = world();
+  let without_database = w.scratch("tui_no_database");
+  let without_hierarchy = extracted(w, "tui_no_hierarchy", "2", &[]);
+  for dir in [without_database.as_path(), without_hierarchy.dir.as_path()] {
+    let out = w.geolite_in(dir, &["tui"]);
+    assert_eq!(out.status, 1, "{}: stderr: {}", dir.display(), out.stderr);
+    assert!(
+      out
+        .stderr
+        .contains("first you need to build the data using geolite build"),
+      "{}: stderr: {}",
+      dir.display(),
+      out.stderr
+    );
   }
 }

@@ -5,8 +5,7 @@ pub struct hierarchy_edges {
   pub parents: Vec<i64>,
 }
 
-// read by the directory view only, which the tui and the places api of the backlog will bring
-#[allow(dead_code)]
+#[derive(Clone)]
 pub struct node {
   pub id: i64,
   pub level: level,

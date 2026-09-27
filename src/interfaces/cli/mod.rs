@@ -8,6 +8,7 @@ pub mod optimize;
 pub mod osm_pbf_file;
 mod progress;
 pub mod query;
+pub mod tui;
 
 pub(crate) fn require_sqlite(path: &str) {
   if !std::path::Path::new(path).exists() {
@@ -117,6 +118,10 @@ enum commands {
     base: String,
     #[arg(value_name = "databases", num_args = 1..)]
     databases: Vec<String>,
+  },
+  tui {
+    #[arg(value_name = "path")]
+    path: Option<String>,
   },
 }
 
@@ -266,5 +271,6 @@ pub fn run() {
         .unwrap_or_else(|| format!("{}/database.tantivy", args.data_path));
       merge::command_handler_merge(&base, &databases, &merge_index_path, &preset)
     }
+    commands::tui { path } => tui::command_handler_tui(&sqlite_path, path.as_deref()),
   }
 }
