@@ -5,21 +5,21 @@ use std::time::Instant;
 use crate::interfaces::cli::exec::stages::stage;
 use crate::interfaces::cli::progress;
 
-pub fn command_handler_index_user_friendly_name(
+pub fn command_handler_index_addresses(
   sqlite_path: &str,
   index_path: &str,
-  preset: &crate::presets::index_user_friendly_name_preset,
+  preset: &crate::presets::index_addresses_preset,
 ) {
   crate::interfaces::cli::require_sqlite(sqlite_path);
   let conn = crate::database::open_write(sqlite_path);
-  stage::index_user_friendly_name.require(&conn, None);
+  stage::index_addresses.require(&conn, None);
   let path = Path::new(index_path);
-  print!("\x1b[1;32mclearing\x1b[0m user-friendly-name...");
+  print!("\x1b[1;32mclearing\x1b[0m addresses...");
   let _ = std::io::stdout().flush();
   crate::admin_level_hierarchy::search_index::destroy(path);
   println!(" done");
 
-  let bar = progress::bar("indexing", "user-friendly-name");
+  let bar = progress::bar("indexing", "addresses");
 
   let start = Instant::now();
 
@@ -33,5 +33,5 @@ pub fn command_handler_index_user_friendly_name(
   bar.finish();
 
   let elapsed = start.elapsed().as_secs_f64();
-  println!("\x1b[1;32mindexed\x1b[0m user-friendly-name in {elapsed:.1}s");
+  println!("\x1b[1;32mindexed\x1b[0m addresses in {elapsed:.1}s");
 }

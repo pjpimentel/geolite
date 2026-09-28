@@ -114,7 +114,7 @@ fn merged_at(w: &world, dir: &Path) -> output {
 pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
   index_at(w, dir, "admin-levels-hierarchy");
   merged_at(w, dir);
-  index_at(w, dir, "user-friendly-name");
+  index_at(w, dir, "addresses");
   index_at(w, dir, "coordinates");
 }
 
@@ -426,7 +426,7 @@ fn _00_05_a_second_run_changes_nothing_and_keeps_the_indexes() {
   let w = world();
   let s = resolved(w, "street_merge_twice");
   merged_at(w, &s.dir);
-  index_at(w, &s.dir, "user-friendly-name");
+  index_at(w, &s.dir, "addresses");
   index_at(w, &s.dir, "coordinates");
   let rtree = count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree");
   let before = snapshot(&s.ledger());
@@ -451,16 +451,15 @@ fn _00_05_a_second_run_changes_nothing_and_keeps_the_indexes() {
 fn _00_06_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
   let w = world();
   let s = resolved(w, "street_merge_clears");
-  index_at(w, &s.dir, "user-friendly-name");
+  index_at(w, &s.dir, "addresses");
   index_at(w, &s.dir, "coordinates");
   assert!(s.dir.join("database.tantivy").is_dir());
 
   let out = merged_at(w, &s.dir);
 
   assert!(
-    plain(&out.stdout).contains(
-      "next run `geolite exec index-user-friendly-name` and `geolite exec index-coordinates`"
-    ),
+    plain(&out.stdout)
+      .contains("next run `geolite exec index-addresses` and `geolite exec index-coordinates`"),
     "{}",
     out.stdout
   );
@@ -487,7 +486,7 @@ fn _00_06_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
     asked.stderr
   );
 
-  index_at(w, &s.dir, "user-friendly-name");
+  index_at(w, &s.dir, "addresses");
   index_at(w, &s.dir, "coordinates");
   let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
   assert_eq!(matches(&result).len(), 1, "the street answers once");

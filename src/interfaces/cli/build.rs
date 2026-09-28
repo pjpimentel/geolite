@@ -106,7 +106,7 @@ pub fn command_handler_build(
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::index_admin_levels_hierarchy.name());
-  command_handler_index_and_merge(sqlite_path, index_path, &preset.index_user_friendly_name);
+  command_handler_index_and_merge(sqlite_path, index_path, &preset.index_addresses);
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::optimize_delete_intermediary_data.name());

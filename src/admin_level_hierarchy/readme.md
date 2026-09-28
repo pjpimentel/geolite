@@ -89,7 +89,7 @@ whichever way they were linked to. `street_merge` folds the ways of one street i
 the resolver has said which areas each way is in and before the search index is built, because the
 rule needs the areas and the index needs the rows: it is `geolite exec optimize-merge-admin-levels`,
 which `build` and `geolite merge` run between `index-admin-levels-hierarchy` and
-`index-user-friendly-name`. no index stage folds on its own.
+`index-addresses`. no index stage folds on its own.
 
 two ways of the same name are one street when they **share an area**, their post codes agree (a
 missing code agrees with any, two different codes do not) and they **touch or come within 20 m**: the
@@ -147,10 +147,10 @@ tantivy: the multi-threaded writer lays the documents out differently on every b
 scored collector prunes with block-wand and drops a document that merely ties the threshold, so a
 sort after the fact would still see a different set per layout — the ids in the key are what make
 the ranking a contract. `load` refuses an index missing either fast field: one built by an earlier
-version reads as absent, and the cli asks for `geolite exec index-user-friendly-name`. the score in that
+version reads as absent, and the cli asks for `geolite exec index-addresses`. the score in that
 key is rounded to three decimals: bm25 separates two identical documents by an ulp, according to the
 segment each one fell in, and the raw value would let that noise decide ahead of the ids.
 
 `build` reads the names, post codes and levels through `admin_level::repository::load_all_names`,
 so the index knows the table only through its owner. `run` is what the cli's
-`geolite exec index-user-friendly-name` calls: the build, with the row count reported around it.
+`geolite exec index-addresses` calls: the build, with the row count reported around it.

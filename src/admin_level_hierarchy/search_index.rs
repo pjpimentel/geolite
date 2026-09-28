@@ -177,7 +177,7 @@ fn expand_abbreviations(text: &str, abbreviations: &[(&str, &str)]) -> String {
 pub fn run(
   conn: &Connection,
   index_path: &Path,
-  preset: &crate::presets::index_user_friendly_name_preset,
+  preset: &crate::presets::index_addresses_preset,
   progress: impl Fn(progress_report),
 ) -> tantivy_index {
   let total = repository::count(conn) as u64;

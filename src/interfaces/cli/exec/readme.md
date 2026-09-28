@@ -21,7 +21,7 @@ needs a value without them.
 | `extract-osm-house-numbers` | osm-admin-levels | a `house_numbers` row exists, or a ledger row carries `house_numbers_count` |
 | `index-admin-levels-hierarchy` | osm-admin-levels | edges exist and no area is pending |
 | `optimize-merge-admin-levels` | admin-levels-hierarchy | — |
-| `index-user-friendly-name` | admin-levels-hierarchy | — |
+| `index-addresses` | admin-levels-hierarchy | — |
 | `index-coordinates` | osm-admin-levels | — |
 | `optimize-delete-intermediary-data` | osm-house-numbers, admin-levels-hierarchy | — |
 | `optimize-sqlite-file` | — | — |

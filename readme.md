@@ -126,14 +126,14 @@ $ geolite --preset brazil exec extract-osm-house-numbers
 ### index extracted data
 ```bash
 $ geolite exec index-admin-levels-hierarchy
-$ geolite --preset brazil exec index-user-friendly-name
+$ geolite --preset brazil exec index-addresses
 $ geolite exec index-coordinates
 ```
 
 ### optimize data
 ```bash
 # folds the ways of one street into one row: it reads the hierarchy and clears the
-# user-friendly-name and coordinates indexes, which have to be built again after it
+# addresses and coordinates indexes, which have to be built again after it
 $ geolite exec optimize-merge-admin-levels
 $ geolite exec optimize-delete-intermediary-data
 $ geolite exec optimize-sqlite-file

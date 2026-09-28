@@ -20,7 +20,7 @@ pub fn command_handler_optimize_merge_admin_levels(sqlite_path: &str, index_path
     return false;
   }
 
-  print!("\x1b[1;32mclearing\x1b[0m user-friendly-name and coordinates...");
+  print!("\x1b[1;32mclearing\x1b[0m addresses and coordinates...");
   let _ = std::io::stdout().flush();
   crate::admin_level_hierarchy::search_index::destroy(Path::new(index_path));
   crate::admin_level::spatial_index::recreate(&conn);

@@ -64,12 +64,12 @@ pub fn serve(
 
   // degraded boot: a missing index disables text_to_address (reported via /status) instead of
   // refusing to start, so the server keeps serving coordinate queries and the health endpoint.
-  let boosts = preset.index_user_friendly_name.boosts;
+  let boosts = preset.index_addresses.boosts;
   let index: Option<Arc<tantivy_index>> =
     crate::admin_level_hierarchy::search_index::load(Path::new(index_path), boosts).map(Arc::new);
   if index.is_none() {
     eprintln!(
-      "\x1b[1;33mwarn\x1b[0m: tantivy index not found at {index_path} — text_to_address disabled; run `geolite exec index-user-friendly-name` to enable"
+      "\x1b[1;33mwarn\x1b[0m: tantivy index not found at {index_path} — text_to_address disabled; run `geolite exec index-addresses` to enable"
     );
   }
 

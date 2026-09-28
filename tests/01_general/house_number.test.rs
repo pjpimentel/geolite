@@ -42,7 +42,7 @@ fn linked(w: &world, name: &str) -> (scratch, output) {
 // the streets and the house numbers of a scratch, indexed so that the scratch can be queried
 fn indexed(w: &world, name: &str) -> scratch {
   let (s, _) = linked(w, name);
-  for index in ["admin-levels-hierarchy", "user-friendly-name"] {
+  for index in ["admin-levels-hierarchy", "addresses"] {
     index_at(w, &s.dir, index);
   }
   s
@@ -550,7 +550,7 @@ fn _01_02_the_stage_keeps_drops_and_canonizes_the_shapes_the_fixture_never_bring
 fn _01_03_a_compound_number_matches_across_its_letter_case_and_separator() {
   let w = world();
   let (s, _) = injected(w, "house_number_compound_keys", &["25B-48", "16i56"]);
-  for index in ["admin-levels-hierarchy", "user-friendly-name"] {
+  for index in ["admin-levels-hierarchy", "addresses"] {
     index_at(w, &s.dir, index);
   }
 

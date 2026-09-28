@@ -13,12 +13,12 @@ pub fn command_handler_query(
   let conn = crate::database::open_readonly(sqlite_path);
   let index = match crate::admin_level_hierarchy::search_index::load(
     Path::new(index_path),
-    preset.index_user_friendly_name.boosts,
+    preset.index_addresses.boosts,
   ) {
     Some(i) => i,
     None => {
       eprintln!(
-        "\x1b[1;31merror\x1b[0m: tantivy index not found at {index_path} — run `geolite exec index-user-friendly-name` first"
+        "\x1b[1;31merror\x1b[0m: tantivy index not found at {index_path} — run `geolite exec index-addresses` first"
       );
       std::process::exit(1);
     }

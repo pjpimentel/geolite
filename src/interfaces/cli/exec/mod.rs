@@ -5,7 +5,7 @@ use clap::Subcommand;
 use super::extract::{
   osm_admin_levels, osm_house_numbers, osm_pbf_blob_chunks, osm_pbf_data, osm_pbf_header,
 };
-use super::index::{admin_levels_hierarchy, coordinates, user_friendly_name};
+use super::index::{addresses, admin_levels_hierarchy, coordinates};
 use super::optimize::{delete_intermediary_data, merge_admin_levels, sqlite_file};
 use crate::admin_level::level;
 use stages::stage;
@@ -81,8 +81,8 @@ pub enum exec_commands {
   index_admin_levels_hierarchy,
   #[command(name = stage::optimize_merge_admin_levels.name())]
   optimize_merge_admin_levels,
-  #[command(name = stage::index_user_friendly_name.name())]
-  index_user_friendly_name,
+  #[command(name = stage::index_addresses.name())]
+  index_addresses,
   #[command(name = stage::index_coordinates.name())]
   index_coordinates,
   #[command(name = stage::optimize_delete_intermediary_data.name())]
@@ -181,12 +181,8 @@ pub fn command_handler_exec(
     exec_commands::index_admin_levels_hierarchy => {
       admin_levels_hierarchy::command_handler_index_admin_levels_hierarchy(sqlite_path)
     }
-    exec_commands::index_user_friendly_name => {
-      user_friendly_name::command_handler_index_user_friendly_name(
-        sqlite_path,
-        index_path,
-        &preset.index_user_friendly_name,
-      )
+    exec_commands::index_addresses => {
+      addresses::command_handler_index_addresses(sqlite_path, index_path, &preset.index_addresses)
     }
     exec_commands::index_coordinates => coordinates::command_handler_index_coordinates(sqlite_path),
     exec_commands::optimize_merge_admin_levels => {
@@ -194,7 +190,7 @@ pub fn command_handler_exec(
         if merge_admin_levels::command_handler_optimize_merge_admin_levels(sqlite_path, index_path) {
           println!(
             "\x1b[1;33mnext\x1b[0m run `geolite exec {}` and `geolite exec {}`",
-            stage::index_user_friendly_name.name(),
+            stage::index_addresses.name(),
             stage::index_coordinates.name()
           );
         }

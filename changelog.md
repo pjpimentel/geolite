@@ -21,6 +21,7 @@
 1. ADDED a data exporter, as a sql dump of the domain tables and as `.osm.pbf`, so the data travels to another database and sub-extracts need no osmium.
 1. ADDED a study of removing each direct dependency, measured in own code, transitive crates and binary size, so which ones stay is decided by numbers.
 1. MODIFIED the e2e battery to build under an `e2e` profile that unwinds, so the quality check compiles the dependencies once.
+1. MODIFIED the `index-user-friendly-name` stage to `index-addresses` (not backward compatible), so the stage is named after what it indexes.
 
 ## **2026-09-26** - - 0.0.14
 
