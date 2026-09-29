@@ -14,7 +14,7 @@ admin_level/    a named administrative area — the `admin_levels` table
   entity            the row as it is written: osm element, level, shape, name, codes
   scale             the closed set of levels, their names and their order
   id                stable identity, packed from the osm way or relation it came from
-  geometry          the wkb column codec, its mbr shortcut, the bounding box, the region of `--bounding-wkt` and its parse, the ring assembly, and the folding of lines
+  geometry          the wkb column codec, its mbr shortcut, the bounding box, the region of `--bounding-wkt` and its parse, the ring assembly, the folding of lines, and the outline of a shape
   repository        the ddl, the index, the reads every consumer of the table goes through, and the upsert
   spatial_index     the rtree of every level's bounding box, the pass that fills it, and the nearest streets to a point
   rules             which ways each level includes or excludes, and the preset override
@@ -47,6 +47,7 @@ address/        an address resolved from a text or from a coordinate — not a t
   filter            the shared last pass: quality, region, last levels, the cut at ten
   text              `address::query_by_text`: the search, the matches, the house number, the sort, and the point of a street that answers without one
   coordinates       `address::query_by_coordinates`: the nearest streets, the matches under the areas that hold each street's nearest point, the nearest number
+  path              `address::at_path`: the match of an area under a path already known, without a search
   house_number      the number of each street, resolved before its match is built; the rule itself is `house_number`
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the ten writes and reads

@@ -4,7 +4,7 @@
 ```
 cli/    the `geolite` command: parses the arguments, resolves the preset and the paths, and runs one subcommand
 http/   the http server that `geolite http-server` starts: `/geocode`, `/status`, `/openapi.json`, `/docs`
-tui/    the tree of admin levels that `geolite tui` opens: walked like folders, or printed when stdout is not a terminal
+tui/    the tree of admin levels that `geolite tui` opens: walked like folders down to the address and the map of a leaf, or printed when stdout is not a terminal
 ```
 
 an interface owns no rule. what a query means, how a region is parsed or how a label is built

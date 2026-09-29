@@ -2,6 +2,7 @@ use geo::Geometry;
 use rusqlite::Connection;
 
 use crate::common::harness::{decode_wkb, merged_way_ids_of};
+use crate::common::leaf::{assert_the_map_fits, leaf_of};
 use crate::common::query::{first, level_at, matches, name_at};
 use crate::santos::world;
 
@@ -19,6 +20,9 @@ const MONTE_CABRAO: i64 = 2_446_148_556;
 const STREETS: i64 = 7_195;
 const STATES: usize = 27;
 const PLACE_WAYS: usize = 22;
+
+const CASTRO_ALVES_PATH: &str = "Brasil/São Paulo/Santos/Embaré/Rua Castro Alves";
+const CASTRO_ALVES_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
 
 const REGENERATE: &str = "the fixture changed; regenerate deliberately and update the constants";
 
@@ -615,6 +619,62 @@ fn _03_05_the_tui_refuses_an_unknown_path() {
   assert_eq!(out.status, 1, "stderr: {}", out.stderr);
   assert!(
     out.stderr.contains("no 'Nowhere' under 'Brasil'"),
+    "stderr: {}",
+    out.stderr
+  );
+}
+
+// 03.06. the tree: the deepest level is not entered but opened: without a terminal the tui prints
+// the address the api answers for the path and, below it, the street drawn inside the
+// neighbourhood it was opened from
+#[test]
+#[ignore]
+fn _03_06_the_tui_prints_the_address_and_the_map_of_a_street_when_stdout_is_not_a_terminal() {
+  let w = world();
+  let leaf = leaf_of(&w.geolite(&["tui", CASTRO_ALVES_PATH]));
+  let answered = first(&w.run(&[CASTRO_ALVES_QUERY])).clone();
+
+  assert_eq!(
+    leaf.names(),
+    [
+      "name", "label", "country", "point", "osm ways", "id", "levels"
+    ],
+    "{REGENERATE}"
+  );
+  assert_eq!(leaf.field("name"), Some("Rua Castro Alves"));
+  assert_eq!(leaf.field("label"), answered["friendly_name"].as_str());
+  assert_eq!(leaf.field("id"), answered["id"].as_str());
+  assert_eq!(leaf.field("country"), Some("BR"));
+  assert_eq!(
+    leaf.field("point"),
+    Some(format!("{:.5}, {:.5}", answered["latitude"], answered["longitude"]).as_str())
+  );
+  assert_eq!(
+    leaf.field("osm ways"),
+    Some("255710390, 729205713"),
+    "{REGENERATE}"
+  );
+  assert_eq!(
+    leaf.field("levels"),
+    Some("Brasil / São Paulo / Santos / Embaré")
+  );
+
+  assert_the_map_fits(&leaf);
+  assert!(leaf.outline_glyphs() > 0, "the neighbourhood is drawn");
+  assert!(leaf.shape_box().is_some(), "the street is drawn");
+}
+
+// 03.07. the tree: the deepest level holds nothing, so a path that goes on below it is refused
+#[test]
+#[ignore]
+fn _03_07_the_tui_refuses_a_path_below_the_deepest_level() {
+  let below = format!("{CASTRO_ALVES_PATH}/Nowhere");
+  let out = world().geolite(&["tui", &below]);
+  assert_eq!(out.status, 1, "stderr: {}", out.stderr);
+  assert!(
+    out
+      .stderr
+      .contains("no 'Nowhere' under 'Brasil / São Paulo / Santos / Embaré / Rua Castro Alves'"),
     "stderr: {}",
     out.stderr
   );

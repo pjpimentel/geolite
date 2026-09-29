@@ -1,6 +1,7 @@
 use rusqlite::Connection;
 use std::collections::HashMap;
 
+use super::leaf::leaf;
 use crate::admin_level::level;
 use crate::admin_level::repository::levels_present;
 use crate::admin_level_hierarchy::entity::node;
@@ -27,10 +28,6 @@ impl entry {
     }
   }
 
-  pub fn is_folder(&self) -> bool {
-    self.level() != level::street
-  }
-
   pub fn is_missing(&self) -> bool {
     matches!(self, entry::missing { .. })
   }
@@ -40,6 +37,7 @@ impl entry {
 pub struct item {
   pub entry: entry,
   pub inside: usize,
+  pub is_folder: bool,
 }
 
 impl item {
@@ -53,6 +51,17 @@ impl item {
   }
 }
 
+pub fn breadcrumb(path: &[item]) -> String {
+  if path.is_empty() {
+    return "/".to_string();
+  }
+  path
+    .iter()
+    .map(|item| item.entry.name())
+    .collect::<Vec<_>>()
+    .join(" / ")
+}
+
 // a folder entered: the items of the path from a root down to it, and what it lists
 pub struct folder {
   pub path: Vec<item>,
@@ -61,15 +70,7 @@ pub struct folder {
 
 impl folder {
   pub fn breadcrumb(&self) -> String {
-    if self.path.is_empty() {
-      return "/".to_string();
-    }
-    self
-      .path
-      .iter()
-      .map(|item| item.entry.name())
-      .collect::<Vec<_>>()
-      .join(" / ")
+    breadcrumb(&self.path)
   }
 
   pub fn current(&self) -> Option<&item> {
@@ -79,6 +80,11 @@ impl folder {
   pub fn above(&self) -> Option<&item> {
     self.path.len().checked_sub(2).map(|index| &self.path[index])
   }
+}
+
+pub enum opened {
+  folder(folder),
+  leaf(folder, Box<leaf>),
 }
 
 pub struct tree {
@@ -106,10 +112,10 @@ impl tree {
     }
   }
 
-  // a folder is entered; a street never contains anything, so it is not
+  // a folder is entered; the deepest level of the ladder holds nothing to list, so it is not
   pub fn enter(&self, conn: &Connection, folder: &folder, index: usize) -> Option<folder> {
     let item = folder.items.get(index)?;
-    if !item.entry.is_folder() {
+    if !item.is_folder {
       return None;
     }
     Some(self.descend(conn, folder, index))
@@ -125,20 +131,30 @@ impl tree {
     Some(folder { path, items })
   }
 
-  // the folder named by a path from a root, its names separated by `/` and matched without
-  // regard to case; the empty path is the roots
-  pub fn resolve(&self, conn: &Connection, path: &str) -> Result<folder, String> {
+  // what a path from a root names, its names separated by `/` and matched without regard to
+  // case; the empty path is the roots
+  pub fn resolve(&self, conn: &Connection, path: &str) -> Result<opened, String> {
     let mut folder = self.roots(conn);
-    for segment in path.split('/').map(str::trim).filter(|s| !s.is_empty()) {
+    let mut segments = path.split('/').map(str::trim).filter(|s| !s.is_empty());
+    while let Some(segment) = segments.next() {
       let wanted = segment.to_lowercase();
       let index = folder
         .items
         .iter()
         .position(|item| item.entry.name().to_lowercase() == wanted)
         .ok_or_else(|| format!("no '{segment}' under '{}'", folder.breadcrumb()))?;
-      folder = self.descend(conn, &folder, index);
+      if folder.items[index].is_folder {
+        folder = self.descend(conn, &folder, index);
+        continue;
+      }
+      let leaf = super::leaf::open(conn, &folder, index)
+        .ok_or_else(|| format!("'{segment}' has no shape to draw"))?;
+      return match segments.next() {
+        Some(below) => Err(format!("no '{below}' under '{}'", leaf.breadcrumb())),
+        None => Ok(opened::leaf(folder, Box::new(leaf))),
+      };
     }
-    Ok(folder)
+    Ok(opened::folder(folder))
   }
 
   fn descend(&self, conn: &Connection, folder: &folder, index: usize) -> folder {
@@ -168,24 +184,30 @@ impl tree {
     let (deeper, regular): (Vec<node>, Vec<node>) = nodes
       .into_iter()
       .partition(|node| expected.is_some_and(|expected| node.level > expected));
+    let deepest = self.ladder.last().copied();
     let mut items = Vec::with_capacity(regular.len() + 1);
     if let Some(level) = expected
       && !deeper.is_empty()
     {
       items.push(item {
         inside: deeper.len(),
+        is_folder: true,
         entry: entry::missing {
           level,
           members: deeper,
         },
       });
     }
-    items.extend(regular.into_iter().map(|node| item {
-      inside: match node.level {
-        level::street => 0,
-        _ => self.counts.get(&node.id).copied().unwrap_or(0),
-      },
-      entry: entry::place(node),
+    items.extend(regular.into_iter().map(|node| {
+      let is_folder = Some(node.level) != deepest;
+      item {
+        inside: match is_folder {
+          true => self.counts.get(&node.id).copied().unwrap_or(0),
+          false => 0,
+        },
+        is_folder,
+        entry: entry::place(node),
+      }
     }));
     items
   }

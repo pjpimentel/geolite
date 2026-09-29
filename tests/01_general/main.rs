@@ -29,3 +29,6 @@ mod merge;
 
 #[path = "street_merge.test.rs"]
 mod street_merge;
+
+#[path = "tui.test.rs"]
+mod tui;

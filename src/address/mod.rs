@@ -4,6 +4,7 @@ mod filter;
 mod house_number;
 mod input;
 mod label;
+mod path;
 mod text;
 
 use crate::admin_level::geometry::bounding_geometry;
@@ -26,6 +27,10 @@ pub struct query_opts<'a> {
   pub bounding: Option<bounding_geometry>,
   pub last_admin_levels: Option<Vec<level>>,
   pub include_wkt: bool,
+}
+
+pub fn at_path(conn: &rusqlite::Connection, id: i64, path: &[i64]) -> Option<query_match> {
+  path::run(conn, id, path)
 }
 
 pub struct address<'a> {

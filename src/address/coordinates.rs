@@ -1,10 +1,7 @@
 use geo::{Intersects, Point};
 use rusqlite::Connection;
 
-use super::entity::{
-  self, leaf, match_sources, query_match, query_match_attributes, query_output, query_service,
-  round5,
-};
+use super::entity::{leaf, match_sources, query_match, query_output, query_service};
 use super::filter;
 use super::{house_number, query_opts};
 use crate::admin_level::geometry::bounding_box;
@@ -90,31 +87,16 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
         relation_id: own_meta.and_then(|m| m.relation_id),
         way_id: own_meta.and_then(|m| m.way_id),
       };
-      let admin_levels = sources.level_ladder(&ancestors, &leaf, number);
-      let friendly_name = entity::friendly_name_of(
-        opts.friendly_name_format,
-        &admin_levels,
-        &sources,
-        c.id,
-        own_name,
-        number,
-        path,
-      );
-
       matches.push(query_match {
-        admin_levels,
-        latitude: round5(c.closest_point.y()),
-        longitude: round5(c.closest_point.x()),
         coordinates_distance_in_meters: c.distance_in_meters,
-        similarity: None,
-        score: None,
-        friendly_name,
-        attributes: query_match_attributes {
-          country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
-          post_code: sources.post_code_of(c.id, path),
-        },
-        house_number: None,
-        id: entity::path_id(c.id, path),
+        ..sources.match_at(
+          &leaf,
+          &ancestors,
+          path,
+          c.closest_point,
+          number,
+          opts.friendly_name_format,
+        )
       });
     }
   }

@@ -1,4 +1,6 @@
-use geo::{BoundingRect, Contains, Coord, Geometry, Line, LineString, MultiLineString, Point};
+use geo::{
+  BoundingRect, Contains, Coord, Geometry, Line, LineString, MultiLineString, Point, Polygon,
+};
 use geozero::{CoordDimensions, ToGeo, ToWkb, wkb::SpatiaLiteWkb};
 use rstar::{RTree, primitives::GeomWithData};
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
@@ -152,6 +154,20 @@ pub fn lines_of(geometry: Geometry<f64>) -> Vec<LineString<f64>> {
     _ => Vec::new(),
   };
   lines.into_iter().filter(|line| !line.0.is_empty()).collect()
+}
+
+fn rings_of(polygon: &Polygon<f64>) -> impl Iterator<Item = &LineString<f64>> {
+  std::iter::once(polygon.exterior()).chain(polygon.interiors())
+}
+
+pub fn outline_of(geometry: &Geometry<f64>) -> Vec<&LineString<f64>> {
+  match geometry {
+    Geometry::LineString(line) => vec![line],
+    Geometry::MultiLineString(lines) => lines.0.iter().collect(),
+    Geometry::Polygon(polygon) => rings_of(polygon).collect(),
+    Geometry::MultiPolygon(polygons) => polygons.0.iter().flat_map(rings_of).collect(),
+    _ => Vec::new(),
+  }
 }
 
 const METERS_PER_DEGREE: f64 = 111_320.0;

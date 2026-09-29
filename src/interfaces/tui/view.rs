@@ -1,18 +1,21 @@
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Position, Rect};
+use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Cell, Row, Table, TableState};
+use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 use ratatui::{DefaultTerminal, Frame};
 use rusqlite::Connection;
 
 use super::filter::filter;
-use super::tree::{folder, item, tree};
+use super::leaf::leaf;
+use super::map::{self, zoom};
+use super::tree::{folder, item, opened, tree};
 
 const MAX_WIDTH: u16 = 100;
 const KEYS: &str = "↑↓ move  ⏎ enter  ⌫ up  / filter  q quit";
 const KEYS_FILTERED: &str = "↑↓ move  ⏎ enter  ⌫ up  / filter  esc clear  q quit";
 const KEYS_TYPING: &str = "↑↓ move  ⏎ enter  ⌫ erase  esc clear";
+const KEYS_LEAF: &str = "+ - zoom  ⌫ up  q quit";
 const PROMPT: &str = "  / ";
 const PLACEHOLDER: &str = "filter";
 
@@ -20,23 +23,35 @@ struct view<'a> {
   conn: &'a Connection,
   tree: tree,
   folder: folder,
+  leaf: Option<Box<leaf>>,
+  zoom: zoom,
   filter: filter,
   typing: bool,
   state: TableState,
   page: u16,
 }
 
-pub fn run(conn: &Connection, tree: tree, folder: folder) {
+pub fn run(conn: &Connection, tree: tree, opened: opened) {
+  let (folder, leaf) = match opened {
+    opened::folder(folder) => (folder, None),
+    opened::leaf(folder, leaf) => (folder, Some(leaf)),
+  };
   let mut view = view {
     conn,
     tree,
     filter: filter::over(&folder),
     folder,
+    leaf: None,
+    zoom: zoom::default(),
     typing: false,
     state: TableState::default(),
     page: 1,
   };
   view.select_first_item();
+  if let Some(leaf) = leaf {
+    view.select_leaf(&leaf);
+    view.leaf = Some(leaf);
+  }
   ratatui::run(|terminal| view.run(terminal)).expect("failed to run the tui");
 }
 
@@ -65,6 +80,13 @@ impl view<'_> {
       Constraint::Fill(1),
     ])
     .areas(frame.area());
+    match &self.leaf {
+      Some(leaf) => self.zoom = draw_leaf(frame, column, leaf, self.zoom),
+      None => self.draw_folder(frame, column),
+    }
+  }
+
+  fn draw_folder(&mut self, frame: &mut Frame, column: Rect) {
     let dim = Style::default().add_modifier(Modifier::DIM);
     let block = Block::bordered()
       .title(format!(" {} ", self.folder.breadcrumb()))
@@ -160,6 +182,9 @@ impl view<'_> {
   }
 
   fn handle(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    if self.leaf.is_some() {
+      return self.read(code, modifiers);
+    }
     let page = self.page;
     match code {
       KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => return true,
@@ -191,6 +216,18 @@ impl view<'_> {
     }
   }
 
+  fn read(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    match code {
+      KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => return true,
+      KeyCode::Char('q') => return true,
+      KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc => self.leaf = None,
+      KeyCode::Char('+') | KeyCode::Char('=') => self.zoom = self.zoom.closer(),
+      KeyCode::Char('-') => self.zoom = self.zoom.farther(),
+      _ => {}
+    }
+    false
+  }
+
   fn browsed(&mut self, code: KeyCode) -> bool {
     match code {
       KeyCode::Char('q') => return true,
@@ -204,7 +241,7 @@ impl view<'_> {
     false
   }
 
-  // `.` stays, `..` goes up, a folder is entered, a street is not
+  // `.` stays, `..` goes up, a folder is entered, the deepest level is opened
   fn enter(&mut self) {
     self.typing = false;
     let Some(row) = self.state.selected() else {
@@ -221,9 +258,15 @@ impl view<'_> {
     let Some(&index) = self.filter.shown.get(row - head) else {
       return;
     };
-    if let Some(entered) = self.tree.enter(self.conn, &self.folder, index) {
-      self.list(entered);
-      self.select_first_item();
+    match self.tree.enter(self.conn, &self.folder, index) {
+      Some(entered) => {
+        self.list(entered);
+        self.select_first_item();
+      }
+      None => {
+        self.leaf = super::leaf::open(self.conn, &self.folder, index).map(Box::new);
+        self.zoom = zoom::default();
+      }
     }
   }
 
@@ -274,10 +317,51 @@ impl view<'_> {
     let row = if self.filter.shown.is_empty() { 0 } else { head_rows(&self.folder) };
     *self.state.selected_mut() = Some(row);
   }
+
+  fn select_leaf(&mut self, leaf: &leaf) {
+    let position = leaf
+      .path
+      .last()
+      .and_then(|opened| self.folder.items.iter().position(|item| item.same_as(opened)));
+    if let Some(position) = position {
+      *self.state.selected_mut() = Some(head_rows(&self.folder) + position);
+    }
+  }
+}
+
+fn draw_leaf(frame: &mut Frame, column: Rect, leaf: &leaf, zoom: zoom) -> zoom {
+  let dim = Style::default().add_modifier(Modifier::DIM);
+  let block = Block::bordered()
+    .title(format!(" {} ", leaf.breadcrumb()))
+    .title_bottom(format!(" {KEYS_LEAF} "));
+  let fields = leaf.fields();
+  let names = fields.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
+  let [data, rule, drawn] = Layout::vertical([
+    Constraint::Length(fields.len() as u16),
+    Constraint::Length(1),
+    Constraint::Fill(1),
+  ])
+  .areas(block.inner(column));
+  frame.render_widget(block, column);
+  let rows = fields.into_iter().map(|(name, value)| {
+    Row::new([Cell::from(name).style(dim), Cell::from(value)])
+  });
+  let table = Table::new(rows, [Constraint::Length(names as u16), Constraint::Fill(1)])
+    .column_spacing(2);
+  frame.render_widget(table, data.inner(Margin::new(1, 0)));
+  let zoom = map::settled(&leaf.drawing, drawn, zoom);
+  let width = map::ground_width(&leaf.drawing, drawn, zoom);
+  let ruled = Block::new()
+    .borders(Borders::TOP)
+    .border_style(dim)
+    .title(Line::from(format!(" ↔ {width} ")).right_aligned());
+  frame.render_widget(ruled, rule);
+  map::render(&leaf.drawing, zoom, drawn, frame.buffer_mut());
+  zoom
 }
 
 fn item_row(item: &item) -> Row<'static> {
-  let inside = item.entry.is_folder().then_some(item.inside);
+  let inside = item.is_folder.then_some(item.inside);
   let row = cells(item.entry.level().name(), inside, &item.entry.name());
   if item.entry.is_missing() {
     row.style(Style::default().add_modifier(Modifier::DIM))

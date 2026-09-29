@@ -41,6 +41,19 @@ distance. there is no distance cap on streets: `min_quality` runs on the candida
 closest point and the distance in metres, and the nearest house number within 50 m is appended as
 level 30.
 
+## the address of a path — `path`
+
+`address::at_path(conn, id, path)` answers the one match of an area under a path already known,
+the areas from the nearest one outward, without a search: it is what the tui opens at the end of
+the folders walked. it holds neither the index nor the policy of the preset, so it is a function
+and not a method of `address`. the match is the one the text service builds — the same ladder,
+label, attributes and id, and the point of `resting_point` — without a score, a similarity or a
+house number, which belong to a question asked.
+
+what the three share is built once, in `match_sources::match_at`: the ladder, the label, the
+attributes, the rounded point and the id of the path. each caller adds what is its own, the score
+and the similarity of a text, the distance of a coordinate.
+
 ## the house-number step — `house_number`
 
 the adapter between a street and `house_number`, run once per street before any match is built, so

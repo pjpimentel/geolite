@@ -3,10 +3,7 @@ use std::collections::HashMap;
 use geo::{Centroid, Closest, ClosestPoint, Geometry, Point};
 use rusqlite::Connection;
 
-use super::entity::{
-  self, leaf, match_sources, query_match, query_match_attributes, query_output, query_service,
-  round5,
-};
+use super::entity::{leaf, match_sources, query_match, query_output, query_service, round5};
 use super::house_number::{self, resolved_number};
 use super::{filter, query_opts};
 use crate::admin_level::level;
@@ -104,7 +101,7 @@ pub(super) fn run(
   }
 }
 
-fn resting_point(
+pub(super) fn resting_point(
   record: &admin_area_row,
   geometry: &Geometry<f64>,
   sources: &match_sources,
@@ -147,16 +144,6 @@ fn build_match(
     relation_id: record.relation_id,
     way_id: record.way_id,
   };
-  let admin_levels = sources.level_ladder(&ancestors, &leaf, placed_number);
-  let friendly_name = entity::friendly_name_of(
-    opts.friendly_name_format,
-    &admin_levels,
-    sources,
-    record.id,
-    &record.name,
-    placed_number,
-    path,
-  );
   let own_meta = sources.meta.get(&record.id);
   let coverage = search_index::coverage(
     query_tokens,
@@ -171,18 +158,16 @@ fn build_match(
   }
 
   Some(query_match {
-    admin_levels,
-    latitude: round5(point.y()),
-    longitude: round5(point.x()),
-    coordinates_distance_in_meters: None,
     similarity: Some(similarity),
     score: Some(hit.score),
-    friendly_name,
-    attributes: query_match_attributes {
-      country_iso_3166_1_alpha_2_code: entity::country_iso_of(&ancestors, own_meta),
-      post_code: sources.post_code_of(record.id, path),
-    },
     house_number: number.map(resolved_number::reported),
-    id: entity::path_id(record.id, path),
+    ..sources.match_at(
+      &leaf,
+      &ancestors,
+      path,
+      point,
+      placed_number,
+      opts.friendly_name_format,
+    )
   })
 }
