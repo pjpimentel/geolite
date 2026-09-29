@@ -86,7 +86,7 @@ fn numbered(dir: &Path, node_id: i64, street_id: i64) {
 }
 
 // a street of the fixture as the resolver leaves one that no area holds: a root
-fn unparented(w: &world, name: &str) -> scratch {
+fn parentless(w: &world, name: &str) -> scratch {
   let s = resolved(w, name);
   let cut = writable(&s.dir)
     .execute(
@@ -250,7 +250,7 @@ fn _00_05_the_tables_stay_consistent_and_the_merge_stage_still_runs() {
 #[ignore]
 fn _00_06_a_second_run_changes_nothing_and_keeps_the_indexes() {
   let w = world();
-  let s = unparented(w, "isolated_twice");
+  let s = parentless(w, "isolated_twice");
   isolated_deleted_at(w, &s.dir);
 
   assert_a_run_with_nothing_to_do_keeps_the_indexes(w, &s, isolated_deleted_at, NOTHING_ISOLATED);
@@ -261,7 +261,7 @@ fn _00_06_a_second_run_changes_nothing_and_keeps_the_indexes() {
 #[ignore]
 fn _00_07_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
   let w = world();
-  let s = unparented(w, "isolated_clears");
+  let s = parentless(w, "isolated_clears");
 
   assert_the_indexes_are_cleared_and_recreated(w, &s, isolated_deleted_at, TEXT_QUERY);
 
@@ -278,7 +278,7 @@ fn _00_07_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
 #[ignore]
 fn _00_08_the_ledger_follows_the_table_after_the_delete() {
   let w = world();
-  let s = unparented(w, "isolated_ledger");
+  let s = parentless(w, "isolated_ledger");
 
   isolated_deleted_at(w, &s.dir);
 
