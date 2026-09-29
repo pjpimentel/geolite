@@ -5,6 +5,7 @@ use crate::common::harness::{
 use crate::common::query::{first, matches};
 use crate::extract::{REGENERATE, extracted};
 use crate::house_number::HOUSE_NUMBERS;
+use crate::isolated_admin_levels::NOTHING_ISOLATED;
 use crate::street_merge::{NUMBERS_MOVED, merged_summary};
 use serde_json::{Value, json};
 
@@ -51,6 +52,7 @@ fn _00_01_build_prints_every_stage_banner_in_order() {
     "── extract-osm-admin-levels",
     "── extract-osm-house-numbers",
     "── index-admin-levels-hierarchy",
+    "── optimize-delete-isolated-admin-levels",
     "── optimize-merge-admin-levels",
     "── index-addresses",
     "── index-coordinates",
@@ -73,7 +75,7 @@ fn _00_01_build_prints_every_stage_banner_in_order() {
 fn _00_02_build_skips_the_download_stage_for_a_local_source() {
   let w = world();
   assert!(
-    w.build_stdout.contains("skipping"),
+    plain(&w.build_stdout).contains("skipping download"),
     "a local source must skip the download stage:\n{}",
     w.build_stdout
   );
@@ -271,6 +273,8 @@ fn _00_11_the_build_folds_the_streets_between_the_hierarchy_and_the_search_index
     &stdout,
     &[
       "indexed hierarchy in",
+      "── optimize-delete-isolated-admin-levels",
+      NOTHING_ISOLATED,
       "── optimize-merge-admin-levels",
       merged_summary().as_str(),
       numbers_moved.as_str(),
@@ -835,6 +839,7 @@ fn _01_26_exec_help_lists_the_stages_in_pipeline_order() {
       "extract-osm-admin-levels",
       "extract-osm-house-numbers",
       "index-admin-levels-hierarchy",
+      "optimize-delete-isolated-admin-levels",
       "optimize-merge-admin-levels",
       "index-addresses",
       "index-coordinates",

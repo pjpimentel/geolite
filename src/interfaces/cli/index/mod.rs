@@ -3,7 +3,7 @@ pub mod admin_levels_hierarchy;
 pub mod coordinates;
 
 use crate::interfaces::cli::exec::stages::stage;
-use crate::interfaces::cli::optimize::merge_admin_levels;
+use crate::interfaces::cli::optimize::{delete_isolated_admin_levels, merge_admin_levels};
 
 pub fn command_handler_index_and_merge(
   sqlite_path: &str,
@@ -11,6 +11,15 @@ pub fn command_handler_index_and_merge(
   preset: &crate::presets::index_addresses_preset,
 ) {
   admin_levels_hierarchy::command_handler_index_admin_levels_hierarchy(sqlite_path);
+  println!();
+  println!(
+    "\x1b[2m── {}\x1b[0m",
+    stage::optimize_delete_isolated_admin_levels.name()
+  );
+  delete_isolated_admin_levels::command_handler_optimize_delete_isolated_admin_levels(
+    sqlite_path,
+    index_path,
+  );
   println!();
   println!(
     "\x1b[2m── {}\x1b[0m",

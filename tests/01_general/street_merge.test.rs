@@ -6,6 +6,7 @@ use crate::common::harness::{decode_wkb, merged_way_ids_of, output, plain, query
 use crate::common::query::{level_at, matches, name_at, point_of};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
 use crate::general::world;
+use crate::isolated_admin_levels::isolated_deleted_at;
 use geo::{Contains, Geometry, LineString, Point};
 
 pub(crate) const LOWER_WAY: u64 = 255_710_390;
@@ -29,7 +30,7 @@ const STREETS: i64 = 12_878;
 const STREETS_AFTER: i64 = 7_195;
 const PIECES: i64 = 1_984;
 pub(crate) const NUMBERS_MOVED: usize = 261;
-const TEXT_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
+pub(crate) const TEXT_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
 const EUCLIDES_GONZAGA_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
 const EUCLIDES_JOSE_MENINO_QUERY: &str = "rua euclides da cunha, jose menino, santos, sao paulo";
 
@@ -37,7 +38,7 @@ pub(crate) fn way(osm_id: u64) -> i64 {
   (osm_id << 1) as i64
 }
 
-fn writable(dir: &Path) -> rusqlite::Connection {
+pub(crate) fn writable(dir: &Path) -> rusqlite::Connection {
   rusqlite::Connection::open(dir.join("database.sqlite3"))
     .expect("failed to open the scratch database for writing")
 }
@@ -67,7 +68,7 @@ fn traced_rows(conn: &rusqlite::Connection) -> i64 {
   )
 }
 
-fn assert_refused(out: &output, reason: &str) {
+pub(crate) fn assert_refused(out: &output, reason: &str) {
   assert_eq!(out.status, 1, "stderr: {}", out.stderr);
   assert!(plain(&out.stderr).contains(reason), "{}", out.stderr);
 }
@@ -113,13 +114,14 @@ fn merged_at(w: &world, dir: &Path) -> output {
 
 pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
   index_at(w, dir, "admin-levels-hierarchy");
+  isolated_deleted_at(w, dir);
   merged_at(w, dir);
   index_at(w, dir, "addresses");
   index_at(w, dir, "coordinates");
 }
 
 // the streets and the house numbers of a scratch, the hierarchy resolved and nothing merged yet
-fn resolved(w: &world, name: &str) -> scratch {
+pub(crate) fn resolved(w: &world, name: &str) -> scratch {
   let s = extracted(w, name, "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
   stage(
@@ -168,7 +170,7 @@ fn street_of_each_number(conn: &rusqlite::Connection) -> Vec<(i64, i64)> {
 }
 
 // what the merge may change, as three strings: the rows, their edges and the street of each number
-fn snapshot(conn: &rusqlite::Connection) -> (String, String, String) {
+pub(crate) fn snapshot(conn: &rusqlite::Connection) -> (String, String, String) {
   let read = |sql: &str| -> String {
     conn
       .query_row(sql, [], |r| r.get::<_, Option<String>>(0))
@@ -189,6 +191,107 @@ fn snapshot(conn: &rusqlite::Connection) -> (String, String, String) {
        (SELECT node_id, admin_level_id FROM house_numbers ORDER BY node_id)",
     ),
   )
+}
+
+fn rtree_rows(s: &scratch) -> i64 {
+  count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree")
+}
+
+fn indexed_after(w: &world, s: &scratch) {
+  index_at(w, &s.dir, "addresses");
+  index_at(w, &s.dir, "coordinates");
+}
+
+pub(crate) fn assert_the_tables_are_consistent(conn: &rusqlite::Connection) {
+  assert_eq!(
+    count(conn, "SELECT COUNT(*) FROM admin_levels"),
+    count(
+      conn,
+      "SELECT COUNT(DISTINCT admin_level_id) FROM admin_levels_hierarchy"
+    ),
+    "every area keeps one hierarchy row at least, and no area that is gone keeps one"
+  );
+  assert_eq!(
+    count(conn, "SELECT COUNT(*) FROM pragma_foreign_key_check"),
+    0,
+    "no edge and no number may point at a row that is gone"
+  );
+}
+
+pub(crate) fn assert_a_run_with_nothing_to_do_keeps_the_indexes(
+  w: &world,
+  s: &scratch,
+  run: fn(&world, &Path) -> output,
+  skipped: &str,
+) {
+  indexed_after(w, s);
+  let rtree = rtree_rows(s);
+  let before = snapshot(&s.ledger());
+
+  let again = plain(&run(w, &s.dir).stdout);
+
+  assert!(again.contains(skipped), "{again}");
+  assert_eq!(snapshot(&s.ledger()), before);
+  assert!(s.dir.join("database.tantivy").is_dir());
+  assert_eq!(rtree_rows(s), rtree);
+}
+
+pub(crate) fn assert_the_indexes_are_cleared_and_recreated(
+  w: &world,
+  s: &scratch,
+  run: fn(&world, &Path) -> output,
+  query: &str,
+) {
+  indexed_after(w, s);
+  assert!(s.dir.join("database.tantivy").is_dir());
+
+  let out = run(w, &s.dir);
+
+  assert!(
+    plain(&out.stdout)
+      .contains("next run `geolite exec index-addresses` and `geolite exec index-coordinates`"),
+    "{}",
+    out.stdout
+  );
+  assert!(!s.dir.join("database.tantivy").exists());
+  assert_eq!(rtree_rows(s), 0);
+  let asked = w.geolite_in(
+    &s.dir,
+    &[
+      "--preset",
+      "brazil",
+      "query",
+      query,
+      "--include-wkt",
+      "false",
+    ],
+  );
+  assert_eq!(asked.status, 1);
+  assert!(
+    asked.stderr.contains("tantivy index not found"),
+    "{}",
+    asked.stderr
+  );
+
+  indexed_after(w, s);
+}
+
+pub(crate) fn assert_the_ledger_follows_the_tables(conn: &rusqlite::Connection) {
+  let (admins, houses): (i64, i64) = conn
+    .query_row(
+      "SELECT admin_levels_count, house_numbers_count FROM osm_pbf_files",
+      [],
+      |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .expect("failed to read the ledger");
+  assert_eq!(
+    admins,
+    count(
+      conn,
+      "SELECT COUNT(*) FROM admin_levels WHERE wkb IS NOT NULL"
+    )
+  );
+  assert_eq!(houses, count(conn, "SELECT COUNT(*) FROM house_numbers"));
 }
 
 fn set_post_codes(dir: &Path, codes: [(u64, Option<&str>); 2]) {
@@ -355,19 +458,7 @@ fn _00_03_a_folded_street_keeps_the_chain_of_its_ways() {
 
   let conn = s.ledger();
   assert_eq!(parents_of(&conn, way(LOWER_WAY)), lower);
-  assert_eq!(
-    count(&conn, "SELECT COUNT(*) FROM admin_levels"),
-    count(
-      &conn,
-      "SELECT COUNT(DISTINCT admin_level_id) FROM admin_levels_hierarchy"
-    ),
-    "every area keeps one hierarchy row at least, and no area that is gone keeps one"
-  );
-  assert_eq!(
-    count(&conn, "SELECT COUNT(*) FROM pragma_foreign_key_check"),
-    0,
-    "no edge and no number may point at a row that is gone"
-  );
+  assert_the_tables_are_consistent(&conn);
 }
 
 // 00.04. the numbers of an absorbed way move to the street it was folded into
@@ -426,22 +517,12 @@ fn _00_05_a_second_run_changes_nothing_and_keeps_the_indexes() {
   let w = world();
   let s = resolved(w, "street_merge_twice");
   merged_at(w, &s.dir);
-  index_at(w, &s.dir, "addresses");
-  index_at(w, &s.dir, "coordinates");
-  let rtree = count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree");
-  let before = snapshot(&s.ledger());
 
-  let again = plain(&merged_at(w, &s.dir).stdout);
-
-  assert!(
-    again.contains("skipping merge-admin-levels — no street to merge"),
-    "{again}"
-  );
-  assert_eq!(snapshot(&s.ledger()), before);
-  assert!(s.dir.join("database.tantivy").is_dir());
-  assert_eq!(
-    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree"),
-    rtree
+  assert_a_run_with_nothing_to_do_keeps_the_indexes(
+    w,
+    &s,
+    merged_at,
+    "skipping merge-admin-levels — no street to merge",
   );
 }
 
@@ -451,43 +532,9 @@ fn _00_05_a_second_run_changes_nothing_and_keeps_the_indexes() {
 fn _00_06_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
   let w = world();
   let s = resolved(w, "street_merge_clears");
-  index_at(w, &s.dir, "addresses");
-  index_at(w, &s.dir, "coordinates");
-  assert!(s.dir.join("database.tantivy").is_dir());
 
-  let out = merged_at(w, &s.dir);
+  assert_the_indexes_are_cleared_and_recreated(w, &s, merged_at, TEXT_QUERY);
 
-  assert!(
-    plain(&out.stdout)
-      .contains("next run `geolite exec index-addresses` and `geolite exec index-coordinates`"),
-    "{}",
-    out.stdout
-  );
-  assert!(!s.dir.join("database.tantivy").exists());
-  assert_eq!(
-    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels_rtree"),
-    0
-  );
-  let asked = w.geolite_in(
-    &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "query",
-      TEXT_QUERY,
-      "--include-wkt",
-      "false",
-    ],
-  );
-  assert_eq!(asked.status, 1);
-  assert!(
-    asked.stderr.contains("tantivy index not found"),
-    "{}",
-    asked.stderr
-  );
-
-  index_at(w, &s.dir, "addresses");
-  index_at(w, &s.dir, "coordinates");
   let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
   assert_eq!(matches(&result).len(), 1, "the street answers once");
 }
@@ -500,22 +547,7 @@ fn _00_07_the_ledger_follows_the_table_after_the_merge() {
   let s = resolved(w, "street_merge_ledger");
   merged_at(w, &s.dir);
 
-  let conn = s.ledger();
-  let (admins, houses): (i64, i64) = conn
-    .query_row(
-      "SELECT admin_levels_count, house_numbers_count FROM osm_pbf_files",
-      [],
-      |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-    .expect("failed to read the ledger");
-  assert_eq!(
-    admins,
-    count(
-      &conn,
-      "SELECT COUNT(*) FROM admin_levels WHERE wkb IS NOT NULL"
-    )
-  );
-  assert_eq!(houses, count(&conn, "SELECT COUNT(*) FROM house_numbers"));
+  assert_the_ledger_follows_the_tables(&s.ledger());
 }
 
 // 00.08. resolving the hierarchy again over the folded rows writes the same edges

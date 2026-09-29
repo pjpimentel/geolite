@@ -224,6 +224,17 @@ pub fn repoint_streets(conn: &Connection, moves: &[(i64, i64)]) -> usize {
   total
 }
 
+pub fn count(conn: &Connection) -> i64 {
+  const SQL_COUNT: &str = "
+    SELECT COUNT(*)
+    FROM house_numbers
+  ";
+
+  conn
+    .query_row(SQL_COUNT, [], |row| row.get(0))
+    .expect("failed to count house_numbers")
+}
+
 pub fn any(conn: &Connection) -> bool {
   const SQL_ANY: &str = "
     SELECT EXISTS (

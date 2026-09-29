@@ -6,7 +6,9 @@ use super::extract::{
   osm_admin_levels, osm_house_numbers, osm_pbf_blob_chunks, osm_pbf_data, osm_pbf_header,
 };
 use super::index::{addresses, admin_levels_hierarchy, coordinates};
-use super::optimize::{delete_intermediary_data, merge_admin_levels, sqlite_file};
+use super::optimize::{
+  delete_intermediary_data, delete_isolated_admin_levels, merge_admin_levels, sqlite_file,
+};
 use crate::admin_level::level;
 use stages::stage;
 
@@ -79,6 +81,8 @@ pub enum exec_commands {
   },
   #[command(name = stage::index_admin_levels_hierarchy.name())]
   index_admin_levels_hierarchy,
+  #[command(name = stage::optimize_delete_isolated_admin_levels.name())]
+  optimize_delete_isolated_admin_levels,
   #[command(name = stage::optimize_merge_admin_levels.name())]
   optimize_merge_admin_levels,
   #[command(name = stage::index_addresses.name())]
@@ -89,6 +93,18 @@ pub enum exec_commands {
   optimize_delete_intermediary_data,
   #[command(name = stage::optimize_sqlite_file.name())]
   optimize_sqlite_file,
+}
+
+fn with_stale_indexes(sqlite_path: &str, index_path: &str, handler: fn(&str, &str) -> bool) {
+  super::optimize::with_sqlite_sizes(sqlite_path, index_path, || {
+    if handler(sqlite_path, index_path) {
+      println!(
+        "\x1b[1;33mnext\x1b[0m run `geolite exec {}` and `geolite exec {}`",
+        stage::index_addresses.name(),
+        stage::index_coordinates.name()
+      );
+    }
+  })
 }
 
 pub fn command_handler_exec(
@@ -185,17 +201,16 @@ pub fn command_handler_exec(
       addresses::command_handler_index_addresses(sqlite_path, index_path, &preset.index_addresses)
     }
     exec_commands::index_coordinates => coordinates::command_handler_index_coordinates(sqlite_path),
-    exec_commands::optimize_merge_admin_levels => {
-      super::optimize::with_sqlite_sizes(sqlite_path, index_path, || {
-        if merge_admin_levels::command_handler_optimize_merge_admin_levels(sqlite_path, index_path) {
-          println!(
-            "\x1b[1;33mnext\x1b[0m run `geolite exec {}` and `geolite exec {}`",
-            stage::index_addresses.name(),
-            stage::index_coordinates.name()
-          );
-        }
-      })
-    }
+    exec_commands::optimize_delete_isolated_admin_levels => with_stale_indexes(
+      sqlite_path,
+      index_path,
+      delete_isolated_admin_levels::command_handler_optimize_delete_isolated_admin_levels,
+    ),
+    exec_commands::optimize_merge_admin_levels => with_stale_indexes(
+      sqlite_path,
+      index_path,
+      merge_admin_levels::command_handler_optimize_merge_admin_levels,
+    ),
     exec_commands::optimize_delete_intermediary_data => {
       super::optimize::with_sqlite_sizes(sqlite_path, index_path, || {
         delete_intermediary_data::command_handler_optimize_delete_intermediary_data(

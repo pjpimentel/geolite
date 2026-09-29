@@ -25,8 +25,9 @@ admin_level/    a named administrative area — the `admin_levels` table
 admin_level_hierarchy/  which area contains which — the `admin_levels_hierarchy` table
   entity            the row as it is written: one edge, child to parent
   paths             the paths of an area up to the roots, enumerated from the edges
-  repository        the ddl, the pending queries, the reads of the tree and the insert
+  repository        the ddl, the pending and the isolated queries, the reads of the tree and the insert
   resolver          the pass that finds every parent of every area and writes the edges
+  isolated          the pass that deletes a country without children and a street without parents
   street_merge      the pass that folds the ways of one street into one row, and the areas it keeps
   search_index      the tantivy index, one document per path, the search over it, and the coverage of a query over a document
 house_number/   a door number placed on a street — the `house_numbers` table
@@ -36,7 +37,7 @@ house_number/   a door number placed on a street — the `house_numbers` table
   strategy          how the number was attached to its street: by_proximity | by_name, and the stored codes
   token             finding the number inside a free-text query, skipping the street's own name
   resolution        placing a wanted number on a street: exact | interpolated | absent; and the nearest stored number to a point, within 50 m
-  repository        the ddl, the index, the candidate scan, the street reads, the numbers of a street, the insert and the move of a way's numbers
+  repository        the ddl, the index, the candidate scan, the street reads, the numbers of a street, the count, the insert and the move of a way's numbers
   extract           `house_number_link::extract(policy)`: candidates, tiles of 2°, the fan-out and the batches it reports
   linker            the pass over one tile: by name first, then the nearest street within 0.15°, projected onto it
 address/        an address resolved from a text or from a coordinate — not a table

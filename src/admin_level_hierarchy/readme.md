@@ -82,13 +82,34 @@ ring of a country out of the pass. a ring longer than five hundred edges is inde
 band when it is loaded, so a point test walks a few dozen edges instead of the whole boundary of a
 state.
 
+## the isolated areas — `isolated`
+
+an extract brings rows no address ever names: the neighbouring country whose boundary came with the
+file and holds nothing, and the street the resolver found inside no area. `isolated` deletes both
+after the resolver and before the street merge, so the fold and the two indexes work over the rows
+that stay: it is `geolite exec optimize-delete-isolated-admin-levels`, which `build` and
+`geolite merge` run between `index-admin-levels-hierarchy` and `optimize-merge-admin-levels`.
+
+the rule names two levels and reads the edges as they are. a **country without children** is a row
+of level 2 that is the `parent_id` of no edge; a **street without parents** is a row of level 12
+with no edge but the root one. a child is a child whatever it holds, so a country whose states are
+empty stays, and no other level is touched: a state without children and a neighbourhood without
+parents are left alone. the rule runs once and not to a fixed point — a country that was the only
+child of another goes, and the outer one is without children only for the next run. it has no floor
+either: where every row is isolated the base ends empty, and the stage after it refuses.
+
+the edges and the house numbers of a row leave with it, because both reference `admin_levels(id)`
+and cascade on delete, and a row that goes is the parent of none that stays, so the hierarchy still
+covers every row. the search index and the rtree are cleared before the first write, as the street
+merge clears them; a run that finds nothing isolated touches neither.
+
 ## the street merge — `street_merge`
 
 a street mapped in several ways answers several times under one label, and its numbers sit on
 whichever way they were linked to. `street_merge` folds the ways of one street into one row after
 the resolver has said which areas each way is in and before the search index is built, because the
 rule needs the areas and the index needs the rows: it is `geolite exec optimize-merge-admin-levels`,
-which `build` and `geolite merge` run between `index-admin-levels-hierarchy` and
+which `build` and `geolite merge` run between `optimize-delete-isolated-admin-levels` and
 `index-addresses`. no index stage folds on its own.
 
 two ways of the same name are one street when they **share an area**, their post codes agree (a

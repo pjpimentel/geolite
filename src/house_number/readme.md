@@ -60,7 +60,8 @@ nothing reads the column back yet, so there is no reading of the code.
 
 the link is not final: `optimize-merge-admin-levels` moves the numbers of a way it folds into
 another street to the street that survives (`repository::repoint_streets`), before the way's row
-goes.
+goes, and the numbers of a street that `optimize-delete-isolated-admin-levels` deletes leave with
+its row.
 
 ## the number in the query — `token`
 

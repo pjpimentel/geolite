@@ -1,5 +1,3 @@
-use std::io::Write;
-use std::path::Path;
 use std::time::Instant;
 
 use crate::admin_level_hierarchy::street_merge;
@@ -20,18 +18,13 @@ pub fn command_handler_optimize_merge_admin_levels(sqlite_path: &str, index_path
     return false;
   }
 
-  print!("\x1b[1;32mclearing\x1b[0m addresses and coordinates...");
-  let _ = std::io::stdout().flush();
-  crate::admin_level_hierarchy::search_index::destroy(Path::new(index_path));
-  crate::admin_level::spatial_index::recreate(&conn);
-  println!(" done");
+  super::clear_indexes(&conn, index_path);
 
   let bar = progress::bar("merging", "streets");
   let report = street_merge::fold(&conn, &pieces, |p| progress::advance(&bar, &p));
   bar.finish();
 
-  crate::osm_pbf_file::repository::update_admin_levels_count(&conn);
-  crate::osm_pbf_file::repository::update_house_numbers_count(&conn);
+  super::update_ledger(&conn);
 
   let elapsed = start.elapsed().as_secs_f64();
   println!(

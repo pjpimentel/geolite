@@ -21,6 +21,9 @@ mod admin_level_hierarchy;
 #[path = "house_number.test.rs"]
 mod house_number;
 
+#[path = "isolated_admin_levels.test.rs"]
+mod isolated_admin_levels;
+
 #[path = "merge.test.rs"]
 mod merge;
 

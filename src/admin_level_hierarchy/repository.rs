@@ -74,6 +74,17 @@ pub fn pending_total(conn: &Connection) -> i64 {
     .expect("failed to query pending total")
 }
 
+fn ids_at_level(conn: &Connection, sql: &str, of: level) -> Vec<i64> {
+  let mut stmt = conn
+    .prepare(sql)
+    .expect("failed to prepare the ids of a level");
+  stmt
+    .query_map([of.value()], |row| row.get::<_, i64>(0))
+    .expect("failed to query the ids of a level")
+    .map(|r| r.expect("failed to read an id of a level"))
+    .collect()
+}
+
 pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
   const SQL_PENDING_STREET_IDS: &str = "
     SELECT al.id
@@ -87,14 +98,40 @@ pub fn pending_street_ids(conn: &Connection) -> Vec<i64> {
     ORDER BY al.id ASC
   ";
 
-  let mut stmt = conn
-    .prepare(SQL_PENDING_STREET_IDS)
-    .expect("failed to prepare pending streets");
-  stmt
-    .query_map([level::street.value()], |row| row.get::<_, i64>(0))
-    .expect("failed to query pending streets")
-    .map(|r| r.expect("failed to read street id"))
-    .collect()
+  ids_at_level(conn, SQL_PENDING_STREET_IDS, level::street)
+}
+
+pub fn childless_country_ids(conn: &Connection) -> Vec<i64> {
+  const SQL_CHILDLESS_COUNTRY_IDS: &str = "
+    SELECT al.id
+    FROM admin_levels al
+    WHERE al.admin_level = ?1
+      AND NOT EXISTS (
+        SELECT 1
+        FROM admin_levels_hierarchy h
+        WHERE h.parent_id = al.id
+      )
+    ORDER BY al.id ASC
+  ";
+
+  ids_at_level(conn, SQL_CHILDLESS_COUNTRY_IDS, level::country)
+}
+
+pub fn parentless_street_ids(conn: &Connection) -> Vec<i64> {
+  const SQL_PARENTLESS_STREET_IDS: &str = "
+    SELECT al.id
+    FROM admin_levels al
+    WHERE al.admin_level = ?1
+      AND NOT EXISTS (
+        SELECT 1
+        FROM admin_levels_hierarchy h
+        WHERE h.admin_level_id = al.id
+          AND h.parent_id IS NOT NULL
+      )
+    ORDER BY al.id ASC
+  ";
+
+  ids_at_level(conn, SQL_PARENTLESS_STREET_IDS, level::street)
 }
 
 pub fn children_count_by_parent(conn: &Connection) -> HashMap<i64, usize> {
