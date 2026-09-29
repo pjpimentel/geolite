@@ -6,6 +6,7 @@ use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 use ratatui::{DefaultTerminal, Frame};
 use rusqlite::Connection;
 
+use super::fields::sheet;
 use super::filter::filter;
 use super::leaf::leaf;
 use super::map::{self, zoom};
@@ -16,6 +17,8 @@ const KEYS: &str = "↑↓ move  ⏎ enter  ⌫ up  / filter  q quit";
 const KEYS_FILTERED: &str = "↑↓ move  ⏎ enter  ⌫ up  / filter  esc clear  q quit";
 const KEYS_TYPING: &str = "↑↓ move  ⏎ enter  ⌫ erase  esc clear";
 const KEYS_LEAF: &str = "+ - zoom  ⌫ up  q quit";
+const KEYS_LEAF_SCROLLED: &str = "↑↓ scroll  + - zoom  ⌫ up  q quit";
+const MAP_ROWS_KEPT: u16 = 8;
 const PROMPT: &str = "  / ";
 const PLACEHOLDER: &str = "filter";
 
@@ -25,6 +28,7 @@ struct view<'a> {
   folder: folder,
   leaf: Option<Box<leaf>>,
   zoom: zoom,
+  scroll: u16,
   filter: filter,
   typing: bool,
   state: TableState,
@@ -43,6 +47,7 @@ pub fn run(conn: &Connection, tree: tree, opened: opened) {
     folder,
     leaf: None,
     zoom: zoom::default(),
+    scroll: 0,
     typing: false,
     state: TableState::default(),
     page: 1,
@@ -80,10 +85,51 @@ impl view<'_> {
       Constraint::Fill(1),
     ])
     .areas(frame.area());
-    match &self.leaf {
-      Some(leaf) => self.zoom = draw_leaf(frame, column, leaf, self.zoom),
-      None => self.draw_folder(frame, column),
+    if self.leaf.is_some() {
+      self.draw_leaf(frame, column);
+    } else {
+      self.draw_folder(frame, column);
     }
+  }
+
+  fn draw_leaf(&mut self, frame: &mut Frame, column: Rect) {
+    let Some(leaf) = self.leaf.as_deref() else {
+      return;
+    };
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let inner = Block::bordered().inner(column);
+    let fields = leaf.fields();
+    let sheet = sheet::of(&fields, inner.width.saturating_sub(2));
+    let room = inner.height.saturating_sub(MAP_ROWS_KEPT + 1).max(1);
+    let shown = sheet.height().min(room);
+    let hidden = sheet.height() - shown;
+    self.scroll = self.scroll.min(hidden);
+    self.page = shown.max(1);
+    let keys = if hidden > 0 { KEYS_LEAF_SCROLLED } else { KEYS_LEAF };
+    let block = Block::bordered()
+      .title(format!(" {} ", leaf.breadcrumb()))
+      .title_bottom(format!(" {keys} "));
+    let [data, rule, drawn] = Layout::vertical([
+      Constraint::Length(shown),
+      Constraint::Length(1),
+      Constraint::Fill(1),
+    ])
+    .areas(inner);
+    frame.render_widget(block, column);
+    sheet.render(self.scroll, data.inner(Margin::new(1, 0)), frame.buffer_mut());
+    self.zoom = map::settled(&leaf.drawing, drawn, self.zoom);
+    let width = map::ground_width(&leaf.drawing, drawn, self.zoom);
+    let mut ruled = Block::new()
+      .borders(Borders::TOP)
+      .border_style(dim)
+      .title(Line::from(format!(" ↔ {width} ")).right_aligned());
+    if hidden > 0 {
+      let first = self.scroll + 1;
+      let last = self.scroll + shown;
+      ruled = ruled.title(format!(" {first}-{last} of {} ", sheet.height()));
+    }
+    frame.render_widget(ruled, rule);
+    map::render(&leaf.drawing, self.zoom, drawn, frame.buffer_mut());
   }
 
   fn draw_folder(&mut self, frame: &mut Frame, column: Rect) {
@@ -223,6 +269,12 @@ impl view<'_> {
       KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc => self.leaf = None,
       KeyCode::Char('+') | KeyCode::Char('=') => self.zoom = self.zoom.closer(),
       KeyCode::Char('-') => self.zoom = self.zoom.farther(),
+      KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
+      KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
+      KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(self.page),
+      KeyCode::PageDown => self.scroll = self.scroll.saturating_add(self.page),
+      KeyCode::Home => self.scroll = 0,
+      KeyCode::End => self.scroll = u16::MAX,
       _ => {}
     }
     false
@@ -266,6 +318,7 @@ impl view<'_> {
       None => {
         self.leaf = super::leaf::open(self.conn, &self.folder, index).map(Box::new);
         self.zoom = zoom::default();
+        self.scroll = 0;
       }
     }
   }
@@ -327,37 +380,6 @@ impl view<'_> {
       *self.state.selected_mut() = Some(head_rows(&self.folder) + position);
     }
   }
-}
-
-fn draw_leaf(frame: &mut Frame, column: Rect, leaf: &leaf, zoom: zoom) -> zoom {
-  let dim = Style::default().add_modifier(Modifier::DIM);
-  let block = Block::bordered()
-    .title(format!(" {} ", leaf.breadcrumb()))
-    .title_bottom(format!(" {KEYS_LEAF} "));
-  let fields = leaf.fields();
-  let names = fields.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
-  let [data, rule, drawn] = Layout::vertical([
-    Constraint::Length(fields.len() as u16),
-    Constraint::Length(1),
-    Constraint::Fill(1),
-  ])
-  .areas(block.inner(column));
-  frame.render_widget(block, column);
-  let rows = fields.into_iter().map(|(name, value)| {
-    Row::new([Cell::from(name).style(dim), Cell::from(value)])
-  });
-  let table = Table::new(rows, [Constraint::Length(names as u16), Constraint::Fill(1)])
-    .column_spacing(2);
-  frame.render_widget(table, data.inner(Margin::new(1, 0)));
-  let zoom = map::settled(&leaf.drawing, drawn, zoom);
-  let width = map::ground_width(&leaf.drawing, drawn, zoom);
-  let ruled = Block::new()
-    .borders(Borders::TOP)
-    .border_style(dim)
-    .title(Line::from(format!(" ↔ {width} ")).right_aligned());
-  frame.render_widget(ruled, rule);
-  map::render(&leaf.drawing, zoom, drawn, frame.buffer_mut());
-  zoom
 }
 
 fn item_row(item: &item) -> Row<'static> {

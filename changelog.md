@@ -24,6 +24,7 @@
 1. MODIFIED the `index-user-friendly-name` stage to `index-addresses` (not backward compatible), so the stage is named after what it indexes.
 1. ADDED the `optimize-delete-isolated-admin-levels` stage, which deletes a country without children and a street without parents, so the indexes are built only over areas an address can name.
 1. ADDED the leaf to `geolite tui`, the deepest level opening the address of its path above a map of it inside the areas that hold it, zoomed with `+` and `-` out to the whole hierarchy, so an address is read and seen from the terminal.
+1. MODIFIED the leaf of `geolite tui` to list the admin levels of its path one per line, from level 1 to level 12 and `n/a` where the path has none, with every osm id a link to openstreetmap.org and a long field wrapped and scrolled instead of cut, so every osm element behind an address is shown and one click away.
 
 ## **2026-09-26** - - 0.0.14
 

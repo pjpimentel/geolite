@@ -4,10 +4,12 @@ use crate::general::world;
 
 const COUNTRY: u64 = 1;
 const CITY: u64 = 3;
+const NEIGHBORHOOD: u64 = 5;
 const STREET: u64 = 10;
 
 // 00.00. the level opened is the deepest the base holds: in a base without streets the city is
-// listed counting nothing and opens its address, drawn inside the country
+// listed counting nothing and opens its address, drawn inside the country, with a line for every
+// level of the scale up to the street
 #[test]
 #[ignore]
 fn _00_00_the_deepest_level_of_a_base_without_streets_is_the_one_opened() {
@@ -36,14 +38,25 @@ fn _00_00_the_deepest_level_of_a_base_without_streets_is_the_one_opened() {
 
   let leaf = opened(w, &dir, "Country/City");
   assert_eq!(
-    leaf.names(),
-    ["name", "label", "point", "osm relation", "id", "levels"]
+    leaf.own_names(),
+    ["name", "label", "point", "osm relation", "id"]
   );
   assert_eq!(leaf.field("name"), Some("City"));
   assert_eq!(leaf.field("label"), Some("City, Country"));
   assert_eq!(leaf.field("point"), Some("1.50000, 1.50000"));
   assert_eq!(leaf.field("osm relation"), Some("3"));
-  assert_eq!(leaf.field("levels"), Some("Country"));
+  assert_eq!(
+    leaf.levels_held(),
+    [
+      ("2 (country)", "Country (relation 1)"),
+      ("8 (city)", "City (relation 3)")
+    ]
+  );
+  assert_eq!(
+    leaf.levels_absent().join(", "),
+    "1 (continent), 3 (region), 4 (state), 5 (district), 6 (county), 7 (municipality), \
+     9 (locality), 10 (neighborhood), 12 (street)"
+  );
   assert_the_map_fits(&leaf);
   assert!(leaf.outline_glyphs() > 0, "the country is drawn");
 }
@@ -68,7 +81,14 @@ fn _00_01_the_map_draws_the_street_inside_the_area_it_was_opened_from() {
   let leaf = opened(w, &dir, "Country/City/Street");
 
   assert_eq!(leaf.field("osm way"), Some("10"));
-  assert_eq!(leaf.field("levels"), Some("Country / City"));
+  assert_eq!(
+    leaf.levels_held(),
+    [
+      ("2 (country)", "Country (relation 1)"),
+      ("8 (city)", "City (relation 3)"),
+      ("12 (street)", "Street (way 10)")
+    ]
+  );
   assert_the_map_fits(&leaf);
   let ((top, bottom), (left, right)) = leaf.shape_box().expect("the street is drawn");
   assert_eq!(top, bottom, "a street along a parallel is drawn on one row");
@@ -95,7 +115,7 @@ fn _00_01_the_map_draws_the_street_inside_the_area_it_was_opened_from() {
 }
 
 // 00.02. a place opened from the roots has no area around it: the map is framed on the place
-// itself and the address names no level above it
+// itself and the address holds no area at any level but its own
 #[test]
 #[ignore]
 fn _00_02_a_place_with_no_area_above_it_is_framed_on_itself() {
@@ -108,8 +128,13 @@ fn _00_02_a_place_with_no_area_above_it_is_framed_on_itself() {
 
   let leaf = opened(w, &dir, "Street");
 
-  assert_eq!(leaf.names(), ["name", "label", "point", "osm way", "id"]);
+  assert_eq!(
+    leaf.own_names(),
+    ["name", "label", "point", "osm way", "id"]
+  );
   assert_eq!(leaf.field("label"), Some("Street"));
+  assert_eq!(leaf.levels_held(), [("12 (street)", "Street (way 10)")]);
+  assert_eq!(leaf.levels_absent().len(), 10);
   assert_the_map_fits(&leaf);
   assert_eq!(leaf.outline_glyphs(), 0, "nothing is around it");
   let (_, (left, right)) = leaf.shape_box().expect("the street is drawn");
@@ -117,4 +142,31 @@ fn _00_02_a_place_with_no_area_above_it_is_framed_on_itself() {
     right - left + 1 > MAP_COLUMNS * 8 / 10,
     "the street takes the width of the map, less the margins: {left}..{right}"
   );
+}
+
+// 00.03. the levels of the path are one per line, from the smallest of the scale to the street:
+// a street outside every neighbourhood keeps the line of the level its path lacks
+#[test]
+#[ignore]
+fn _00_03_a_level_the_path_lacks_keeps_its_line() {
+  let w = world();
+  let dir = resolved_at(
+    w,
+    "tui_street_outside_the_neighbourhood",
+    &[
+      area(COUNTRY, 2, "Country", [-10.0, -10.0], [20.0, 10.0]),
+      area(CITY, 8, "City", [-2.0, -2.0], [5.0, 5.0]),
+      area(NEIGHBORHOOD, 10, "Neighborhood", [2.0, 2.0], [4.0, 4.0]),
+      street(STREET, "Street", &[[-1.0, 0.0], [1.0, 0.0]]),
+    ],
+  );
+
+  let leaf = opened(w, &dir, "Country/City/no neighborhood/Street");
+
+  assert_eq!(
+    leaf.field("admin level 8 (city)"),
+    Some("City (relation 3)")
+  );
+  assert_eq!(leaf.field("admin level 10 (neighborhood)"), Some("n/a"));
+  assert_eq!(leaf.levels_held().len(), 3);
 }

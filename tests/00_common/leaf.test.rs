@@ -4,6 +4,8 @@ use super::harness::{output, world};
 
 pub const MAP_COLUMNS: usize = 98;
 pub const MAP_ROWS: usize = 24;
+const LEVEL: &str = "admin level ";
+const ABSENT: &str = "n/a";
 
 // what `geolite tui <path>` prints for the deepest level when stdout is not a terminal: one field
 // per line, a blank line, and the map
@@ -23,6 +25,40 @@ impl leaf {
 
   pub fn names(&self) -> Vec<&str> {
     self.fields.iter().map(|(name, _)| name.as_str()).collect()
+  }
+
+  // the fields of the place itself come first, and the lines of its levels after them
+  pub fn own_names(&self) -> Vec<&str> {
+    let names = self.names();
+    let own = names
+      .iter()
+      .take_while(|name| !name.starts_with(LEVEL))
+      .count();
+    assert!(
+      names[own..].iter().all(|name| name.starts_with(LEVEL)),
+      "a field of the place comes after a level: {names:#?}"
+    );
+    names[..own].to_vec()
+  }
+
+  // the lines of the levels, each as the level with what it stands for, `2 (country)`, and its area
+  fn levels(&self) -> impl Iterator<Item = (&str, &str)> {
+    self
+      .fields
+      .iter()
+      .filter_map(|(name, area)| Some((name.strip_prefix(LEVEL)?, area.as_str())))
+  }
+
+  pub fn levels_held(&self) -> Vec<(&str, &str)> {
+    self.levels().filter(|(_, area)| *area != ABSENT).collect()
+  }
+
+  pub fn levels_absent(&self) -> Vec<&str> {
+    self
+      .levels()
+      .filter(|(_, area)| *area == ABSENT)
+      .map(|(level, _)| level)
+      .collect()
   }
 
   // the rows and the columns the shape opened takes on the map, as (first, last)

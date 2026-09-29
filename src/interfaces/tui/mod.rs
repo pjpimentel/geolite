@@ -1,3 +1,4 @@
+pub mod fields;
 pub mod filter;
 pub mod leaf;
 pub mod listing;

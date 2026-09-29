@@ -635,16 +635,14 @@ fn _03_06_the_tui_prints_the_address_and_the_map_of_a_street_when_stdout_is_not_
   let answered = first(&w.run(&[CASTRO_ALVES_QUERY])).clone();
 
   assert_eq!(
-    leaf.names(),
-    [
-      "name", "label", "country", "point", "osm ways", "id", "levels"
-    ],
+    leaf.own_names(),
+    ["name", "label", "country code", "point", "osm ways", "id"],
     "{REGENERATE}"
   );
   assert_eq!(leaf.field("name"), Some("Rua Castro Alves"));
   assert_eq!(leaf.field("label"), answered["friendly_name"].as_str());
   assert_eq!(leaf.field("id"), answered["id"].as_str());
-  assert_eq!(leaf.field("country"), Some("BR"));
+  assert_eq!(leaf.field("country code"), Some("BR"));
   assert_eq!(
     leaf.field("point"),
     Some(format!("{:.5}, {:.5}", answered["latitude"], answered["longitude"]).as_str())
@@ -655,8 +653,22 @@ fn _03_06_the_tui_prints_the_address_and_the_map_of_a_street_when_stdout_is_not_
     "{REGENERATE}"
   );
   assert_eq!(
-    leaf.field("levels"),
-    Some("Brasil / São Paulo / Santos / Embaré")
+    leaf.levels_held(),
+    [
+      ("2 (country)", "Brasil (relation 59470)"),
+      ("4 (state)", "São Paulo (relation 298204)"),
+      ("8 (city)", "Santos (relation 298442)"),
+      ("10 (neighborhood)", "Embaré (relation 4282882)"),
+      (
+        "12 (street)",
+        "Rua Castro Alves (ways 255710390, 729205713)"
+      ),
+    ],
+    "{REGENERATE}"
+  );
+  assert_eq!(
+    leaf.levels_absent().join(", "),
+    "1 (continent), 3 (region), 5 (district), 6 (county), 7 (municipality), 9 (locality)"
   );
 
   assert_the_map_fits(&leaf);

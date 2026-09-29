@@ -46,9 +46,13 @@ pub fn print(folder: &folder) {
 
 pub fn print_leaf(leaf: &leaf) {
   let fields = leaf.fields();
-  let name_w = fields.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
-  for (name, value) in fields {
-    println!("{name:<name_w$}  {value}");
+  let name_w = fields
+    .iter()
+    .map(|field| field.name.len())
+    .max()
+    .unwrap_or(0);
+  for field in fields {
+    println!("{:<name_w$}  {}", field.name, field.shown());
   }
   println!();
   for line in map::text(&leaf.drawing) {
