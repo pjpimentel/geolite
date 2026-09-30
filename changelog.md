@@ -26,6 +26,7 @@
 1. ADDED the leaf to `geolite tui`, the deepest level opening the address of its path above a map of it inside the areas that hold it, zoomed with `+` and `-` out to the whole hierarchy, so an address is read and seen from the terminal.
 1. MODIFIED the leaf of `geolite tui` to list the admin levels of its path one per line, from level 1 to level 12 and `n/a` where the path has none, with every osm id a link to openstreetmap.org and a long field wrapped and scrolled instead of cut, so every osm element behind an address is shown and one click away.
 1. MODIFIED the text search to try the query without demanding the words that read as a house number before falling back to the fuzzy one, so a street covering every word but the number ranks first.
+1. MODIFIED the map of the web ui to the openstreetmap tiles, the dark theme inverting them, so the map renders without an api key.
 
 ## **2026-09-26** - - 0.0.14
 
