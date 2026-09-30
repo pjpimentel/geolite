@@ -172,7 +172,7 @@ pub fn outline_of(geometry: &Geometry<f64>) -> Vec<&LineString<f64>> {
 
 const METERS_PER_DEGREE: f64 = 111_320.0;
 
-fn projected(coord: &Coord<f64>) -> Point<f64> {
+pub(crate) fn projected(coord: &Coord<f64>) -> Point<f64> {
   Point::new(
     coord.x * coord.y.to_radians().cos() * METERS_PER_DEGREE,
     coord.y * METERS_PER_DEGREE,

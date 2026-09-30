@@ -143,10 +143,17 @@ three field variants — folded (lower case, no diacritics), strict (as written)
 (diacritics kept). a preset's abbreviations are expanded in both directions into the folded text,
 so `rua` finds `r.` and back.
 
-`search` runs two queries with a fallback: the strict one demands every token exactly, in the name
-or in the ancestry, and wins when it finds anything — phrase order and the strict and lower forms
-only re-rank that set, never widen it; the loose one runs only when the strict one is empty, with
-exact and fuzzy terms as optional clauses, which covers a typo, an extra word or partial coverage.
+`search` runs three queries, each one only when the one before is empty. the strict one demands
+every token exactly, in the name or in the ancestry, and wins when it finds anything — phrase order
+and the strict and lower forms only re-rank that set, never widen it. the second one is the strict
+one without demanding the words the caller names as optional, which the text service fills with
+the words that read as a house number: `11` in `euclides da cunha 11 gonzaga santos` is a word no
+document holds, so the documents covering every other word come back, and one that does hold the
+number (`25` in `rua 25 de marco 100`) ranks above the ones that do not; the phrase is then the
+one the demanded tokens make. it is skipped when no word is optional or none is left to demand.
+the loose one takes exact and fuzzy terms as optional clauses, which covers a typo, an extra word
+or partial coverage; it ranks by bm25 alone, so a document repeating half of the query outranks
+one covering most of it — which is why a house number must not be what sends a query there.
 the score is the raw bm25 of whichever query found the document. `last_admin_levels` and the
 region filter are Must clauses with boost 0.0: they restrict the document set without touching the
 score. why exact and fuzzy carry separate

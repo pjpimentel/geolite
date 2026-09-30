@@ -10,6 +10,7 @@ use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::level;
 use crate::admin_level::repository::admin_meta_row;
 use crate::admin_level_hierarchy::paths::paths_of;
+use crate::house_number::house_number_scenario;
 
 #[derive(Serialize, ToSchema)]
 pub enum query_service {
@@ -36,17 +37,10 @@ pub struct query_match_attributes {
   pub post_code: Option<String>,
 }
 
-#[derive(Serialize, ToSchema)]
-pub enum house_number_match {
-  exact,
-  interpolated,
-  absent,
-}
-
-#[derive(Serialize, ToSchema)]
+#[derive(Clone, Serialize, ToSchema)]
 pub struct query_house_number {
   pub number: String,
-  pub kind: house_number_match,
+  pub kind: house_number_scenario,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -259,17 +253,18 @@ impl match_sources {
     ancestors: &[&admin_meta_row],
     path: &[i64],
     point: Point<f64>,
-    house_number: Option<&str>,
+    house_number: Option<&query_house_number>,
     format: Option<&str>,
   ) -> query_match {
-    let admin_levels = self.level_ladder(ancestors, leaf, house_number);
+    let number = house_number.map(|house_number| house_number.number.as_str());
+    let admin_levels = self.level_ladder(ancestors, leaf, number);
     let friendly_name = friendly_name_of(
       format,
       &admin_levels,
       self,
       leaf.id,
       leaf.name,
-      house_number,
+      number,
       path,
     );
     query_match {
@@ -284,7 +279,7 @@ impl match_sources {
         country_iso_3166_1_alpha_2_code: country_iso_of(ancestors, self.meta.get(&leaf.id)),
         post_code: self.post_code_of(leaf.id, path),
       },
-      house_number: None,
+      house_number: house_number.cloned(),
       id: path_id(leaf.id, path),
     }
   }

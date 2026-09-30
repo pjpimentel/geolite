@@ -35,8 +35,10 @@ house_number/   a door number placed on a street — the `house_numbers` table
   value             the number itself: `normalize` (extraction), `recognize` (query), one comparison key
   policy            per-region rules: tags, non-values, digit cap, written forms, `#` prefix
   strategy          how the number was attached to its street: by_proximity | by_name, and the stored codes
+  scenario          where a number came from: the osm data, or presumed from the street's references, from one, or from the constants — the four values of `house_number.kind`
+  axis              the street as one line: the distance along it of a point, and the point at a distance
   token             finding the number inside a free-text query, skipping the street's own name
-  resolution        placing a wanted number on a street: exact | interpolated | absent; and the nearest stored number to a point, within 50 m
+  resolution        placing a typed number on a street and reading the number at a point, by the scenario the street's references allow
   repository        the ddl, the index, the candidate scan, the street reads, the numbers of a street, the count, the insert and the move of a way's numbers
   extract           `house_number_link::extract(policy)`: candidates, tiles of 2°, the fan-out and the batches it reports
   linker            the pass over one tile: by name first, then the nearest street within 0.15°, projected onto it
@@ -46,7 +48,7 @@ address/        an address resolved from a text or from a coordinate — not a t
   label             the friendly-name template: parse, validate, render; and `place_label`, the one label without a template
   filter            the shared last pass: quality, region, last levels, the cut at ten
   text              `address::query_by_text`: the search, the matches, the house number, the sort, and the point of a street that answers without one
-  coordinates       `address::query_by_coordinates`: the nearest streets, the matches under the areas that hold each street's nearest point, the nearest number
+  coordinates       `address::query_by_coordinates`: the nearest streets, the matches under the areas that hold each street's nearest point, the number at the point
   path              `address::at_path`: the match of an area under a path already known, without a search
   house_number      the number of each street, resolved before its match is built; the rule itself is `house_number`
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table

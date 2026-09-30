@@ -13,8 +13,7 @@ use crate::admin_level_hierarchy::tantivy_index;
 use crate::house_number::house_number_policy;
 
 pub use entity::{
-  admin_level, house_number_match, query_house_number, query_match, query_match_attributes,
-  query_output, query_service,
+  admin_level, query_house_number, query_match, query_match_attributes, query_output, query_service,
 };
 pub use filter::parse_min_quality;
 pub use input::query_input;
@@ -60,6 +59,6 @@ impl<'a> address<'a> {
   }
 
   pub fn query_by_coordinates(&self, latitude: f64, longitude: f64, opts: &query_opts) -> query_output {
-    coordinates::run(self.conn, latitude, longitude, opts)
+    coordinates::run(self.conn, self.house_numbers, latitude, longitude, opts)
   }
 }

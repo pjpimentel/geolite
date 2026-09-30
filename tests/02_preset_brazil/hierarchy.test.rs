@@ -24,7 +24,8 @@ const PLACE_WAYS: usize = 22;
 const CASTRO_ALVES_PATH: &str = "Brasil/São Paulo/Santos/Embaré/Rua Castro Alves";
 const CASTRO_ALVES_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
 
-const REGENERATE: &str = "the fixture changed; regenerate deliberately and update the constants";
+pub(crate) const REGENERATE: &str =
+  "the fixture changed; regenerate deliberately and update the constants";
 
 // the packed ids of `admin_level::id`: a way is its osm id shifted left, a relation has the low bit
 fn way(osm_id: u64) -> i64 {
@@ -102,7 +103,7 @@ fn friendly_name(query: &str) -> String {
     .to_string()
 }
 
-fn geometry_of(conn: &Connection, id: i64) -> Geometry<f64> {
+pub(crate) fn geometry_of(conn: &Connection, id: i64) -> Geometry<f64> {
   let wkb: Vec<u8> = conn
     .query_row("SELECT wkb FROM admin_levels WHERE id = ?1", [id], |r| {
       r.get(0)

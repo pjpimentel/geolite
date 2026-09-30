@@ -35,6 +35,7 @@ pub const DEFAULT: preset = preset {
     max_digits: 5,
     shapes: crate::house_number::policy::SIMPLE_SHAPES,
     allow_hash_prefix: false,
+    meters_per_number: 3.0,
   },
   index_addresses: index_addresses_preset {
     abbreviations: &[],
@@ -62,6 +63,7 @@ pub const BRAZIL: preset = preset {
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    meters_per_number: 1.0,
     ..DEFAULT.house_numbers
   },
   index_addresses: index_addresses_preset {

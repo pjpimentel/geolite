@@ -1,10 +1,13 @@
 use crate::common::ask::ask;
 use crate::common::harness::{encode, get, scenario, world, world_cell};
 use crate::common::query::{
-  distances, first, leaves, level_at, levels_of, matches, name_at, names_at, point_of, street_way,
-  way_ids, wkt_at,
+  distances, first, kind_of, leaves, level_at, levels_of, matches, name_at, names_at, number_of,
+  point_of, street_way, way_ids, wkt_at,
 };
-use geo::{EuclideanDistance, Geometry, Point};
+use crate::house_number::{
+  CONSTANTS, FROM_OSM_DATA, MULTIPLE_REFERENCES, PLACEMENT_TOLERANCE_IN_METERS,
+};
+use geo::{EuclideanDistance, Geometry, HaversineDistance, Point};
 use geozero::{ToGeo, wkb::SpatiaLiteWkb, wkt::Wkt};
 use serde_json::{Value, json};
 
@@ -29,18 +32,22 @@ const INSIDE_POLYGON: &str =
 const OUTSIDE_POLYGON: &str =
   "POLYGON((-45.0 -25.5,-44.9 -25.5,-44.9 -25.4,-45.0 -25.4,-45.0 -25.5))";
 
-// the point of house number 197 on a single-segment street carrying the numbers 70, 197, 232, 235
+// the point of house number 197 on a single-segment street carrying the numbers 70, 197, 232, 235;
+// the street ends 20 m past 235, where a number beyond every stored one lands
 const NUMBERED_POINT: &str = "-23.98202,-46.31005";
 const NUMBERED_STREET_NAME: &str = "Rua Januário dos Santos";
+const NUMBERED_STREET_END: (f64, f64) = (-23.98243, -46.31049);
 const APARECIDA_POLYGON: &str = "POLYGON((-46.3110 -23.9830,-46.3090 -23.9830,-46.3090 -23.9810,-46.3110 -23.9810,-46.3110 -23.9830))";
 // ~700 m east of the numbered point: it holds one street, and that street is not among the ten
 // nearest to the point
 const FAR_POLYGON: &str = "POLYGON((-46.3040 -23.9830,-46.3020 -23.9830,-46.3020 -23.9810,-46.3040 -23.9810,-46.3040 -23.9830))";
 const POST_CODED_STREET: &str = "Ateneu São Vicente";
 const POST_CODED_POINT: &str = "-23.96675,-46.37675";
-// rua deputado emilio justo carries its own post code and the numbers 23 and 259; the point is 23's
+// rua deputado emilio justo carries its own post code and the numbers 23 and 259; the point is
+// 23's, and the street ends 6 m past 259, where a number beyond every stored one lands
 const POST_CODED_NUMBERED_QUERY: &str = "rua deputado emilio justo 23, 11725-440";
 const POST_CODED_NUMBERED_POINT: &str = "-23.99429,-46.41588";
+const POST_CODED_NUMBERED_STREET_END: (f64, f64) = (-23.99215, -46.41644);
 // avenida washington luiz carries 565; the far point is on the avenue, beyond 50 m of every number
 const NUMBERED_AVENUE_QUERY: &str = "avenida washington luiz 565, boqueirao";
 const AVENUE_NUMBER_POINT: &str = "-23.96974,-46.32906";
@@ -62,6 +69,9 @@ const CROSSING_STREET_IN_EMBARE: &str = "-23.966895,-46.319555";
 const FOLDED_NUMBERED_QUERY: &str = "rua castro alves, 35, embare";
 const FIVE_WAYS_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
 const SUFFIXED_QUERY: &str = "rua inglaterra";
+// three streets are named rua santos; only the one of guarujá carries 87
+const NUMBERED_HOMONYM_QUERY: &str = "rua santos 87";
+const NUMBERED_HOMONYM_WAY: u64 = 51_832_890;
 
 const SQL_SELECT_BOUNDARY: &str = "
   SELECT admin_level, name, wkb
@@ -117,10 +127,20 @@ fn assert_boundary(relation_id: u64, level: u8, name: &str) {
   );
 }
 
+fn assert_at_the_end_of_the_street(m: &Value, (latitude, longitude): (f64, f64)) {
+  let (answered_latitude, answered_longitude) = point_of(m);
+  let off = Point::new(answered_longitude, answered_latitude)
+    .haversine_distance(&Point::new(longitude, latitude));
+  assert!(
+    off <= PLACEMENT_TOLERANCE_IN_METERS,
+    "the point is {off:.1} m from the end of the street"
+  );
+}
+
 // 00.00. result quality
 #[test]
 #[ignore]
-fn _00_00_a_house_number_on_the_street_resolves_as_exact() {
+fn _00_00_a_house_number_on_the_street_resolves_from_osm_data() {
   // rua januario dos santos is a single segment carrying 70, 197, 232 and 235 — no tie to break,
   // so the ranking is stable.
   let w = world();
@@ -129,7 +149,7 @@ fn _00_00_a_house_number_on_the_street_resolves_as_exact() {
     &json!({
       "matches": [{
         "friendly_name": "Rua Januário dos Santos, 197, Aparecida, Santos, São Paulo, Brasil",
-        "house_number": { "number": "197", "kind": "exact" },
+        "house_number": { "number": "197", "kind": FROM_OSM_DATA },
       }],
     }),
   );
@@ -139,35 +159,32 @@ fn _00_00_a_house_number_on_the_street_resolves_as_exact() {
 // 00.01. result quality
 #[test]
 #[ignore]
-fn _00_01_a_house_number_between_two_known_ones_resolves_as_interpolated() {
+fn _00_01_a_house_number_between_two_known_ones_is_presumed_from_the_references_of_the_street() {
   let w = world();
   let result = w.assert_cli(
     &ask("rua januario dos santos, santos 210"),
-    &json!({ "matches": [{ "house_number": { "number": "210", "kind": "interpolated" } }] }),
+    &json!({ "matches": [{ "house_number": { "number": "210", "kind": MULTIPLE_REFERENCES } }] }),
   );
   assert!(levels_of(first(&result)).contains(&30));
 }
 
-// 00.02. result quality
+// 00.02. result quality: a number beyond every stored one is presumed from them and stops at the
+// end of the street its numbering grows to
 #[test]
 #[ignore]
-fn _00_02_an_out_of_range_house_number_resolves_as_absent() {
+fn _00_02_an_out_of_range_house_number_is_presumed_and_clamped_at_the_end_of_the_street() {
   let w = world();
-  let bare = world().run(&["rua januario dos santos, santos"]);
   let numbered = w.assert_cli(
     &ask("rua januario dos santos, santos 99999"),
-    &json!({ "matches": [{ "house_number": { "number": "99999", "kind": "absent" } }] }),
+    &json!({ "matches": [{ "house_number": { "number": "99999", "kind": MULTIPLE_REFERENCES } }] }),
   );
   let top = first(&numbered);
-  assert!(
-    !levels_of(top).contains(&30),
-    "an unresolved number must not become a level"
-  );
   assert_eq!(
-    top["latitude"],
-    first(&bare)["latitude"],
-    "an absent number must leave the street coordinate untouched"
+    levels_of(top).last().copied(),
+    Some(30),
+    "a presumed number is a level too"
   );
+  assert_at_the_end_of_the_street(top, NUMBERED_STREET_END);
 }
 
 // 00.03. result quality
@@ -306,6 +323,7 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
       },
       "coordinates_distance_in_meters": 3,
       "friendly_name": "Rua Castro Alves, 35, Embaré, Santos, São Paulo, Brasil",
+      "house_number": { "number": "35", "kind": FROM_OSM_DATA },
       "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
       "latitude": -23.9709,
       "longitude": -46.3188,
@@ -315,19 +333,23 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
   );
 }
 
-// 00.06. result quality: the number appended on the coordinate path is the nearest stored point
-// within 50 m of the query, measured to the number and not to the street
+// 00.06. result quality: a point reads the stored number within 50 m of it, measured to the
+// number and not to the street, and beyond 50 m a number presumed from the stored ones
 #[test]
 #[ignore]
-fn _00_06_a_house_number_within_50_m_of_the_point_is_appended_on_the_coordinate_path() {
-  for (point, number) in [
-    (NUMBERED_POINT, Some("197")),
+fn _00_06_a_point_reads_the_stored_number_within_fifty_metres_and_a_presumed_one_beyond() {
+  for (point, numbers, kind) in [
+    (NUMBERED_POINT, &["197"][..], FROM_OSM_DATA),
     // 33 m from the street, 47 m from number 197
-    ("-23.98160,-46.31005", Some("197")),
-    // on the street, but 59 m from number 70 and 69 m from number 197
-    ("-23.98158,-46.30958", None),
-    // 1.8 m from 232, 6.7 m from 235, 25 m from 197
-    ("-23.98226,-46.31031", Some("232")),
+    ("-23.98160,-46.31005", &["197"][..], FROM_OSM_DATA),
+    // on the street, 59 m from number 70 and 69 m from number 197: read between the two
+    (
+      "-23.98158,-46.30958",
+      &["128", "129"][..],
+      MULTIPLE_REFERENCES,
+    ),
+    // 1.9 m from 232, 6.5 m from 235, 37 m from 197
+    ("-23.98226,-46.31031", &["232"][..], FROM_OSM_DATA),
   ] {
     let result = world().run(&[point]);
     let top = first(&result);
@@ -336,27 +358,34 @@ fn _00_06_a_house_number_within_50_m_of_the_point_is_appended_on_the_coordinate_
       Some(NUMBERED_STREET_NAME),
       "point {point}"
     );
-    assert_eq!(name_at(top, 30).as_deref(), number, "point {point}");
-    if number.is_none() {
-      assert_eq!(levels_of(top), [2, 4, 8, 10, 12], "point {point}");
-    }
+    let number = number_of(top).unwrap_or_else(|| panic!("point {point} answers no number"));
+    assert!(numbers.contains(&number), "point {point}: {number}");
+    assert_eq!(name_at(top, 30).as_deref(), Some(number), "point {point}");
+    assert_eq!(kind_of(top), Some(kind), "point {point}");
   }
 }
 
-// 00.07. result quality: the alias renders on the coordinate path, and a match without a number
-// loses the literal that followed the placeholder
+// 00.07. result quality: the alias renders on the coordinate path, for a stored number and for a
+// presumed one, and a match without a number loses the literal that followed the placeholder
 #[test]
 #[ignore]
 fn _00_07_the_house_number_alias_renders_on_the_coordinate_path() {
+  const TEMPLATE: &str = "{admin_level_12_name} {house_number}, {admin_level_8_name}";
+
+  let result = world().assert_cli(
+    &ask(NUMBERED_POINT).friendly_name_format(TEMPLATE),
+    &json!({ "matches": [{ "friendly_name": "Rua Januário dos Santos 197, Santos" }] }),
+  );
+  // the avenue is a folded street of twenty lines: its presumed number is read back, not pinned
+  let second = &matches(&result)[1];
+  let number = number_of(second).expect("every street a point answers carries a number");
+  assert_eq!(
+    second["friendly_name"],
+    format!("Avenida Bartholomeu de Gusmão {number}, Santos")
+  );
   world().assert_cli(
-    &ask(NUMBERED_POINT)
-      .friendly_name_format("{admin_level_12_name} {house_number}, {admin_level_8_name}"),
-    &json!({
-      "matches": [
-        { "friendly_name": "Rua Januário dos Santos 197, Santos" },
-        { "friendly_name": "Avenida Bartholomeu de Gusmão Santos" },
-      ]
-    }),
+    &ask("rua bolivar, boqueirao, santos").friendly_name_format(TEMPLATE),
+    &json!({ "matches": [{ "friendly_name": "Rua Bolivar Santos" }] }),
   );
 }
 
@@ -395,34 +424,37 @@ fn _00_09_both_services_write_the_numbered_label_along_the_path() {
   }
 }
 
-// 00.10. result quality: a number the street does not place is reported, but neither joins the
-// ladder nor the label
+// 00.10. result quality: a number beyond every stored one joins the ladder and the label like a
+// stored one, and lands at the end of the street its numbering grows to
 #[test]
 #[ignore]
-fn _00_10_an_absent_number_keeps_the_bare_label_and_no_house_number_level() {
+fn _00_10_an_out_of_range_number_joins_the_label_and_stops_at_the_end_the_numbering_grows_towards()
+{
   let result = world().assert_cli(
     &ask("rua deputado emilio justo 99999, 11725-440"),
     &json!({
       "matches": [{
-        "friendly_name": "Rua Deputado Emilio Justo, Sítio do Campo, São Paulo, Brasil, 11725-440",
-        "house_number": { "number": "99999", "kind": "absent" },
+        "friendly_name": "Rua Deputado Emilio Justo, 99999, Sítio do Campo, São Paulo, Brasil, 11725-440",
+        "house_number": { "number": "99999", "kind": MULTIPLE_REFERENCES },
       }]
     }),
   );
-  assert_eq!(levels_of(first(&result)), [2, 4, 10, 12]);
+  let top = first(&result);
+  assert_eq!(levels_of(top), [2, 4, 10, 12, 30]);
+  assert_at_the_end_of_the_street(top, POST_CODED_NUMBERED_STREET_END);
 }
 
-// 00.11. result quality: an interpolated number joins the label like an exact one, before the post
+// 00.11. result quality: a presumed number joins the label like a stored one, before the post
 // code
 #[test]
 #[ignore]
-fn _00_11_an_interpolated_number_keeps_the_post_code_at_the_end() {
+fn _00_11_a_presumed_number_keeps_the_post_code_at_the_end() {
   let result = world().assert_cli(
     &ask("rua deputado emilio justo 100, 11725-440"),
     &json!({
       "matches": [{
         "friendly_name": "Rua Deputado Emilio Justo, 100, Sítio do Campo, São Paulo, Brasil, 11725-440",
-        "house_number": { "number": "100", "kind": "interpolated" },
+        "house_number": { "number": "100", "kind": MULTIPLE_REFERENCES },
       }]
     }),
   );
@@ -440,18 +472,21 @@ fn _00_12_the_template_renders_the_house_number_without_the_post_code() {
   );
 }
 
-// 00.13. result quality: a stored number is appended only within 50 m of the point; beyond it the
-// same street answers bare
+// 00.13. result quality: a stored number is read only within 50 m of the point; beyond it the same
+// street answers a number presumed from its stored ones
 #[test]
 #[ignore]
-fn _00_13_a_point_beyond_fifty_metres_answers_the_bare_street() {
+fn _00_13_a_point_beyond_fifty_metres_of_every_stored_number_answers_a_presumed_one() {
   let w = world();
   let near = first(&w.run(&[AVENUE_NUMBER_POINT])).clone();
   assert_eq!(
     name_at(&near, 12).as_deref(),
     Some("Avenida Washington Luiz")
   );
-  assert_eq!(name_at(&near, 30).as_deref(), Some("565"));
+  assert_eq!(
+    near["house_number"],
+    json!({ "number": "565", "kind": FROM_OSM_DATA })
+  );
 
   let at_far_point = w.run(&[AVENUE_FAR_POINT]);
   let far = matches(&at_far_point)
@@ -462,7 +497,10 @@ fn _00_13_a_point_beyond_fifty_metres_answers_the_bare_street() {
     far["coordinates_distance_in_meters"], 0,
     "the point is on the avenue"
   );
-  assert_eq!(levels_of(far), [2, 4, 8, 10, 12], "no number within 50 m");
+  // the avenue carries 361 and 565 on two of its fourteen lines, none within 50 m of the point;
+  // the axis joins the two lines through lines that touch end to end and keep their heading
+  assert_eq!(kind_of(far), Some(MULTIPLE_REFERENCES));
+  assert_eq!(levels_of(far), [2, 4, 8, 10, 12, 30]);
 }
 
 // 00.14. result quality: the text path and the coordinate path read the same stored numbers
@@ -475,7 +513,7 @@ fn _00_14_both_paths_read_the_same_stored_number() {
     &json!({
       "matches": [{
         "friendly_name": "Avenida Washington Luiz, 565, Boqueirão, Santos, São Paulo, Brasil",
-        "house_number": { "number": "565", "kind": "exact" },
+        "house_number": { "number": "565", "kind": FROM_OSM_DATA },
       }]
     }),
   );
@@ -489,14 +527,14 @@ fn _00_14_both_paths_read_the_same_stored_number() {
 // were folded into, and the street answers once
 #[test]
 #[ignore]
-fn _00_15_a_number_on_one_way_of_a_folded_street_resolves_as_exact_on_the_one_match() {
+fn _00_15_a_number_on_one_way_of_a_folded_street_resolves_from_osm_data_on_the_one_match() {
   let w = world();
   let result = w.assert_cli(
     &ask("rua castro alves, 35, embare"),
     &json!({
       "matches": [{
         "friendly_name": "Rua Castro Alves, 35, Embaré, Santos, São Paulo, Brasil",
-        "house_number": { "number": "35", "kind": "exact" },
+        "house_number": { "number": "35", "kind": FROM_OSM_DATA },
       }],
     }),
   );
@@ -542,11 +580,24 @@ fn _00_17_a_suffixed_number_matches_its_stored_form_whatever_the_case_typed() {
     );
     assert_eq!(
       first(&result)["house_number"],
-      json!({ "number": typed, "kind": "exact" }),
+      json!({ "number": typed, "kind": FROM_OSM_DATA }),
       "{typed}: the fixture stores 40A on Rua Inglaterra"
     );
     assert!(levels_of(first(&result)).contains(&30), "{typed}");
   }
+}
+
+// 00.18. result quality: a typed number is a word no document holds, and the street covering every
+// other word still ranks first; the fixture tempts with a rua 11 in saboó and with the ferries
+// named santos - guarujá
+#[test]
+#[ignore]
+fn _00_18_a_street_covering_every_word_but_the_number_ranks_first() {
+  let result = world().run(&["rua guaruja 11 saboo santos"]);
+  assert_eq!(
+    first(&result)["friendly_name"],
+    "Rua Guarujá, 11, Saboó, Santos, São Paulo, Brasil"
+  );
 }
 
 // 01.00. precision guarantee
@@ -805,19 +856,25 @@ fn _03_02_the_friendly_name_never_repeats_an_admin_level_name() {
   }
 }
 
-// 03.03. regression guard: the leaf filter runs at retrieval (12) and again after enrichment (30)
+// 03.03. regression guard: the leaf filter runs at retrieval (12) and again after enrichment, where
+// a number from the osm data makes the leaf 30 and a presumed one leaves it at the street
 #[test]
 #[ignore]
 fn _03_03_a_house_number_leaf_needs_both_the_street_and_the_house_number_level() {
-  let query = "rua januario dos santos, santos 197";
+  let query = NUMBERED_HOMONYM_QUERY;
 
   let street_only = world().run(&[query, "--last-admin-levels", "12"]);
   assert!(!matches(&street_only).is_empty());
   for m in matches(&street_only) {
-    assert_eq!(
-      levels_of(m).last().copied(),
-      Some(12),
+    assert_ne!(
+      kind_of(m),
+      Some(FROM_OSM_DATA),
       "the enriched match is dropped: its leaf is 30, not 12"
+    );
+    assert_ne!(
+      street_way(m),
+      Some(NUMBERED_HOMONYM_WAY),
+      "the street that stores 87 ends at level 30"
     );
   }
 
@@ -827,6 +884,7 @@ fn _03_03_a_house_number_leaf_needs_both_the_street_and_the_house_number_level()
     Some(30),
     "with both levels allowed, the enriched match ranks first"
   );
+  assert_eq!(kind_of(first(&both)), Some(FROM_OSM_DATA));
 
   let leaf_only = world().run(&[query, "--last-admin-levels", "30"]);
   assert!(
@@ -875,9 +933,20 @@ fn _03_05_last_admin_levels_on_coordinates_reads_the_leaf_after_the_house_number
   let numbered = ask_levels("30");
   assert_eq!(leaves(&numbered), [30]);
   assert_eq!(name_at(first(&numbered), 30).as_deref(), Some("197"));
+  assert_eq!(kind_of(first(&numbered)), Some(FROM_OSM_DATA));
 
   let streets = ask_levels("12");
-  assert_eq!(leaves(&streets), vec![12; 10]);
+  assert_eq!(
+    leaves(&streets),
+    vec![30; 10],
+    "every street a point answers carries a number"
+  );
+  assert!(
+    matches(&streets)
+      .iter()
+      .all(|m| kind_of(m) != Some(FROM_OSM_DATA)),
+    "a presumed number leaves the leaf at the street"
+  );
   assert_eq!(
     distances(&streets)[0],
     64,
@@ -890,7 +959,9 @@ fn _03_05_last_admin_levels_on_coordinates_reads_the_leaf_after_the_house_number
     "the numbered street has one segment and it ends at level 30"
   );
 
-  assert_eq!(leaves(&ask_levels("12,30"))[0], 30);
+  let both_levels = ask_levels("12,30");
+  assert_eq!(leaves(&both_levels)[0], 30);
+  assert_eq!(kind_of(first(&both_levels)), Some(FROM_OSM_DATA));
   assert!(
     matches(&ask_levels("10")).is_empty(),
     "the coordinate service only answers streets"
@@ -911,27 +982,43 @@ fn _03_05_last_admin_levels_on_coordinates_reads_the_leaf_after_the_house_number
 #[test]
 #[ignore]
 fn _03_06_both_services_answer_the_street_post_code() {
-  for input in [POST_CODED_STREET, POST_CODED_POINT] {
-    world().assert_cli(&ask(input), &post_coded_street_answer());
-  }
+  let w = world();
+  w.assert_cli(&ask(POST_CODED_STREET), &post_coded_street_answer());
+
+  // the point carries a presumed number in its label; every post code stays where it was
+  let mut expected = post_coded_street_answer();
+  expected["matches"][0]
+    .as_object_mut()
+    .expect("a match is an object")
+    .remove("friendly_name");
+  let result = w.assert_cli(&ask(POST_CODED_POINT), &expected);
+  let top = first(&result);
+  let number = number_of(top).expect("every street a point answers carries a number");
+  assert_eq!(
+    top["friendly_name"],
+    format!("Ateneu São Vicente, {number}, São Paulo, Brasil, 11320-060")
+  );
 }
 
 // 03.07. regression guard: within one level the coordinate path lists the ancestors from the
-// general to the specific and the text path the other way round; the readme documents it
+// general to the specific and the text path the other way round; the readme documents it. the
+// point's ladder ends in a presumed number, the text's, typed without one, does not
 #[test]
 #[ignore]
 fn _03_07_the_two_services_order_same_level_ancestors_differently() {
   let w = world();
-  for (input, level_10_names, rendered) in [
+  for (input, level_10_names, rendered, levels) in [
     (
       NESTED_POINT,
       ["Aparecida", "Conjunto Habitacional Jaú"],
       "Aparecida",
+      &[2, 4, 8, 10, 10, 12, 30][..],
     ),
     (
       NESTED_QUERY,
       ["Conjunto Habitacional Jaú", "Aparecida"],
       "Conjunto Habitacional Jaú",
+      &[2, 4, 8, 10, 10, 12][..],
     ),
   ] {
     let result = w.assert_cli(
@@ -939,7 +1026,7 @@ fn _03_07_the_two_services_order_same_level_ancestors_differently() {
       &json!({ "matches": [{ "id": "9695f186-46eb-539f-a831-ac0489ebd841" }] }),
     );
     let top = first(&result);
-    assert_eq!(levels_of(top), [2, 4, 8, 10, 10, 12], "input {input:?}");
+    assert_eq!(levels_of(top), levels, "input {input:?}");
     assert_eq!(names_at(top, 10), level_10_names, "input {input:?}");
 
     w.assert_cli(
@@ -1011,7 +1098,7 @@ fn _03_11_the_http_api_names_the_ways_of_a_folded_street_and_never_of_a_house_nu
   let result = w.assert_both(
     &s,
     &ask(FOLDED_NUMBERED_QUERY),
-    &json!({ "matches": [{ "house_number": { "number": "35", "kind": "exact" } }] }),
+    &json!({ "matches": [{ "house_number": { "number": "35", "kind": FROM_OSM_DATA } }] }),
   );
   let top = first(&result);
   assert_eq!(
@@ -1370,10 +1457,12 @@ fn _02_08_every_point_along_the_numbered_street_lands_on_the_same_street() {
   }
 }
 
-// 02.09. ambiguity: twelve spellings of the square address, every one landing on the same street
+// 02.09. ambiguity: twelve spellings of the square address, every one landing on the same street,
+// with the number presumed from the preset's metres per number on a street without any
 #[test]
 #[ignore]
-fn _02_09_every_spelling_of_the_square_address_lands_on_the_street_along_it() {
+fn _02_09_every_spelling_of_the_square_address_lands_on_the_street_along_it_with_a_presumed_number()
+{
   let w = world();
   let s = w.start_server();
   for input in [
@@ -1396,15 +1485,15 @@ fn _02_09_every_spelling_of_the_square_address_lands_on_the_street_along_it() {
       &json!({
         "service": "text_to_address",
         "matches": [{
-          "friendly_name": "Rua Visconde de Mauá, Centro, Santos, São Paulo, Brasil",
-          "house_number": { "number": "29", "kind": "absent" },
+          "friendly_name": "Rua Visconde de Mauá, 29, Centro, Santos, São Paulo, Brasil",
+          "house_number": { "number": "29", "kind": CONSTANTS },
         }],
       }),
     );
     assert_eq!(
       levels_of(first(&result)),
-      vec![2, 4, 8, 10, 12],
-      "{input:?} must resolve the full ladder; an absent number never becomes a level"
+      vec![2, 4, 8, 10, 12, 30],
+      "{input:?} must resolve the full ladder, the presumed number included"
     );
   }
 }

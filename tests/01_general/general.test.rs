@@ -2,7 +2,7 @@ use crate::common::ask::ask;
 use crate::common::harness::{
   assert_in_order, encode, get, plain, request, scenario, world, world_cell,
 };
-use crate::common::query::{first, matches};
+use crate::common::query::{first, kind_of, matches, number_of};
 use crate::extract::{REGENERATE, extracted};
 use crate::house_number::HOUSE_NUMBERS;
 use crate::isolated_admin_levels::NOTHING_ISOLATED;
@@ -25,6 +25,12 @@ pub(crate) fn world() -> &'static world {
 const ANY_TEXT: &str = "rua";
 const ANY_POINT: &str = "-23.970949,-46.318730";
 const UNPARSABLE_WKT: &str = "POLYGON((0 0, 1 1";
+const SCENARIOS: [&str; 4] = [
+  "from_osm_data",
+  "presumed_from_multiple_references_from_street",
+  "presumed_from_one_ref_from_street",
+  "presumed_from_constants",
+];
 
 // 00.00. pipeline integrity
 #[test]
@@ -323,12 +329,16 @@ fn _01_01_coordinates_query_reports_the_coordinates_service() {
 // 01.02. contract
 #[test]
 #[ignore]
-fn _01_02_coordinate_matches_omit_house_number_and_relevance_signals() {
+fn _01_02_coordinate_matches_carry_a_house_number_and_omit_the_relevance_signals() {
   let result = world().run(&[ANY_POINT]);
   let top = first(&result);
   assert!(
-    top.get("house_number").is_none(),
-    "the coordinate path never fills house_number; it appends a level 30 instead"
+    number_of(top).is_some(),
+    "every street a point answers carries a number"
+  );
+  assert!(
+    kind_of(top).is_some_and(|kind| SCENARIOS.contains(&kind)),
+    "the number names the scenario it came from: {top:#}"
   );
   assert!(
     top["similarity"].is_null(),
@@ -655,7 +665,7 @@ fn _01_20_the_openapi_spec_documents_exactly_these_routes_and_schemas() {
       "ApiError",
       "admin_level",
       "database_status",
-      "house_number_match",
+      "house_number_scenario",
       "query_house_number",
       "query_match",
       "query_match_attributes",
@@ -793,7 +803,7 @@ fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
   let read = get(colombia.port, &path).json();
   assert_eq!(
     first(&read)["house_number"],
-    json!({ "number": "197", "kind": "exact" }),
+    json!({ "number": "197", "kind": "from_osm_data" }),
   );
 
   let brazil = w.start_server_with_preset("brazil");

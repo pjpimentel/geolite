@@ -4,12 +4,14 @@ use geo::{Centroid, Closest, ClosestPoint, Geometry, Point};
 use rusqlite::Connection;
 
 use super::entity::{leaf, match_sources, query_match, query_output, query_service, round5};
-use super::house_number::{self, resolved_number};
+use super::house_number;
 use super::{filter, query_opts};
 use crate::admin_level::level;
 use crate::admin_level::repository::admin_area_row;
 use crate::admin_level_hierarchy::search_index::{self, search_hit, tantivy_index, tokenize};
-use crate::house_number::house_number_policy;
+use crate::house_number::{
+  house_number_policy, house_number_resolution, house_number_scenario, token,
+};
 
 const MAX_FTS_HITS: u8 = 50;
 
@@ -39,6 +41,7 @@ pub(super) fn run(
   // per candidate afterwards
   let hits = index.search(
     text,
+    &token::house_number_words(text, house_numbers),
     MAX_FTS_HITS as usize,
     opts.last_admin_levels.as_deref(),
     region_ids.as_deref(),
@@ -55,10 +58,9 @@ pub(super) fn run(
   sources.load_leaf_boxes(conn);
   let records = crate::admin_level::repository::load_full_by_ids(conn, &ids);
   let record_map: HashMap<i64, &admin_area_row> = records.iter().map(|r| (r.id, r)).collect();
-  let streets: Vec<(i64, &str)> = records
+  let streets: Vec<&admin_area_row> = records
     .iter()
     .filter(|r| r.admin_level == level::street)
-    .map(|r| (r.id, r.name.as_str()))
     .collect();
   let numbers = house_number::from_query(conn, text, &streets, house_numbers);
 
@@ -127,14 +129,12 @@ fn build_match(
   query_tokens: &[String],
   hit: &search_hit,
   path: &[i64],
-  number: Option<&resolved_number>,
+  resolution: Option<&house_number_resolution>,
   opts: &query_opts,
 ) -> Option<query_match> {
   let geom = record.wkb.as_ref()?.geometry();
   let centroid = resting_point(record, geom, sources, path)?;
-  let placed = number.and_then(resolved_number::placed);
-  let placed_number = placed.map(|(n, _)| n);
-  let point = placed.map_or(centroid, |(_, p)| p);
+  let point = resolution.map_or(centroid, |placed| placed.point);
 
   let ancestors = sources.ancestors_of(path.iter());
   let leaf = leaf {
@@ -152,21 +152,28 @@ fn build_match(
   );
 
   let mut similarity = round5(coverage as f64) as f32;
-  // nudge similarity so a match with the house number resolved outranks the bare street
-  if placed.is_some() {
+  // nudge similarity so a match whose number came from the street's own numbers outranks the
+  // bare street and the ones that presumed it from less
+  if resolution.is_some_and(|placed| {
+    matches!(
+      placed.scenario,
+      house_number_scenario::from_osm_data
+        | house_number_scenario::presumed_from_multiple_references_from_street
+    )
+  }) {
     similarity = round5(similarity as f64 + 0.01) as f32;
   }
+  let reported = resolution.map(house_number::reported);
 
   Some(query_match {
     similarity: Some(similarity),
     score: Some(hit.score),
-    house_number: number.map(resolved_number::reported),
     ..sources.match_at(
       &leaf,
       &ancestors,
       path,
       point,
-      placed_number,
+      reported.as_ref(),
       opts.friendly_name_format,
     )
   })

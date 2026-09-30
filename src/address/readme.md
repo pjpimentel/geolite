@@ -25,21 +25,25 @@ the house-number policy of the preset; `query_opts` carries what the flags carry
 of the five positional arguments the old dispatcher took.
 
 `query_by_text` runs the fts on the whole text — a number can be part of a street name (`25` in
-`rua 25 de marco`), so nothing is stripped before the search. with a region, the ranking is
+`rua 25 de marco`), so nothing is stripped before the search; the words that read as a house
+number (`token::house_number_words`) are handed to the index as optional, so a number no document
+holds does not cost the street covering every other word its place. with a region, the ranking is
 restricted inside tantivy to the ids of the region's envelope instead of being filtered after the
 fts cut, so a match of the region ranked below the global cap of fifty is not lost. each hit becomes
-one match: the level ladder from `match_sources`, the centroid of the geometry as the point, `score`
-as the raw bm25 and `similarity` as the token coverage — the fraction of the query's tokens found
-exactly in the document's text, a house number counting as uncovered, so `rua x 100` scores below
-1.0. the house number of each street is resolved before its matches are built, then comes the sort
-by score with similarity breaking the tie, then the filters.
+one match: the level ladder from `match_sources`, the point of the number when one was typed and
+placed, else the street's resting point, `score` as the raw bm25 and `similarity` as the token
+coverage — the fraction of the query's tokens found exactly in the document's text, a house number
+counting as uncovered, so `rua x 100` scores below 1.0. the house number of each street is placed
+before its matches are built, then comes the sort by score with similarity breaking the tie, then
+the filters.
 
 `query_by_coordinates` asks the rtree for the streets around the point (`RTREE_DELTA_DEG`), keeps
 the lines only, projects the point onto each one (`ClosestPoint`, haversine) and sorts by level and
 distance. there is no distance cap on streets: `min_quality` runs on the candidates and, when no
 `last_admin_levels` was asked, the cut at ten happens before the loads. the match carries the
-closest point and the distance in metres, and the nearest house number within 50 m is appended as
-level 30.
+closest point and the distance in metres, and every street answers a number: the stored one
+within 50 m of the point, else the one read at the closest point from the street's own numbers or
+from the preset's metres per number, appended as level 30 and named by `house_number.kind`.
 
 ## the address of a path — `path`
 
@@ -59,18 +63,24 @@ and the similarity of a text, the distance of a coordinate.
 the adapter between a street and `house_number`, run once per street before any match is built, so
 a match is composed once and nothing is re-rendered afterwards. on the text path `from_query` has
 `token::first_house_number` pick the number left after the street's own name tokens are removed and
-`resolution::resolve` place it; on `exact` and `interpolated` the match is built on the number's
-point, with level 30 on the ladder and in the label, and `similarity` gains +0.01: a street split
-into several osm segments shares one score, and the nudge is what lifts the segment that placed the
-number above the bare ones. on the coordinate path `nearest_to` asks `resolution::nearest` for the
-stored number closest to the point, within 50 m. the numbers of both paths come from
-`house_number::repository::numbers_by_street`.
+`resolution::place` put it on the street's geometry; the match is built on the number's point,
+with level 30 on the ladder and in the label, and `similarity` gains +0.01 when the number came
+from the street's own numbers (`from_osm_data` or presumed from two or more references): a street
+split into several osm segments shares one score, and the nudge is what lifts the segment that
+holds the number above the ones that presumed it from less. a text without a number, a compound
+number the street does not store and a hit that is not a street answer bare. on the coordinate
+path `at_point` asks `resolution::number_at` for the number at each candidate's closest point,
+the candidate carrying its geometry from `spatial_index::nearest` so nothing is read twice. the
+numbers of both paths come from `house_number::repository::numbers_by_street`, and `reported`
+turns a resolution into the `house_number` of the response, which `match_at` sets together with
+the level-30 rung: a rung without the object, or the object without the rung, cannot happen.
 
 ## the response — `entity`
 
 the seven types of the json (`query_output`, `query_service`, `query_match`, `admin_level`,
-`query_match_attributes`, `query_house_number`, `house_number_match`) are the openapi schema and
-keep their names; coordinates are rounded to five decimals (`round5`). the ladder of a match is
+`query_match_attributes`, `query_house_number`, and `house_number_scenario`, which `house_number`
+owns) are the openapi schema and keep their names; coordinates are rounded to five decimals
+(`round5`). the ladder of a match is
 built once, in `match_sources`: the paths of the ids climbed from the edges, the metadata of the
 ids and their ancestors, and the wkt only when `include_wkt` asks for it (the polygons of countries
 and states are megabytes). every level of the ladder carries its own `post_code`, `null` when the
@@ -91,7 +101,7 @@ the shared code:
 | | text | coordinates |
 |---|---|---|
 | ancestors of one level | the chain's order | the chain reversed, so general → specific |
-| the point | the centroid | the closest point on the street |
+| the point | the number's point, else the resting point of the street | the closest point on the street |
 
 both are the behaviour the tests pin. `attributes.post_code` is one rule on both: the first post
 code met walking the path outward from the area itself, the order the label follows.
@@ -120,12 +130,13 @@ exact containment and its envelope for the rtree. the last pass of both services
 similarity, or `1 - distance / 100 m` for a coordinate), the exact containment in the polygon (the
 rtree tested the envelope only), the leaf level against `last_admin_levels` — and cuts at
 `MAX_RESULTS` (ten) only after every filter, so no filter discards a match that would have made the
-cut.
+cut. the leaf a presumed number sits on is the street: `12` keeps the bare streets and the ones
+whose number was presumed, `30` keeps only the numbers that came from the osm data.
 
 ## what belongs elsewhere
 
 no rule of another concept sits here any more: the similarity is
-`admin_level_hierarchy::search_index::coverage`, the numbers of a street and the 50 m rule are
-`house_number`'s, the rtree read behind the coordinate service is `admin_level::spatial_index::nearest`
+`admin_level_hierarchy::search_index::coverage`, the numbers of a street, the 50 m rule and the
+presumption along the street are `house_number`'s, the rtree read behind the coordinate service is `admin_level::spatial_index::nearest`
 and the wkt of a match comes from `admin_level::repository::wkt_by_ids`, the ways of a folded street
 from `merged_way_ids_by_ids` beside it.

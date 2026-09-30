@@ -7,6 +7,7 @@ use super::{house_number, query_opts};
 use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::repository as admin_level_repository;
 use crate::admin_level::spatial_index;
+use crate::house_number::house_number_policy;
 
 const WORLD_BOUNDING_BOX: bounding_box = bounding_box {
   min_lat: -90.0,
@@ -46,7 +47,13 @@ fn paths_at<'a>(
   }
 }
 
-pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query_opts) -> query_output {
+pub(super) fn run(
+  conn: &Connection,
+  house_numbers: &house_number_policy,
+  latitude: f64,
+  longitude: f64,
+  opts: &query_opts,
+) -> query_output {
   let input_pt = Point::new(longitude, latitude);
 
   let envelope = opts.bounding.as_ref().map(|b| b.envelope).unwrap_or(WORLD_BOUNDING_BOX);
@@ -68,13 +75,13 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
   let mut sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);
   sources.load_leaf_boxes(conn);
-  let numbers = house_number::nearest_to(conn, input_pt, &candidate_ids);
+  let numbers = house_number::at_point(conn, input_pt, &candidates, house_numbers);
 
   let mut matches: Vec<query_match> = Vec::new();
   for c in &candidates {
     let own_meta = sources.meta.get(&c.id);
     let own_name = own_meta.map(|m| m.name.as_str()).unwrap_or_default();
-    let number = numbers.get(&c.id).map(|n| n.stored_form());
+    let reported = numbers.get(&c.id).map(house_number::reported);
     // a street inside two neighbourhoods is two answers, in the order the paths are enumerated
     for path in paths_at(conn, &sources, c.id, &c.closest_point) {
       // the path comes most-specific first; reversed before the stable sort so that, within one
@@ -94,7 +101,7 @@ pub(super) fn run(conn: &Connection, latitude: f64, longitude: f64, opts: &query
           &ancestors,
           path,
           c.closest_point,
-          number,
+          reported.as_ref(),
           opts.friendly_name_format,
         )
       });
