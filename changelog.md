@@ -15,18 +15,17 @@
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
 1. ADDED a query cache to `http-server` and `query`, bounded by a cli option, so a repeated question answers at once.
 
-## **planned** - 0.0.15
+## **2026-10-01** - 0.0.15
 
-1. MODIFIED both services to answer a house number on every street, read from the osm data or presumed along the street from its references, from one reference or from the metres per number of the preset, and named by `house_number.kind` (not backward compatible), so an address always carries a number placed on its most probable point.
+1. MODIFIED both services to answer a house number on every street, stored in the osm data or presumed along the street, its origin named by `house_number.kind` (not backward compatible), so a number always lands on its most probable point.
 1. ADDED a data exporter, as a sql dump of the domain tables and as `.osm.pbf`, so the data travels to another database and sub-extracts need no osmium.
 1. ADDED a study of removing each direct dependency, measured in own code, transitive crates and binary size, so which ones stay is decided by numbers.
 1. MODIFIED the e2e battery to build under an `e2e` profile that unwinds, so the quality check compiles the dependencies once.
 1. MODIFIED the `index-user-friendly-name` stage to `index-addresses` (not backward compatible), so the stage is named after what it indexes.
-1. ADDED the `optimize-delete-isolated-admin-levels` stage, which deletes a country without children and a street without parents, so the indexes are built only over areas an address can name.
-1. ADDED the leaf to `geolite tui`, the deepest level opening the address of its path above a map of it inside the areas that hold it, zoomed with `+` and `-` out to the whole hierarchy, so an address is read and seen from the terminal.
-1. MODIFIED the leaf of `geolite tui` to list the admin levels of its path one per line, from level 1 to level 12 and `n/a` where the path has none, with every osm id a link to openstreetmap.org and a long field wrapped and scrolled instead of cut, so every osm element behind an address is shown and one click away.
-1. MODIFIED the text search to try the query without demanding the words that read as a house number before falling back to the fuzzy one, so a street covering every word but the number ranks first.
-1. MODIFIED the map of the web ui to the openstreetmap tiles, the dark theme inverting them, so the map renders without an api key.
+1. ADDED the `optimize-delete-isolated-admin-levels` stage, deleting a country without children and a street without parents, so the indexes hold only areas an address can name.
+1. ADDED the leaf to `geolite tui`, the deepest level opening its address, its admin levels one per line with every osm id a link, and a zoomable map, so an address is read and seen from the terminal.
+1. MODIFIED the text search to try the query without demanding its house number before the fuzzy fallback, so a street covering every word but the number ranks first.
+1. MODIFIED the map of the web ui to the openstreetmap tiles, so it renders without an api key.
 
 ## **2026-09-26** - - 0.0.14
 
