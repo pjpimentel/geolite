@@ -56,6 +56,12 @@ const NAMED_BY_NUMBER_QUERY: &str = "rua 15 de novembro, santos";
 const NAMED_AND_NUMBERED_STREET: &str = "Rua 7 de Setembro";
 const NAMED_AND_NUMBERED_QUERY: &str = "rua 7 de setembro, santos 100";
 const NAMED_AND_NUMBERED_WAY: u64 = 48_459_786;
+// rua bento de abreu runs through boqueirão and embaré, and carries one number
+const CROSSING_STREET: &str = "Rua Bento de Abreu";
+const CROSSING_STREET_QUERY: &str = "rua bento de abreu";
+// rua inglaterra carries 38, 40 and 40A
+const SUFFIXED_STREET: &str = "Rua Inglaterra";
+const SUFFIXED_STREET_QUERY: &str = "rua inglaterra";
 
 // the response rounds a point to five decimals, which moves it by up to a metre
 pub(crate) const PLACEMENT_TOLERANCE_IN_METERS: f64 = 2.0;
@@ -536,6 +542,25 @@ fn _00_07_the_metres_per_number_come_from_the_preset() {
   );
 }
 
+// 00.08. result quality: a presumed number is one answer on both surfaces, from several
+// references and from one
+#[test]
+#[ignore]
+fn _00_08_both_surfaces_answer_the_same_presumed_number() {
+  let w = world();
+  let s = w.start_server();
+  for (query, number, kind) in [
+    (NUMBERED_STREET_QUERY, "210", MULTIPLE_REFERENCES),
+    (ONE_REFERENCE_STREET_QUERY, "400", ONE_REFERENCE),
+  ] {
+    w.assert_both(
+      &s,
+      &ask(&format!("{query} {number}")),
+      &json!({ "matches": [{ "house_number": { "number": number, "kind": kind } }] }),
+    );
+  }
+}
+
 // 01.00. result quality: a point within 50 m of a stored number reads that number from the osm
 // data, and keeps the street's own point and distance
 #[test]
@@ -797,4 +822,40 @@ fn _03_02_a_number_that_is_a_word_of_the_street_name_is_not_a_house_number() {
   {
     assert_eq!(number_of(m), Some("100"), "7 is a word of the name");
   }
+}
+
+// 03.03. result quality: a street through two neighbourhoods answers once under each, and the
+// number typed is the same number on the same point of the street under both
+#[test]
+#[ignore]
+fn _03_03_a_street_on_two_paths_answers_the_number_under_each() {
+  let query = format!("{CROSSING_STREET_QUERY} 100");
+  let result = world().run(&[&query]);
+  let paths: Vec<&Value> = matches(&result)
+    .iter()
+    .filter(|m| name_at(m, 12).as_deref() == Some(CROSSING_STREET))
+    .collect();
+  let neighbourhoods: Vec<String> = paths.iter().filter_map(|m| name_at(m, 10)).collect();
+  assert_eq!(neighbourhoods, ["Boqueirão", "Embaré"], "{REGENERATE}");
+  for (m, neighbourhood) in paths.iter().zip(&neighbourhoods) {
+    assert_numbered(m, "100", ONE_REFERENCE, neighbourhood);
+  }
+  assert_ne!(paths[0]["id"], paths[1]["id"], "two paths are two ids");
+  assert_eq!(
+    point_of(paths[0]),
+    point_of(paths[1]),
+    "one street places the number once"
+  );
+}
+
+// 03.04. result quality: a suffixed number the street does not store is not dropped: it is
+// presumed from its digits among the references of the street
+#[test]
+#[ignore]
+fn _03_04_a_suffixed_number_the_street_does_not_store_is_presumed_from_its_digits() {
+  let query = format!("{SUFFIXED_STREET_QUERY} 40B");
+  let result = world().run(&[&query]);
+  let top = first(&result);
+  assert_eq!(name_at(top, 12).as_deref(), Some(SUFFIXED_STREET));
+  assert_numbered(top, "40B", MULTIPLE_REFERENCES, &query);
 }

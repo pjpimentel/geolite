@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use crate::admin_level::admin_levels_at;
 use crate::admin_level_hierarchy::{area, relation, resolved_at, street};
-use crate::common::harness::{open_sqlite_at, output, plain, query_at, world};
+use crate::common::harness::{assert_in_order, open_sqlite_at, output, plain, query_at, world};
 use crate::common::query::matches;
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
 use crate::general::world;
@@ -18,6 +18,9 @@ pub(crate) const NOTHING_ISOLATED: &str = "skipping delete-isolated-admin-levels
 pub(crate) const ONE_OF_EACH_DELETED: &str =
   "deleted 1 countries without children and 1 streets without parents in";
 
+const CLEARING: &str = "clearing addresses and coordinates... done";
+const NEXT_RUN: &str = "next run `geolite exec index-addresses`";
+
 const COUNTRY: u64 = 1;
 const NEIGHBOUR: u64 = 2;
 const CITY: u64 = 3;
@@ -25,6 +28,8 @@ const STATE: u64 = 4;
 const NEIGHBOURHOOD: u64 = 5;
 const INSIDE_STREET: u64 = 10;
 const OUTSIDE_STREET: u64 = 11;
+const FAR_COUNTRY: u64 = 6;
+const FAR_STREET: u64 = 12;
 
 pub(crate) fn isolated_deleted_at(w: &world, dir: &Path) -> output {
   stage(w, dir, &["--preset", "brazil", "exec", STAGE])
@@ -302,6 +307,94 @@ fn _00_09_the_fixture_holds_nothing_isolated() {
     out.stdout
   );
   assert_eq!(snapshot(&s.ledger()), before);
+}
+
+// 00.10. the indexes are cleared before the first delete and the run names the stages to run
+// next; a run that deletes nothing clears nothing and names none
+#[test]
+#[ignore]
+fn _00_10_only_a_run_that_deletes_clears_the_indexes_and_says_so() {
+  let w = world();
+  let dir = with_isolated_areas(w, "isolated_says_so");
+
+  let deleting = plain(&isolated_deleted_at(w, &dir).stdout);
+  assert_in_order(&deleting, &[CLEARING, ONE_OF_EACH_DELETED, NEXT_RUN]);
+
+  let idle = plain(&isolated_deleted_at(w, &dir).stdout);
+  assert!(idle.contains(NOTHING_ISOLATED), "{idle}");
+  for unsaid in [CLEARING, NEXT_RUN] {
+    assert!(
+      !idle.contains(unsaid),
+      "{unsaid:?} in a run that deleted nothing:\n{idle}"
+    );
+  }
+}
+
+// 00.11. a parent is a parent whatever its level: a street straight under a country stays, and
+// the country, which holds nothing else, stays with it
+#[test]
+#[ignore]
+fn _00_11_a_street_straight_under_a_country_stays_and_keeps_the_country() {
+  let w = world();
+  let dir = resolved_at(
+    w,
+    "isolated_street_under_country",
+    &[
+      area(COUNTRY, 2, "Country", [-10.0, -10.0], [20.0, 10.0]),
+      street(INSIDE_STREET, "Inside Street", &[[0.8, 0.8], [1.6, 0.8]]),
+    ],
+  );
+  assert_eq!(
+    parents_of(&ledger(&dir), way(INSIDE_STREET)),
+    vec![relation(COUNTRY)]
+  );
+  let before = snapshot(&ledger(&dir));
+
+  let out = isolated_deleted_at(w, &dir);
+
+  assert!(
+    plain(&out.stdout).contains(NOTHING_ISOLATED),
+    "{}",
+    out.stdout
+  );
+  assert_eq!(snapshot(&ledger(&dir)), before);
+}
+
+// 00.12. the run counts every area it deletes, not the kinds of area
+#[test]
+#[ignore]
+fn _00_12_every_isolated_area_is_counted() {
+  let w = world();
+  let dir = resolved_at(
+    w,
+    "isolated_counted",
+    &[
+      area(COUNTRY, 2, "Country", [-10.0, -10.0], [20.0, 10.0]),
+      area(CITY, 8, "City", [-2.0, -2.0], [5.0, 5.0]),
+      area(NEIGHBOUR, 2, "Neighbour", [30.0, -10.0], [40.0, 10.0]),
+      area(FAR_COUNTRY, 2, "Far Country", [70.0, -10.0], [80.0, 10.0]),
+      street(
+        OUTSIDE_STREET,
+        "Outside Street",
+        &[[50.0, 0.8], [50.8, 0.8]],
+      ),
+      street(FAR_STREET, "Far Street", &[[60.0, 0.8], [60.8, 0.8]]),
+    ],
+  );
+
+  let out = isolated_deleted_at(w, &dir);
+
+  assert!(
+    plain(&out.stdout)
+      .contains("deleted 2 countries without children and 2 streets without parents in"),
+    "{}",
+    out.stdout
+  );
+  let conn = ledger(&dir);
+  for kept in [COUNTRY, CITY] {
+    assert!(holds(&conn, relation(kept)), "area {kept} must stay");
+  }
+  assert_eq!(count(&conn, "SELECT COUNT(*) FROM admin_levels"), 2);
 }
 
 // 01.00. it needs a resolved hierarchy: without one it says so and changes nothing

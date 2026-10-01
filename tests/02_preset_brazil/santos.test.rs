@@ -72,6 +72,8 @@ const SUFFIXED_QUERY: &str = "rua inglaterra";
 // three streets are named rua santos; only the one of guarujá carries 87
 const NUMBERED_HOMONYM_QUERY: &str = "rua santos 87";
 const NUMBERED_HOMONYM_WAY: u64 = 51_832_890;
+// rua guarujá lies in saboó, which also holds a rua 11, and the ferries are named santos - guarujá
+const TEMPTED_STREET_ANSWER: &str = "Rua Guarujá, 11, Saboó, Santos, São Paulo, Brasil";
 
 const SQL_SELECT_BOUNDARY: &str = "
   SELECT admin_level, name, wkb
@@ -594,10 +596,43 @@ fn _00_17_a_suffixed_number_matches_its_stored_form_whatever_the_case_typed() {
 #[ignore]
 fn _00_18_a_street_covering_every_word_but_the_number_ranks_first() {
   let result = world().run(&["rua guaruja 11 saboo santos"]);
-  assert_eq!(
-    first(&result)["friendly_name"],
-    "Rua Guarujá, 11, Saboó, Santos, São Paulo, Brasil"
-  );
+  assert_eq!(first(&result)["friendly_name"], TEMPTED_STREET_ANSWER);
+}
+
+// 00.19. result quality: the number is demanded of no document, so where it is typed does not
+// change the street that ranks first, on either surface
+#[test]
+#[ignore]
+fn _00_19_the_place_of_the_number_in_the_text_does_not_change_the_top_match() {
+  let w = world();
+  let s = w.start_server();
+  for typed in [
+    "11 rua guaruja saboo santos",
+    "rua guaruja 11 saboo santos",
+    "rua guaruja, 11, saboo, santos",
+    "rua guaruja saboo santos 11",
+  ] {
+    w.assert_both(
+      &s,
+      &ask(typed),
+      &json!({
+        "matches": [{
+          "friendly_name": TEMPTED_STREET_ANSWER,
+          "house_number": { "number": "11" },
+        }],
+      }),
+    );
+  }
+}
+
+// 00.20. result quality: with two numbers typed neither is demanded of a document, and the first
+// one is the house number
+#[test]
+#[ignore]
+fn _00_20_the_first_of_two_typed_numbers_is_the_house_number() {
+  let result = world().run(&["rua guaruja 11 22 saboo santos"]);
+  assert_eq!(first(&result)["friendly_name"], TEMPTED_STREET_ANSWER);
+  assert_eq!(number_of(first(&result)), Some("11"));
 }
 
 // 01.00. precision guarantee
@@ -768,6 +803,44 @@ fn _01_08_a_digits_only_post_code_covers_the_document() {
     name_at(first(&result), 12).as_deref(),
     Some("Rua Deputado Emilio Justo"),
   );
+}
+
+// 01.09. precision guarantee: the region holds while the number is not demanded: the polygon
+// around the street answers it with its number, and the one beside it never answers it
+#[test]
+#[ignore]
+fn _01_09_bounding_wkt_keeps_a_numbered_match_inside_the_polygon_and_drops_it_outside() {
+  let query = "rua januario dos santos, santos 197";
+  let around = world().run(&[query, "--bounding-wkt", APARECIDA_POLYGON]);
+  assert_eq!(
+    name_at(first(&around), 12).as_deref(),
+    Some(NUMBERED_STREET_NAME)
+  );
+  assert_eq!(kind_of(first(&around)), Some(FROM_OSM_DATA));
+
+  let beside = world().run(&[query, "--bounding-wkt", INSIDE_POLYGON]);
+  assert!(
+    matches(&beside)
+      .iter()
+      .all(|m| name_at(m, 12).as_deref() != Some(NUMBERED_STREET_NAME)),
+    "the street lies outside the polygon"
+  );
+}
+
+// 01.10. precision guarantee: the region reads the point of the number and not the one of the
+// street: 197 lies inside the polygon, and 1 lands at the end of the street that is outside it
+#[test]
+#[ignore]
+fn _01_10_a_region_keeps_a_numbered_match_by_the_point_of_the_number() {
+  let answered = |number: &str| {
+    let query = format!("rua januario dos santos, santos {number}");
+    let result = world().run(&[&query, "--bounding-wkt", APARECIDA_POLYGON]);
+    matches(&result)
+      .iter()
+      .any(|m| name_at(m, 12).as_deref() == Some(NUMBERED_STREET_NAME))
+  };
+  assert!(answered("197"), "197 is inside the polygon");
+  assert!(!answered("1"), "1 is placed outside the polygon");
 }
 
 // 02.00. ambiguity
@@ -1237,6 +1310,22 @@ fn _06_00_a_typo_falls_back_to_the_loose_query() {
   assert!(
     !way_ids(&world().run(&["rua castro alvez, embare, santos"])).is_empty(),
     "the fuzzy fallback must still find the street"
+  );
+}
+
+// 06.01. dead case: a typo sends the whole text to the loose query, and the number typed beside
+// it is still read from the street that stores it
+#[test]
+#[ignore]
+fn _06_01_a_typo_beside_a_number_still_resolves_the_number() {
+  let result = world().run(&["rua castro alvez, 35, embare"]);
+  let street = matches(&result)
+    .iter()
+    .find(|m| name_at(m, 12).as_deref() == Some("Rua Castro Alves"))
+    .expect("the fuzzy fallback must still find the street");
+  assert_eq!(
+    street["house_number"],
+    json!({ "number": "35", "kind": FROM_OSM_DATA })
   );
 }
 ///////////////////////////////////////////////////////////////////
