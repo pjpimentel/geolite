@@ -10,57 +10,57 @@
 
 ## **planned** - 0.0.16
 
-1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
 1. REMOVED the web ui served at `/` by `http-server`, so the server serves only the api.
+1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
 1. ADDED a query cache to `http-server` and `query`, bounded by a cli option, so a repeated question answers at once.
 
-## **2026-10-01** - 0.0.15
+## **2026-10-03** - 0.0.15
 
 1. MODIFIED both services to answer a house number on every street, stored in the osm data or presumed along the street, its origin named by `house_number.kind` (not backward compatible), so a number always lands on its most probable point.
-1. ADDED a data exporter, as a sql dump of the domain tables and as `.osm.pbf`, so the data travels to another database and sub-extracts need no osmium.
-1. ADDED a study of removing each direct dependency, measured in own code, transitive crates and binary size, so which ones stay is decided by numbers.
-1. MODIFIED the e2e battery to build under an `e2e` profile that unwinds, so the quality check compiles the dependencies once.
-1. MODIFIED the `index-user-friendly-name` stage to `index-addresses` (not backward compatible), so the stage is named after what it indexes.
-1. ADDED the `optimize-delete-isolated-admin-levels` stage, deleting a country without children and a street without parents, so the indexes hold only areas an address can name.
-1. ADDED the leaf to `geolite tui`, the deepest level opening its address, its admin levels one per line with every osm id a link, and a zoomable map, so an address is read and seen from the terminal.
 1. MODIFIED the text search to try the query without demanding its house number before the fuzzy fallback, so a street covering every word but the number ranks first.
 1. MODIFIED the map of the web ui to the openstreetmap tiles, so it renders without an api key.
+1. MODIFIED the e2e battery to build under an `e2e` profile that unwinds, so the quality check compiles the dependencies once.
+1. MODIFIED the `index-user-friendly-name` stage to `index-addresses` (not backward compatible), so the stage is named after what it indexes.
+1. ADDED a data exporter, as a sql dump of the domain tables and as `.osm.pbf`, so the data travels to another database and sub-extracts need no osmium.
+1. ADDED a study of removing each direct dependency, measured in own code, transitive crates and binary size, so which ones stay is decided by numbers.
+1. ADDED the `optimize-delete-isolated-admin-levels` stage, deleting a country without children and a street without parents, so the indexes hold only areas an address can name.
+1. ADDED the leaf to `geolite tui`, the deepest level opening its address, its admin levels one per line with every osm id a link, and a zoomable map, so an address is read and seen from the terminal.
 
 ## **2026-09-26** - - 0.0.14
 
-1. ADDED e2e scenarios for every guard the unit tests held alone: the hierarchy thresholds, the defaults of `src/admin_level/rules.rs`, the house number shapes the fixture never brings, the label and scale errors, and the pbf files a stage cannot read, so the battery over real data holds them too.
 1. REMOVED the unit tests that were left, with the code that served only them, so one regression battery is left.
 1. MODIFIED the cli to run one stage as `geolite exec <group>-<stage>` in place of the `extract`, `index` and `optimize` subcommands (not backward compatible), each stage refusing to run before the ones it requires, so a stage is addressed by its name and cannot run out of order.
+1. ADDED e2e scenarios for every guard the unit tests held alone: the hierarchy thresholds, the defaults of `src/admin_level/rules.rs`, the house number shapes the fixture never brings, the label and scale errors, and the pbf files a stage cannot read, so the battery over real data holds them too.
 1. ADDED `geolite tui`, the admin levels walked like folders one at a time as `ls -la` lists them, each folder counting the places inside it, the places lacking a level grouped first in a folder of their own and the listing narrowed by the text typed in a filter above it, in a column at most 100 wide, that prints the folder of a path when stdout is not a terminal and asks for `geolite build` when there is no data, so the data is explored from the terminal.
 1. ADDED e2e scenarios for `geolite tui` over the fixture: the roots, the folders of a path, the refusal without data and the unknown path, so the downward reads of the hierarchy debut covered over real data.
 
 ## **2026-09-20** - 0.0.13
 
-1. MODIFIED the similarity, the house number reads, the preset plumbing and the progress report to the domains that own them.
-1. ADDED e2e scenarios for `geolite merge` and for the degraded paths the real pipeline never produces.
 1. REMOVED the unit tests the e2e battery now covers: the merge, the http helpers and the wkt parse.
+1. MODIFIED the similarity, the house number reads, the preset plumbing and the progress report to the domains that own them.
 1. MODIFIED the pre-merge checks into a lint job beside the coverage one, so they run in parallel.
-1. ADDED `optimize merge-admin-levels`, which folds the ways of one street into one row; `build` and `geolite merge` run it before the search indexes.
 1. MODIFIED the resolver to ask a folded street one line at a time, so resolving it again writes the same edges.
 1. MODIFIED the coordinate service to answer a street only under the areas that hold its nearest point, and to rank two streets at the same distance by id.
 1. MODIFIED the text service to answer a street without a number with a point of the street, inside the area of each label.
 1. MODIFIED the `wkt` of a folded street to always be a multi-line of the original lines of its ways.
-1. ADDED `merged_way_ids` to `admin_levels` and `osm_merged_way_ids` to the response, naming the osm way of each line of a folded street, with no new schema version.
 1. MODIFIED `geolite merge` to carry `merged_way_ids` and to accept a source built before the column.
+1. ADDED e2e scenarios for `geolite merge` and for the degraded paths the real pipeline never produces.
 1. ADDED e2e scenarios for the street merge in the pipeline, the ranking of streets at the same distance and the ways of a folded street in the response.
+1. ADDED `merged_way_ids` to `admin_levels` and `osm_merged_way_ids` to the response, naming the osm way of each line of a folded street, with no new schema version.
+1. ADDED `optimize merge-admin-levels`, which folds the ways of one street into one row; `build` and `geolite merge` run it before the search indexes.
 
 ## **2026-09-19** - 0.0.12
 
 1. MODIFIED the friendly name to one rule with or without a house number, so a label with a number keeps the post codes at the end.
 1. MODIFIED the house number to resolve before the match is built, so the api dto carries no pipeline state.
 1. MODIFIED `attributes.post_code` to one rule in both services, the most specific post code of the path, so the same street answers the same post code by text and by coordinate.
-1. ADDED `post_code` to every item of `admin_levels` in the response, so each area answers its own post code.
 1. MODIFIED an `admin_levels` row to carry its origin as one value instead of a pair of optionals, removing the panic on an empty pair.
 1. MODIFIED the domain folders to the top level of `src/`.
 1. MODIFIED `cli` and `http` into `src/interfaces/`.
 1. MODIFIED `bounding_geometry` and the wkt parse to one owner, `admin_level::geometry`.
 1. MODIFIED the crates.io publish to use Trusted Publishing on the `crates.io` environment, so no long-lived registry token is stored.
+1. ADDED `post_code` to every item of `admin_levels` in the response, so each area answers its own post code.
 
 ## **2026-09-17** - 0.0.11
 
