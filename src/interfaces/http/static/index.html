@@ -532,6 +532,8 @@
     background: var(--bg);
   }
   body.dark .leaflet-container { background: var(--bg-2) !important; }
+  /* openstreetmap serves one style: the dark map is the light tiles inverted, the hue turned back */
+  body.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
   body.dark .leaflet-control-attribution { background: oklch(0.22 0.01 240 / 0.7) !important; }
   body.dark .zoom-ctrl { background: oklch(0.22 0.01 252 / 0.95); }
   body.dark .hud-chip   { background: oklch(0.22 0.01 252 / 0.92); }
@@ -638,17 +640,10 @@
     doubleClickZoom: false,
   }).setView(default_view.center, default_view.zoom);
 
-  const tile_light = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     maxZoom: 19, noWrap: true,
-  });
-  const tile_light_labels = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19, subdomains: 'abcd', opacity: 0.85,
-  });
-  const tile_dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-    maxZoom: 19, noWrap: true,
-  });
+  }).addTo(map);
 
   const input_el        = document.getElementById('search');
   const bounding_wkt_el      = document.getElementById('filter_bounding_wkt');
@@ -1026,15 +1021,6 @@
     document.body.classList.toggle('dark', dark);
     icon_sun.style.display  = dark ? 'none' : '';
     icon_moon.style.display = dark ? '' : 'none';
-    if (dark) {
-      tile_light.remove();
-      tile_light_labels.remove();
-      tile_dark.addTo(map);
-    } else {
-      tile_dark.remove();
-      tile_light.addTo(map);
-      tile_light_labels.addTo(map);
-    }
   }
 
   const initial_theme = get_params().get('theme') ?? 'light';

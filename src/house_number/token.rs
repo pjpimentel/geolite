@@ -7,6 +7,13 @@ pub fn has_house_number(query: &str, policy: &house_number_policy) -> bool {
     .any(|token| house_number::recognize(token, policy).is_some())
 }
 
+pub fn house_number_words<'a>(query: &'a str, policy: &house_number_policy) -> Vec<&'a str> {
+  query
+    .split_whitespace()
+    .filter(|token| house_number::recognize(token, policy).is_some())
+    .collect()
+}
+
 pub fn first_house_number(
   query: &str,
   street_name: &str,

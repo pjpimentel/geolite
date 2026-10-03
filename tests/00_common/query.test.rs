@@ -54,6 +54,14 @@ pub fn wkt_at(m: &Value, level: u64) -> Option<String> {
   level_at(m, level)?["wkt"].as_str().map(str::to_string)
 }
 
+pub fn number_of(m: &Value) -> Option<&str> {
+  m["house_number"]["number"].as_str()
+}
+
+pub fn kind_of(m: &Value) -> Option<&str> {
+  m["house_number"]["kind"].as_str()
+}
+
 // the leaf level of every match, in the order of the response
 pub fn leaves(result: &Value) -> Vec<u64> {
   matches(result)

@@ -177,7 +177,7 @@ fn expand_abbreviations(text: &str, abbreviations: &[(&str, &str)]) -> String {
 pub fn run(
   conn: &Connection,
   index_path: &Path,
-  preset: &crate::presets::index_user_friendly_name_preset,
+  preset: &crate::presets::index_addresses_preset,
   progress: impl Fn(progress_report),
 ) -> tantivy_index {
   let total = repository::count(conn) as u64;
@@ -445,14 +445,18 @@ fn run_query(searcher: &Searcher, query: BooleanQuery, limit: usize) -> Vec<sear
 }
 
 impl tantivy_index {
-  // two queries with a fallback. the strict one demands every token exactly, in the name or in
-  // the ancestry, and wins when it finds anything: only documents covering the whole query come
-  // back. the loose one runs only when the strict one is empty: exact and fuzzy terms as Should
+  // three queries, each one running only when the one before is empty. the strict one demands
+  // every token exactly, in the name or in the ancestry: only documents covering the whole query
+  // come back. the second one is the strict one with the tokens of `optional_words` no longer
+  // demanded: a house number is a word no document holds, and without this step it would send
+  // the whole query to the loose one, where a document repeating half of the query outranks the
+  // one covering everything but the number. the loose one takes exact and fuzzy terms as Should
   // clauses, which covers a typo, an extra word or partial coverage. the score is the raw bm25
   // of whichever query found the document, in the order tantivy delivered.
   pub fn search(
     &self,
     query: &str,
+    optional_words: &[&str],
     limit: usize,
     last_admin_levels: Option<&[level]>,
     allowed_ids: Option<&[i64]>,
@@ -462,20 +466,39 @@ impl tantivy_index {
       return vec![];
     }
     let searcher = self.reader.searcher();
+    let run = |mut clauses: Vec<clause>| {
+      clauses.extend(self.filter_clauses(last_admin_levels, allowed_ids));
+      run_query(&searcher, BooleanQuery::new(clauses), limit)
+    };
 
-    let mut strict = self.strict_clauses(query, &tokens);
-    strict.extend(self.filter_clauses(last_admin_levels, allowed_ids));
-    let strict_hits = run_query(&searcher, BooleanQuery::new(strict), limit);
+    let strict_hits = run(self.strict_clauses(query, &tokens, &HashSet::new()));
     if !strict_hits.is_empty() {
       return strict_hits;
     }
 
-    let mut loose = self.loose_clauses(&tokens);
-    loose.extend(self.filter_clauses(last_admin_levels, allowed_ids));
-    run_query(&searcher, BooleanQuery::new(loose), limit)
+    let optional: HashSet<String> = optional_words
+      .iter()
+      .flat_map(|word| tokenize(word))
+      .collect();
+    // with no token left to demand, the filters would be the only Must clauses and every document
+    // they let through would come back, scored or not
+    let demands_a_token = tokens.iter().any(|token| !optional.contains(token));
+    if !optional.is_empty() && demands_a_token {
+      let hits = run(self.strict_clauses(query, &tokens, &optional));
+      if !hits.is_empty() {
+        return hits;
+      }
+    }
+
+    run(self.loose_clauses(&tokens))
   }
 
-  fn strict_clauses(&self, query: &str, tokens: &[String]) -> Vec<clause> {
+  fn strict_clauses(
+    &self,
+    query: &str,
+    tokens: &[String],
+    optional: &HashSet<String>,
+  ) -> Vec<clause> {
     let mut clauses: Vec<clause> = tokens
       .iter()
       .map(|token| {
@@ -491,18 +514,27 @@ impl tantivy_index {
           (Occur::Should, exact_name),
           (Occur::Should, exact_hier),
         ]);
-        (Occur::Must, Box::new(token_query) as Box<dyn Query>)
+        let occur = if optional.contains(token) {
+          Occur::Should
+        } else {
+          Occur::Must
+        };
+        (occur, Box::new(token_query) as Box<dyn Query>)
       })
       .collect();
 
-    // a phrase bonus when the tokens appear contiguous and in order, which tells apart documents
-    // sharing the same terms in a different order; meaningless for a single token
-    if tokens.len() >= 2 {
+    // a phrase bonus when the demanded tokens appear contiguous and in order, which tells apart
+    // documents sharing the same terms in a different order; meaningless for a single token
+    let demanded: Vec<&String> = tokens
+      .iter()
+      .filter(|token| !optional.contains(*token))
+      .collect();
+    if demanded.len() >= 2 {
       for (field, boost) in [
         (self.name_field, self.boosts.name_phrase),
         (self.hier_field, self.boosts.hier_phrase),
       ] {
-        let terms: Vec<Term> = tokens
+        let terms: Vec<Term> = demanded
           .iter()
           .map(|t| Term::from_field_text(field, t))
           .collect();

@@ -31,14 +31,10 @@ pub(crate) fn index_at(w: &world, dir: &Path, index: &str) -> output {
 
 // the three index stages in order, with their stdout joined
 pub(crate) fn indexed(w: &world, dir: &Path) -> String {
-  [
-    "admin-levels-hierarchy",
-    "user-friendly-name",
-    "coordinates",
-  ]
-  .iter()
-  .map(|index| index_at(w, dir, index).stdout)
-  .collect()
+  ["admin-levels-hierarchy", "addresses", "coordinates"]
+    .iter()
+    .map(|index| index_at(w, dir, index).stdout)
+    .collect()
 }
 
 fn level_counts(conn: &rusqlite::Connection) -> Vec<(u8, i64)> {
@@ -412,8 +408,8 @@ fn _02_02_each_index_stage_names_what_it_finished() {
     &[
       "clearing hierarchy",
       "indexed hierarchy in",
-      "clearing user-friendly-name",
-      "indexed user-friendly-name in",
+      "clearing addresses",
+      "indexed addresses in",
       "clearing coordinates",
       "indexed coordinates in",
     ],
@@ -428,21 +424,18 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
   let s = extracted(w, "admin_level_search_source", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
-  let refused = w.geolite_in(
-    &s.dir,
-    &["--preset", "brazil", "exec", "index-user-friendly-name"],
-  );
+  let refused = w.geolite_in(&s.dir, &["--preset", "brazil", "exec", "index-addresses"]);
   assert_eq!(refused.status, 1, "stderr: {}", refused.stderr);
   assert!(
     refused
       .stderr
-      .contains("index-user-friendly-name requires index-admin-levels-hierarchy"),
+      .contains("index-addresses requires index-admin-levels-hierarchy"),
     "without hierarchy rows there is nothing to index, stderr: {}",
     refused.stderr
   );
 
   index_at(w, &s.dir, "admin-levels-hierarchy");
-  index_at(w, &s.dir, "user-friendly-name");
+  index_at(w, &s.dir, "addresses");
   let found = query_at(w, &s.dir, "brazil", "santos");
   let top = first(&found);
   assert_eq!(levels_of(top).last(), Some(&8));

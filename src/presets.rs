@@ -5,7 +5,7 @@ pub struct preset {
   pub name: &'static str,
   pub extract_osm_admin_levels: extract_osm_admin_levels_preset,
   pub house_numbers: crate::house_number::house_number_policy,
-  pub index_user_friendly_name: index_user_friendly_name_preset,
+  pub index_addresses: index_addresses_preset,
 }
 
 #[derive(Clone, Copy)]
@@ -16,7 +16,7 @@ pub struct extract_osm_admin_levels_preset {
 }
 
 #[derive(Clone, Copy)]
-pub struct index_user_friendly_name_preset {
+pub struct index_addresses_preset {
   pub abbreviations: &'static [(&'static str, &'static str)],
   pub boosts: crate::admin_level_hierarchy::tantivy_boosts,
 }
@@ -35,8 +35,9 @@ pub const DEFAULT: preset = preset {
     max_digits: 5,
     shapes: crate::house_number::policy::SIMPLE_SHAPES,
     allow_hash_prefix: false,
+    meters_per_number: 3.0,
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[],
     boosts: crate::admin_level_hierarchy::tantivy_boosts {
       name_exact: 5.0,
@@ -62,9 +63,10 @@ pub const BRAZIL: preset = preset {
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
+    meters_per_number: 1.0,
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("r.", "rua"),
     ("av.", "avenida"),
@@ -75,7 +77,7 @@ pub const BRAZIL: preset = preset {
     ("rod.", "rodovia"),
     ("al.", "alameda"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -90,7 +92,7 @@ pub const PORTUGAL: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("r.", "rua"),
     ("av.", "avenida"),
@@ -108,7 +110,7 @@ pub const PORTUGAL: preset = preset {
     ("urb.", "urbanização"),
     ("bº", "bairro"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -123,7 +125,7 @@ pub const ARGENTINA: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("av.", "avenida"),
     ("avda.", "avenida"),
@@ -136,7 +138,7 @@ pub const ARGENTINA: preset = preset {
     ("cnel.", "coronel"),
     ("dr.", "doctor"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -151,7 +153,7 @@ pub const BOLIVIA: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("av.", "avenida"),
     ("avda.", "avenida"),
@@ -163,7 +165,7 @@ pub const BOLIVIA: preset = preset {
     ("tte.", "teniente"),
     ("dr.", "doctor"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -178,7 +180,7 @@ pub const CHILE: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("av.", "avenida"),
     ("avda.", "avenida"),
@@ -197,7 +199,7 @@ pub const CHILE: preset = preset {
     ("sta.", "santa"),
     ("sto.", "santo"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -214,7 +216,7 @@ pub const COLOMBIA: preset = preset {
     allow_hash_prefix: true,
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("cra.", "carrera"),
     ("kra.", "carrera"),
@@ -233,7 +235,7 @@ pub const COLOMBIA: preset = preset {
     ("sta.", "santa"),
     ("sto.", "santo"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -248,7 +250,7 @@ pub const ECUADOR: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("av.", "avenida"),
     ("avda.", "avenida"),
@@ -265,7 +267,7 @@ pub const ECUADOR: preset = preset {
     ("sta.", "santa"),
     ("sto.", "santo"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -277,7 +279,7 @@ pub const GUYANA: preset = preset {
     ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: DEFAULT.house_numbers,
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("rd.", "road"),
     ("st.", "street"),
@@ -288,7 +290,7 @@ pub const GUYANA: preset = preset {
     ("gdns.", "gardens"),
     ("pk.", "park"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -303,7 +305,7 @@ pub const PARAGUAY: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("av.", "avenida"),
     ("avda.", "avenida"),
@@ -317,7 +319,7 @@ pub const PARAGUAY: preset = preset {
     ("sta.", "santa"),
     ("sto.", "santo"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -332,7 +334,7 @@ pub const PERU: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("jr.", "jirón"),
     ("ca.", "calle"),
@@ -349,7 +351,7 @@ pub const PERU: preset = preset {
     ("sta.", "santa"),
     ("sto.", "santo"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -361,7 +363,7 @@ pub const SURINAME: preset = preset {
     ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: DEFAULT.house_numbers,
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("str.", "straat"),
     ("ln.", "laan"),
@@ -372,7 +374,7 @@ pub const SURINAME: preset = preset {
     ("burg.", "burgemeester"),
     ("prof.", "professor"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -387,7 +389,7 @@ pub const URUGUAY: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("av.", "avenida"),
     ("avda.", "avenida"),
@@ -401,7 +403,7 @@ pub const URUGUAY: preset = preset {
     ("sta.", "santa"),
     ("sto.", "santo"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -416,7 +418,7 @@ pub const VENEZUELA: preset = preset {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
     ..DEFAULT.house_numbers
   },
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("av.", "avenida"),
     ("avda.", "avenida"),
@@ -431,7 +433,7 @@ pub const VENEZUELA: preset = preset {
     ("sta.", "santa"),
     ("sto.", "santo"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -443,7 +445,7 @@ pub const NETHERLANDS: preset = preset {
     ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: DEFAULT.house_numbers,
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("str.", "straat"),
     ("ln.", "laan"),
@@ -455,7 +457,7 @@ pub const NETHERLANDS: preset = preset {
     ("mr.", "meester"),
     ("kon.", "koningin"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 
@@ -466,7 +468,7 @@ pub const SWITZERLAND: preset = preset {
     ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: DEFAULT.house_numbers,
-  index_user_friendly_name: index_user_friendly_name_preset {
+  index_addresses: index_addresses_preset {
     abbreviations: &[
     ("str.", "strasse"),
     ("av.", "avenue"),
@@ -477,7 +479,7 @@ pub const SWITZERLAND: preset = preset {
     ("imp.", "impasse"),
     ("st.", "sankt"),
   ],
-    ..DEFAULT.index_user_friendly_name
+    ..DEFAULT.index_addresses
   },
 };
 

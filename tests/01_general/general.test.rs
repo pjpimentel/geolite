@@ -2,9 +2,10 @@ use crate::common::ask::ask;
 use crate::common::harness::{
   assert_in_order, encode, get, plain, request, scenario, world, world_cell,
 };
-use crate::common::query::{first, matches};
+use crate::common::query::{first, kind_of, matches, number_of};
 use crate::extract::{REGENERATE, extracted};
 use crate::house_number::HOUSE_NUMBERS;
+use crate::isolated_admin_levels::NOTHING_ISOLATED;
 use crate::street_merge::{NUMBERS_MOVED, merged_summary};
 use serde_json::{Value, json};
 
@@ -24,6 +25,12 @@ pub(crate) fn world() -> &'static world {
 const ANY_TEXT: &str = "rua";
 const ANY_POINT: &str = "-23.970949,-46.318730";
 const UNPARSABLE_WKT: &str = "POLYGON((0 0, 1 1";
+const SCENARIOS: [&str; 4] = [
+  "from_osm_data",
+  "presumed_from_multiple_references_from_street",
+  "presumed_from_one_ref_from_street",
+  "presumed_from_constants",
+];
 
 // 00.00. pipeline integrity
 #[test]
@@ -51,8 +58,9 @@ fn _00_01_build_prints_every_stage_banner_in_order() {
     "── extract-osm-admin-levels",
     "── extract-osm-house-numbers",
     "── index-admin-levels-hierarchy",
+    "── optimize-delete-isolated-admin-levels",
     "── optimize-merge-admin-levels",
-    "── index-user-friendly-name",
+    "── index-addresses",
     "── index-coordinates",
     "── optimize-delete-intermediary-data",
     "── optimize-sqlite-file",
@@ -73,7 +81,7 @@ fn _00_01_build_prints_every_stage_banner_in_order() {
 fn _00_02_build_skips_the_download_stage_for_a_local_source() {
   let w = world();
   assert!(
-    w.build_stdout.contains("skipping"),
+    plain(&w.build_stdout).contains("skipping download"),
     "a local source must skip the download stage:\n{}",
     w.build_stdout
   );
@@ -271,11 +279,13 @@ fn _00_11_the_build_folds_the_streets_between_the_hierarchy_and_the_search_index
     &stdout,
     &[
       "indexed hierarchy in",
+      "── optimize-delete-isolated-admin-levels",
+      NOTHING_ISOLATED,
       "── optimize-merge-admin-levels",
       merged_summary().as_str(),
       numbers_moved.as_str(),
-      "── index-user-friendly-name",
-      "indexed user-friendly-name in",
+      "── index-addresses",
+      "indexed addresses in",
       "── index-coordinates",
       "indexed coordinates in",
       "── optimize-delete-intermediary-data",
@@ -319,12 +329,16 @@ fn _01_01_coordinates_query_reports_the_coordinates_service() {
 // 01.02. contract
 #[test]
 #[ignore]
-fn _01_02_coordinate_matches_omit_house_number_and_relevance_signals() {
+fn _01_02_coordinate_matches_carry_a_house_number_and_omit_the_relevance_signals() {
   let result = world().run(&[ANY_POINT]);
   let top = first(&result);
   assert!(
-    top.get("house_number").is_none(),
-    "the coordinate path never fills house_number; it appends a level 30 instead"
+    number_of(top).is_some(),
+    "every street a point answers carries a number"
+  );
+  assert!(
+    kind_of(top).is_some_and(|kind| SCENARIOS.contains(&kind)),
+    "the number names the scenario it came from: {top:#}"
   );
   assert!(
     top["similarity"].is_null(),
@@ -651,7 +665,7 @@ fn _01_20_the_openapi_spec_documents_exactly_these_routes_and_schemas() {
       "ApiError",
       "admin_level",
       "database_status",
-      "house_number_match",
+      "house_number_scenario",
       "query_house_number",
       "query_match",
       "query_match_attributes",
@@ -789,7 +803,7 @@ fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
   let read = get(colombia.port, &path).json();
   assert_eq!(
     first(&read)["house_number"],
-    json!({ "number": "197", "kind": "exact" }),
+    json!({ "number": "197", "kind": "from_osm_data" }),
   );
 
   let brazil = w.start_server_with_preset("brazil");
@@ -835,12 +849,42 @@ fn _01_26_exec_help_lists_the_stages_in_pipeline_order() {
       "extract-osm-admin-levels",
       "extract-osm-house-numbers",
       "index-admin-levels-hierarchy",
+      "optimize-delete-isolated-admin-levels",
       "optimize-merge-admin-levels",
-      "index-user-friendly-name",
+      "index-addresses",
       "index-coordinates",
       "optimize-delete-intermediary-data",
       "optimize-sqlite-file",
     ],
+  );
+}
+
+// 01.27. contract: the kinds a house number answers are an enum of the schema, so a client reads
+// the four of them from the spec
+#[test]
+#[ignore]
+fn _01_27_the_openapi_spec_names_the_four_kinds_of_a_house_number() {
+  let s = world().start_server();
+  let spec = get(s.port, "/openapi.json").json();
+  assert_eq!(
+    spec["components"]["schemas"]["house_number_scenario"]["enum"],
+    json!(SCENARIOS)
+  );
+}
+
+// 01.28. contract: the web ui draws its map from the openstreetmap tiles, which ask for no api key
+#[test]
+#[ignore]
+fn _01_28_the_web_ui_draws_the_map_from_openstreetmap_tiles() {
+  let s = world().start_server();
+  let page = get(s.port, "/").text();
+  assert!(
+    page.contains("https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
+    "the map must name its tiles"
+  );
+  assert!(
+    !page.contains("cartocdn"),
+    "the carto tiles ask for an api key"
   );
 }
 
@@ -1337,4 +1381,40 @@ fn _02_20_the_tui_asks_for_a_build_when_there_is_no_data() {
       out.stderr
     );
   }
+}
+
+// 02.21. dead case: the stage that indexes the addresses was renamed, and the name it had is no
+// stage any more
+#[test]
+#[ignore]
+fn _02_21_the_stage_name_before_the_rename_is_refused() {
+  let w = world();
+  let out = w.geolite(&["exec", "index-user-friendly-name"]);
+  assert_eq!(out.status, 2, "stderr: {}", out.stderr);
+  assert!(
+    !w.geolite(&["exec", "--help"])
+      .stdout
+      .contains("user-friendly-name"),
+    "the help must not list the old name"
+  );
+}
+
+// 02.22. dead case: without the search index both surfaces name the stage that builds it
+#[test]
+#[ignore]
+fn _02_22_a_missing_index_names_the_stage_that_builds_it() {
+  let stage = "`geolite exec index-addresses`";
+  let w = world();
+  let missing = w.root.join("absent.tantivy");
+  let out = w.geolite(&[
+    "--index-path",
+    &missing.to_string_lossy(),
+    "query",
+    ANY_TEXT,
+  ]);
+  assert!(out.stderr.contains(stage), "stderr: {}", out.stderr);
+
+  let s = w.start_degraded_server();
+  let _ = get(s.port, "/status"); // make sure the warning is flushed before reading
+  assert!(s.stderr().contains(stage), "stderr: {}", s.stderr());
 }

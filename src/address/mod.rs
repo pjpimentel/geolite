@@ -4,6 +4,7 @@ mod filter;
 mod house_number;
 mod input;
 mod label;
+mod path;
 mod text;
 
 use crate::admin_level::geometry::bounding_geometry;
@@ -12,8 +13,7 @@ use crate::admin_level_hierarchy::tantivy_index;
 use crate::house_number::house_number_policy;
 
 pub use entity::{
-  admin_level, house_number_match, query_house_number, query_match, query_match_attributes,
-  query_output, query_service,
+  admin_level, query_house_number, query_match, query_match_attributes, query_output, query_service,
 };
 pub use filter::parse_min_quality;
 pub use input::query_input;
@@ -26,6 +26,10 @@ pub struct query_opts<'a> {
   pub bounding: Option<bounding_geometry>,
   pub last_admin_levels: Option<Vec<level>>,
   pub include_wkt: bool,
+}
+
+pub fn at_path(conn: &rusqlite::Connection, id: i64, path: &[i64]) -> Option<query_match> {
+  path::run(conn, id, path)
 }
 
 pub struct address<'a> {
@@ -55,6 +59,6 @@ impl<'a> address<'a> {
   }
 
   pub fn query_by_coordinates(&self, latitude: f64, longitude: f64, opts: &query_opts) -> query_output {
-    coordinates::run(self.conn, latitude, longitude, opts)
+    coordinates::run(self.conn, self.house_numbers, latitude, longitude, opts)
   }
 }

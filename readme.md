@@ -126,14 +126,16 @@ $ geolite --preset brazil exec extract-osm-house-numbers
 ### index extracted data
 ```bash
 $ geolite exec index-admin-levels-hierarchy
-$ geolite --preset brazil exec index-user-friendly-name
+$ geolite --preset brazil exec index-addresses
 $ geolite exec index-coordinates
 ```
 
 ### optimize data
 ```bash
-# folds the ways of one street into one row: it reads the hierarchy and clears the
-# user-friendly-name and coordinates indexes, which have to be built again after it
+# deletes a country without children and a street without parents, then folds the ways of one
+# street into one row: both read the hierarchy and clear the addresses and coordinates indexes,
+# which have to be built again after them
+$ geolite exec optimize-delete-isolated-admin-levels
 $ geolite exec optimize-merge-admin-levels
 $ geolite exec optimize-delete-intermediary-data
 $ geolite exec optimize-sqlite-file
@@ -141,9 +143,9 @@ $ geolite exec optimize-sqlite-file
 
 `geolite exec` runs one stage per call and refuses a stage whose requirements did not run, naming
 the one to run first; `geolite exec --help` lists the stages in the order the pipeline runs.
-`geolite build` and `geolite merge` run `optimize-merge-admin-levels` right after
-`index-admin-levels-hierarchy`, so the two other indexes are built once, over the rows that stay.
-no index stage folds the streets on its own.
+`geolite build` and `geolite merge` run `optimize-delete-isolated-admin-levels` and
+`optimize-merge-admin-levels` right after `index-admin-levels-hierarchy`, so the two other indexes
+are built once, over the rows that stay. no index stage deletes or folds on its own.
 
 ### query
 ```bash
@@ -175,7 +177,7 @@ $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:la
 
 ### run the end-to-end suite
 ```bash
-$ cargo test --release --test '*' -- --ignored --nocapture
+$ cargo test --profile e2e --test '*' -- --ignored --nocapture
 ```
 
 ## question and answers

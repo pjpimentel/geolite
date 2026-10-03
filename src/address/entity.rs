@@ -10,6 +10,7 @@ use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::level;
 use crate::admin_level::repository::admin_meta_row;
 use crate::admin_level_hierarchy::paths::paths_of;
+use crate::house_number::house_number_scenario;
 
 #[derive(Serialize, ToSchema)]
 pub enum query_service {
@@ -36,17 +37,10 @@ pub struct query_match_attributes {
   pub post_code: Option<String>,
 }
 
-#[derive(Serialize, ToSchema)]
-pub enum house_number_match {
-  exact,
-  interpolated,
-  absent,
-}
-
-#[derive(Serialize, ToSchema)]
+#[derive(Clone, Serialize, ToSchema)]
 pub struct query_house_number {
   pub number: String,
-  pub kind: house_number_match,
+  pub kind: house_number_scenario,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -76,7 +70,7 @@ pub(super) fn round5(v: f64) -> f64 {
 
 // one area reached through two paths is two answers, so the identity of a match is its path and
 // not its area: the ids from the root down to the leaf, the way a directory path reads
-pub(super) fn path_id(own_id: i64, path: &[i64]) -> String {
+fn path_id(own_id: i64, path: &[i64]) -> String {
   // uuid v5 of "https://github.com/pjpimentel/geolite" under the url namespace, computed once:
   // `new_v5` is not const, and the namespace never changes
   const NAMESPACE: uuid::Uuid = uuid::Uuid::from_u128(0x4d29_6f1c_5a5f_5b2e_9b8a_2f7d_3c61_8e04);
@@ -252,9 +246,46 @@ impl match_sources {
     }
     admin_levels
   }
+
+  pub(super) fn match_at(
+    &self,
+    leaf: &leaf,
+    ancestors: &[&admin_meta_row],
+    path: &[i64],
+    point: Point<f64>,
+    house_number: Option<&query_house_number>,
+    format: Option<&str>,
+  ) -> query_match {
+    let number = house_number.map(|house_number| house_number.number.as_str());
+    let admin_levels = self.level_ladder(ancestors, leaf, number);
+    let friendly_name = friendly_name_of(
+      format,
+      &admin_levels,
+      self,
+      leaf.id,
+      leaf.name,
+      number,
+      path,
+    );
+    query_match {
+      admin_levels,
+      latitude: round5(point.y()),
+      longitude: round5(point.x()),
+      coordinates_distance_in_meters: None,
+      similarity: None,
+      score: None,
+      friendly_name,
+      attributes: query_match_attributes {
+        country_iso_3166_1_alpha_2_code: country_iso_of(ancestors, self.meta.get(&leaf.id)),
+        post_code: self.post_code_of(leaf.id, path),
+      },
+      house_number: house_number.cloned(),
+      id: path_id(leaf.id, path),
+    }
+  }
 }
 
-pub(super) fn friendly_name_of(
+fn friendly_name_of(
   format: Option<&str>,
   admin_levels: &[admin_level],
   sources: &match_sources,
@@ -269,7 +300,7 @@ pub(super) fn friendly_name_of(
   }
 }
 
-pub(super) fn country_iso_of(
+fn country_iso_of(
   ancestors: &[&admin_meta_row],
   leaf: Option<&admin_meta_row>,
 ) -> Option<String> {

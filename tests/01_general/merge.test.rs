@@ -1,8 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use crate::common::harness::{merged_way_ids_of, open_sqlite_at, output, query_at, world};
+use crate::common::harness::{
+  assert_in_order, merged_way_ids_of, open_sqlite_at, output, plain, query_at, world,
+};
 use crate::extract::{REGENERATE, extracted, stage};
 use crate::general::world;
+use crate::isolated_admin_levels::{
+  ONE_OF_EACH_DELETED, holds_what_was_isolated, with_isolated_areas,
+};
 use crate::street_merge::{LOWER_WAY, UPPER_WAY, drop_merged_way_ids, indexed_and_merged, way};
 
 const TEXT_QUERY: &str = "rua januario dos santos, santos 197";
@@ -162,6 +167,34 @@ fn _00_03_a_source_without_merged_way_ids_still_merges() {
     trace_after_merge(w, "merge_untraced_base", &source),
     Some(vec![LOWER_WAY, UPPER_WAY])
   );
+}
+
+// 00.04. a merge runs the stages a build runs: what is isolated in the union goes before the
+// streets fold
+#[test]
+#[ignore]
+fn _00_04_a_merge_deletes_what_is_isolated_in_the_union() {
+  let w = world();
+  let source = with_isolated_areas(w, "merge_isolated_source");
+  assert!(holds_what_was_isolated(&open_sqlite_at(&sqlite_of(
+    &source
+  ))));
+  let base_dir = w.scratch("merge_isolated_base");
+
+  let merged = merge(w, &base_dir, &[&source]);
+
+  assert_eq!(merged.status, 0, "merge failed:\n{}", merged.stderr);
+  assert_in_order(
+    &plain(&merged.stdout),
+    &[
+      "── optimize-delete-isolated-admin-levels",
+      ONE_OF_EACH_DELETED,
+      "── optimize-merge-admin-levels",
+    ],
+  );
+  assert!(!holds_what_was_isolated(&open_sqlite_at(&sqlite_of(
+    &base_dir
+  ))));
 }
 
 // 01.00. the command needs at least one source: the parser takes an empty list, so the command

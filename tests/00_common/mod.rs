@@ -12,3 +12,6 @@ pub mod ask;
 
 #[path = "stub.test.rs"]
 pub mod stub;
+
+#[path = "leaf.test.rs"]
+pub mod leaf;

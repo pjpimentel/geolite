@@ -943,7 +943,7 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
   let result = query_at(w, &dir, "brazil", "rua januario dos santos, santos 197");
   assert_eq!(
     first(&result)["house_number"]["kind"],
-    "exact",
+    "from_osm_data",
     "the built database is whole"
   );
 }

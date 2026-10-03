@@ -2,6 +2,7 @@ use geo::Geometry;
 use rusqlite::Connection;
 
 use crate::common::harness::{decode_wkb, merged_way_ids_of};
+use crate::common::leaf::{MAP_COLUMNS, assert_the_map_fits, leaf, leaf_of};
 use crate::common::query::{first, level_at, matches, name_at};
 use crate::santos::world;
 
@@ -20,7 +21,27 @@ const STREETS: i64 = 7_195;
 const STATES: usize = 27;
 const PLACE_WAYS: usize = 22;
 
-const REGENERATE: &str = "the fixture changed; regenerate deliberately and update the constants";
+const CASTRO_ALVES_PATH: &str = "Brasil/São Paulo/Santos/Embaré/Rua Castro Alves";
+const CASTRO_ALVES_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
+// the rua professor torres homem of embaré carries the post code 11025-020
+const POST_CODED_PATH: &str = "Brasil/São Paulo/Santos/Embaré/Rua Professor Torres Homem";
+const POST_CODED_QUERY: &str = "rua professor torres homem, embare, santos";
+// conjunto habitacional jaú lies inside aparecida, both of level 10
+const NESTED_PATH: &str =
+  "Brasil/São Paulo/Santos/Aparecida/Conjunto Habitacional Jaú/Rua Aureliano Coutinho";
+const NESTED_QUERY: &str = "rua aureliano coutinho, conjunto habitacional jau, santos";
+// rua bento de abreu runs through boqueirão and embaré
+const CROSSING_QUERY: &str = "rua bento de abreu, santos";
+// rua euclides de campos hangs straight from santos, inside no neighbourhood
+const NO_NEIGHBOURHOOD_PATH: &str =
+  "Brasil/São Paulo/Santos/no neighborhood/Rua Euclides de Campos";
+const NO_NEIGHBOURHOOD_QUERY: &str = "rua euclides de campos, santos";
+// avenida santos dumont, straight under guarujá, is folded from 86 ways, the most of the fixture
+const MANY_WAYS_PATH: &str = "Brasil/São Paulo/Guarujá/no neighborhood/Avenida Santos Dumont";
+const MANY_WAYS_STREET: i64 = 96_905_436;
+
+pub(crate) const REGENERATE: &str =
+  "the fixture changed; regenerate deliberately and update the constants";
 
 // the packed ids of `admin_level::id`: a way is its osm id shifted left, a relation has the low bit
 fn way(osm_id: u64) -> i64 {
@@ -98,7 +119,7 @@ fn friendly_name(query: &str) -> String {
     .to_string()
 }
 
-fn geometry_of(conn: &Connection, id: i64) -> Geometry<f64> {
+pub(crate) fn geometry_of(conn: &Connection, id: i64) -> Geometry<f64> {
   let wkb: Vec<u8> = conn
     .query_row("SELECT wkb FROM admin_levels WHERE id = ?1", [id], |r| {
       r.get(0)
@@ -115,6 +136,20 @@ fn ids_where(conn: &Connection, sql: &str) -> Vec<i64> {
     .expect("failed to query")
     .map(|r| r.expect("failed to read an id"))
     .collect()
+}
+
+// the leaf of a path, and the top match the api answers for the query that names the same path
+fn leaf_and_answer(path: &str, query: &str) -> (leaf, serde_json::Value) {
+  let w = world();
+  (
+    leaf_of(&w.geolite(&["tui", path])),
+    first(&w.run(&[query])).clone(),
+  )
+}
+
+fn assert_the_leaf_is_the_answer(leaf: &leaf, answered: &serde_json::Value) {
+  assert_eq!(leaf.field("label"), answered["friendly_name"].as_str());
+  assert_eq!(leaf.field("id"), answered["id"].as_str());
 }
 
 fn street_way_of(m: &serde_json::Value) -> u64 {
@@ -618,4 +653,184 @@ fn _03_05_the_tui_refuses_an_unknown_path() {
     "stderr: {}",
     out.stderr
   );
+}
+
+// 03.06. the tree: the deepest level is not entered but opened: without a terminal the tui prints
+// the address the api answers for the path and, below it, the street drawn inside the
+// neighbourhood it was opened from
+#[test]
+#[ignore]
+fn _03_06_the_tui_prints_the_address_and_the_map_of_a_street_when_stdout_is_not_a_terminal() {
+  let w = world();
+  let leaf = leaf_of(&w.geolite(&["tui", CASTRO_ALVES_PATH]));
+  let answered = first(&w.run(&[CASTRO_ALVES_QUERY])).clone();
+
+  assert_eq!(
+    leaf.own_names(),
+    ["name", "label", "country code", "point", "osm ways", "id"],
+    "{REGENERATE}"
+  );
+  assert_eq!(leaf.field("name"), Some("Rua Castro Alves"));
+  assert_eq!(leaf.field("label"), answered["friendly_name"].as_str());
+  assert_eq!(leaf.field("id"), answered["id"].as_str());
+  assert_eq!(leaf.field("country code"), Some("BR"));
+  assert_eq!(
+    leaf.field("point"),
+    Some(format!("{:.5}, {:.5}", answered["latitude"], answered["longitude"]).as_str())
+  );
+  assert_eq!(
+    leaf.field("osm ways"),
+    Some("255710390, 729205713"),
+    "{REGENERATE}"
+  );
+  assert_eq!(
+    leaf.levels_held(),
+    [
+      ("2 (country)", "Brasil (relation 59470)"),
+      ("4 (state)", "São Paulo (relation 298204)"),
+      ("8 (city)", "Santos (relation 298442)"),
+      ("10 (neighborhood)", "Embaré (relation 4282882)"),
+      (
+        "12 (street)",
+        "Rua Castro Alves (ways 255710390, 729205713)"
+      ),
+    ],
+    "{REGENERATE}"
+  );
+  assert_eq!(
+    leaf.levels_absent().join(", "),
+    "1 (continent), 3 (region), 5 (district), 6 (county), 7 (municipality), 9 (locality)"
+  );
+
+  assert_the_map_fits(&leaf);
+  assert!(leaf.outline_glyphs() > 0, "the neighbourhood is drawn");
+  assert!(leaf.shape_box().is_some(), "the street is drawn");
+}
+
+// 03.07. the tree: the deepest level holds nothing, so a path that goes on below it is refused
+#[test]
+#[ignore]
+fn _03_07_the_tui_refuses_a_path_below_the_deepest_level() {
+  let below = format!("{CASTRO_ALVES_PATH}/Nowhere");
+  let out = world().geolite(&["tui", &below]);
+  assert_eq!(out.status, 1, "stderr: {}", out.stderr);
+  assert!(
+    out
+      .stderr
+      .contains("no 'Nowhere' under 'Brasil / São Paulo / Santos / Embaré / Rua Castro Alves'"),
+    "stderr: {}",
+    out.stderr
+  );
+}
+
+// 03.08. the tree: a street that carries a post code shows it, between the label and the country
+// code, and it is the one the api answers
+#[test]
+#[ignore]
+fn _03_08_the_leaf_shows_the_post_code_of_a_street_that_has_one() {
+  let (leaf, answered) = leaf_and_answer(POST_CODED_PATH, POST_CODED_QUERY);
+  assert_eq!(
+    leaf.own_names(),
+    [
+      "name",
+      "label",
+      "post code",
+      "country code",
+      "point",
+      "osm way",
+      "id"
+    ],
+    "{REGENERATE}"
+  );
+  assert_eq!(leaf.field("post code"), Some("11025-020"), "{REGENERATE}");
+  assert_eq!(
+    leaf.field("post code"),
+    answered["attributes"]["post_code"].as_str()
+  );
+  assert_the_leaf_is_the_answer(&leaf, &answered);
+}
+
+// 03.09. the tree: a neighbourhood inside a neighbourhood puts two areas of level 10 in the path,
+// and the leaf writes one line for each, the nearest first
+#[test]
+#[ignore]
+fn _03_09_two_areas_of_one_level_in_a_path_are_two_lines() {
+  let (leaf, answered) = leaf_and_answer(NESTED_PATH, NESTED_QUERY);
+  let neighbourhoods: Vec<&str> = leaf
+    .levels_held()
+    .into_iter()
+    .filter(|(level, _)| *level == "10 (neighborhood)")
+    .map(|(_, area)| area)
+    .collect();
+  assert_eq!(
+    neighbourhoods,
+    [
+      "Conjunto Habitacional Jaú (way 196616079)",
+      "Aparecida (relation 4074000)"
+    ],
+    "{REGENERATE}"
+  );
+  assert_the_leaf_is_the_answer(&leaf, &answered);
+}
+
+// 03.10. the tree: a street through two neighbourhoods is opened under each one, and each leaf is
+// the answer of its own path: the label of that neighbourhood and the id of that path
+#[test]
+#[ignore]
+fn _03_10_a_street_through_two_neighbourhoods_opens_under_each_with_the_id_of_that_path() {
+  let w = world();
+  let answers = w.run(&[CROSSING_QUERY]);
+  let ids: Vec<String> = ["Boqueirão", "Embaré"]
+    .into_iter()
+    .map(|neighbourhood| {
+      let path = format!("Brasil/São Paulo/Santos/{neighbourhood}/Rua Bento de Abreu");
+      let leaf = leaf_of(&w.geolite(&["tui", &path]));
+      let answered = matches(&answers)
+        .iter()
+        .find(|m| name_at(m, 10).as_deref() == Some(neighbourhood))
+        .unwrap_or_else(|| panic!("no answer under {neighbourhood}; {REGENERATE}"));
+      assert_the_leaf_is_the_answer(&leaf, answered);
+      leaf.field("id").expect("a leaf carries its id").to_string()
+    })
+    .collect();
+  assert_ne!(ids[0], ids[1], "two paths of one street are two ids");
+}
+
+// 03.11. the tree: `no neighborhood` is a folder and not an area, so a street opened from it
+// answers under its city, with the label and the id the api gives that path
+#[test]
+#[ignore]
+fn _03_11_a_street_opened_from_no_neighborhood_answers_under_its_city() {
+  let (leaf, answered) = leaf_and_answer(NO_NEIGHBOURHOOD_PATH, NO_NEIGHBOURHOOD_QUERY);
+  assert_eq!(
+    leaf.field("label"),
+    Some("Rua Euclides de Campos, Santos, São Paulo, Brasil"),
+    "{REGENERATE}"
+  );
+  assert!(
+    leaf.levels_absent().contains(&"10 (neighborhood)"),
+    "the path has no neighbourhood"
+  );
+  assert_the_leaf_is_the_answer(&leaf, &answered);
+}
+
+// 03.12. the tree: without a terminal a field is never broken, however long: the avenue folded
+// from the most ways names every one of them on one line
+#[test]
+#[ignore]
+fn _03_12_a_field_longer_than_the_map_is_printed_on_one_line() {
+  let w = world();
+  let leaf = leaf_of(&w.geolite(&["tui", MANY_WAYS_PATH]));
+  let ways = merged_way_ids_of(&w.open_sqlite(), MANY_WAYS_STREET)
+    .unwrap_or_else(|| panic!("the avenue is not folded; {REGENERATE}"));
+  let written = ways
+    .iter()
+    .map(u64::to_string)
+    .collect::<Vec<_>>()
+    .join(", ");
+  assert!(
+    written.chars().count() > MAP_COLUMNS,
+    "the field must not fit the map: {REGENERATE}"
+  );
+  assert_eq!(leaf.field("osm ways"), Some(written.as_str()));
 }

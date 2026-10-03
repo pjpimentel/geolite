@@ -8,3 +8,6 @@ mod santos;
 
 #[path = "hierarchy.test.rs"]
 mod hierarchy;
+
+#[path = "house_number.test.rs"]
+mod house_number;

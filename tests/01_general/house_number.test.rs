@@ -42,7 +42,7 @@ fn linked(w: &world, name: &str) -> (scratch, output) {
 // the streets and the house numbers of a scratch, indexed so that the scratch can be queried
 fn indexed(w: &world, name: &str) -> scratch {
   let (s, _) = linked(w, name);
-  for index in ["admin-levels-hierarchy", "user-friendly-name"] {
+  for index in ["admin-levels-hierarchy", "addresses"] {
     index_at(w, &s.dir, index);
   }
   s
@@ -405,7 +405,7 @@ fn _01_00_the_hash_prefix_is_a_number_only_under_the_colombia_policy() {
     let result = asked(w, &w.data_path, "colombia", number);
     assert_eq!(
       first(&result)["house_number"],
-      json!({ "number": "197", "kind": "exact" }),
+      json!({ "number": "197", "kind": "from_osm_data" }),
       "{number}"
     );
     assert!(levels_of(first(&result)).contains(&30), "{number}");
@@ -418,7 +418,7 @@ fn _01_00_the_hash_prefix_is_a_number_only_under_the_colombia_policy() {
   assert!(!levels_of(first(&result)).contains(&30));
 }
 
-// 01.01. a compound number matches its stored value under colombia and is never interpolated
+// 01.01. a compound number matches its stored value under colombia and is never presumed
 #[test]
 #[ignore]
 fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
@@ -446,7 +446,7 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
   let exact = asked(w, &s.dir, "colombia", "82-52");
   assert_eq!(
     first(&exact)["house_number"],
-    json!({ "number": "82-52", "kind": "exact" })
+    json!({ "number": "82-52", "kind": "from_osm_data" })
   );
   let known = asked(w, &s.dir, "colombia", "197");
   assert_eq!(
@@ -454,15 +454,19 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
     (&first(&known)["latitude"], &first(&known)["longitude"]),
     "the compound number sits on the point it was copied from"
   );
-  assert_eq!(
-    first(&asked(w, &s.dir, "colombia", "82-56"))["house_number"],
-    json!({ "number": "82-56", "kind": "absent" }),
-    "a compound number is never interpolated"
+  let unplaced = asked(w, &s.dir, "colombia", "82-56");
+  assert!(
+    first(&unplaced).get("house_number").is_none(),
+    "a compound number is never presumed: the street answers bare"
+  );
+  assert!(
+    !levels_of(first(&unplaced)).contains(&30),
+    "a compound number is never presumed: no level 30"
   );
   assert_eq!(
     first(&asked(w, &s.dir, "colombia", "82"))["house_number"]["kind"],
-    "interpolated",
-    "the control: a simple number interpolates on this street"
+    "presumed_from_multiple_references_from_street",
+    "the control: a simple number is presumed from the references of this street"
   );
   assert!(
     first(&asked(w, &s.dir, "brazil", "82-52"))
@@ -550,7 +554,7 @@ fn _01_02_the_stage_keeps_drops_and_canonizes_the_shapes_the_fixture_never_bring
 fn _01_03_a_compound_number_matches_across_its_letter_case_and_separator() {
   let w = world();
   let (s, _) = injected(w, "house_number_compound_keys", &["25B-48", "16i56"]);
-  for index in ["admin-levels-hierarchy", "user-friendly-name"] {
+  for index in ["admin-levels-hierarchy", "addresses"] {
     index_at(w, &s.dir, index);
   }
 
@@ -558,7 +562,7 @@ fn _01_03_a_compound_number_matches_across_its_letter_case_and_separator() {
     let result = asked(w, &s.dir, "colombia", typed);
     assert_eq!(
       first(&result)["house_number"],
-      json!({ "number": typed, "kind": "exact" }),
+      json!({ "number": typed, "kind": "from_osm_data" }),
       "{typed}"
     );
     assert!(levels_of(first(&result)).contains(&30), "{typed}");

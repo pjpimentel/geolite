@@ -1,21 +1,25 @@
 use std::io::IsTerminal;
 
-use crate::interfaces::tui::{listing, tree, view};
+use crate::interfaces::tui::tree::{self, opened};
+use crate::interfaces::tui::{listing, view};
 
 pub fn command_handler_tui(sqlite_path: &str, path: Option<&str>) {
   let conn = require_data(sqlite_path);
   let tree = tree::open(&conn);
-  let folder = match tree.resolve(&conn, path.unwrap_or("")) {
-    Ok(folder) => folder,
+  let opened = match tree.resolve(&conn, path.unwrap_or("")) {
+    Ok(opened) => opened,
     Err(message) => {
       eprintln!("\x1b[1;31merror\x1b[0m: {message}");
       std::process::exit(1);
     }
   };
   if std::io::stdout().is_terminal() {
-    view::run(&conn, tree, folder);
-  } else {
-    listing::print(&folder);
+    view::run(&conn, tree, opened);
+    return;
+  }
+  match opened {
+    opened::folder(folder) => listing::print(&folder),
+    opened::leaf(_, leaf) => listing::print_leaf(&leaf),
   }
 }
 

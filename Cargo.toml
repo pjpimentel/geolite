@@ -1,6 +1,6 @@
 [package]
 name = "geolite"
-version = "0.0.14"
+version = "0.0.15"
 edition = "2024"
 description = "open source geocode solution"
 license = "AGPL-3.0-only"
@@ -45,3 +45,9 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
+
+# test targets always unwind: under `release`, whose panic is abort, cargo compiles every
+# dependency twice, once for the binary and once for the tests.
+[profile.e2e]
+inherits = "release"
+panic = "unwind"

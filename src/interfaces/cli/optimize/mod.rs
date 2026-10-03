@@ -1,15 +1,34 @@
 pub mod delete_intermediary_data;
+pub mod delete_isolated_admin_levels;
 pub mod merge_admin_levels;
 pub mod sqlite_file;
 
+use std::io::Write;
+use std::path::Path;
+
+use rusqlite::Connection;
+
 use crate::interfaces::cli::exec::stages::stage;
+
+fn clear_indexes(conn: &Connection, index_path: &str) {
+  print!("\x1b[1;32mclearing\x1b[0m addresses and coordinates...");
+  let _ = std::io::stdout().flush();
+  crate::admin_level_hierarchy::search_index::destroy(Path::new(index_path));
+  crate::admin_level::spatial_index::recreate(conn);
+  println!(" done");
+}
+
+fn update_ledger(conn: &Connection) {
+  crate::osm_pbf_file::repository::update_admin_levels_count(conn);
+  crate::osm_pbf_file::repository::update_house_numbers_count(conn);
+}
 
 fn file_size(path: &str) -> u64 {
   std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
 }
 
 fn dir_size(path: &str) -> u64 {
-  let p = std::path::Path::new(path);
+  let p = Path::new(path);
   let Ok(entries) = std::fs::read_dir(p) else {
     return 0;
   };

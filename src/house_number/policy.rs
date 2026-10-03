@@ -17,4 +17,5 @@ pub struct house_number_policy {
   pub max_digits: u8,
   pub shapes: &'static [house_number_shape],
   pub allow_hash_prefix: bool,
+  pub meters_per_number: f64,
 }

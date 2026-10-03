@@ -13,7 +13,7 @@ use crate::admin_level::{admin_level, admin_level_id, level};
 use crate::house_number::repository as house_number_repository;
 use crate::progress_report;
 
-const IDS_PER_READ: usize = 30_000;
+pub(super) const IDS_PER_READ: usize = 30_000;
 const REACH_IN_METERS: f64 = 20.0;
 
 pub struct piece {

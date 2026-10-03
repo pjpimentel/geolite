@@ -14,7 +14,7 @@ admin_level/    a named administrative area — the `admin_levels` table
   entity            the row as it is written: osm element, level, shape, name, codes
   scale             the closed set of levels, their names and their order
   id                stable identity, packed from the osm way or relation it came from
-  geometry          the wkb column codec, its mbr shortcut, the bounding box, the region of `--bounding-wkt` and its parse, the ring assembly, and the folding of lines
+  geometry          the wkb column codec, its mbr shortcut, the bounding box, the region of `--bounding-wkt` and its parse, the ring assembly, the folding of lines, and the outline of a shape
   repository        the ddl, the index, the reads every consumer of the table goes through, and the upsert
   spatial_index     the rtree of every level's bounding box, the pass that fills it, and the nearest streets to a point
   rules             which ways each level includes or excludes, and the preset override
@@ -25,8 +25,9 @@ admin_level/    a named administrative area — the `admin_levels` table
 admin_level_hierarchy/  which area contains which — the `admin_levels_hierarchy` table
   entity            the row as it is written: one edge, child to parent
   paths             the paths of an area up to the roots, enumerated from the edges
-  repository        the ddl, the pending queries, the reads of the tree and the insert
+  repository        the ddl, the pending and the isolated queries, the reads of the tree and the insert
   resolver          the pass that finds every parent of every area and writes the edges
+  isolated          the pass that deletes a country without children and a street without parents
   street_merge      the pass that folds the ways of one street into one row, and the areas it keeps
   search_index      the tantivy index, one document per path, the search over it, and the coverage of a query over a document
 house_number/   a door number placed on a street — the `house_numbers` table
@@ -34,9 +35,11 @@ house_number/   a door number placed on a street — the `house_numbers` table
   value             the number itself: `normalize` (extraction), `recognize` (query), one comparison key
   policy            per-region rules: tags, non-values, digit cap, written forms, `#` prefix
   strategy          how the number was attached to its street: by_proximity | by_name, and the stored codes
+  scenario          where a number came from: the osm data, or presumed from the street's references, from one, or from the constants — the four values of `house_number.kind`
+  axis              the street as one line: the distance along it of a point, and the point at a distance
   token             finding the number inside a free-text query, skipping the street's own name
-  resolution        placing a wanted number on a street: exact | interpolated | absent; and the nearest stored number to a point, within 50 m
-  repository        the ddl, the index, the candidate scan, the street reads, the numbers of a street, the insert and the move of a way's numbers
+  resolution        placing a typed number on a street and reading the number at a point, by the scenario the street's references allow
+  repository        the ddl, the index, the candidate scan, the street reads, the numbers of a street, the count, the insert and the move of a way's numbers
   extract           `house_number_link::extract(policy)`: candidates, tiles of 2°, the fan-out and the batches it reports
   linker            the pass over one tile: by name first, then the nearest street within 0.15°, projected onto it
 address/        an address resolved from a text or from a coordinate — not a table
@@ -45,7 +48,8 @@ address/        an address resolved from a text or from a coordinate — not a t
   label             the friendly-name template: parse, validate, render; and `place_label`, the one label without a template
   filter            the shared last pass: quality, region, last levels, the cut at ten
   text              `address::query_by_text`: the search, the matches, the house number, the sort, and the point of a street that answers without one
-  coordinates       `address::query_by_coordinates`: the nearest streets, the matches under the areas that hold each street's nearest point, the nearest number
+  coordinates       `address::query_by_coordinates`: the nearest streets, the matches under the areas that hold each street's nearest point, the number at the point
+  path              `address::at_path`: the match of an area under a path already known, without a search
   house_number      the number of each street, resolved before its match is built; the rule itself is `house_number`
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index and the ten writes and reads

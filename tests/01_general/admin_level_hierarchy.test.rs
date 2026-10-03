@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::admin_level::index_at;
 use crate::common::harness::{open_sqlite_at, world};
 use crate::extract::{copy_fixture, stage};
@@ -8,11 +10,11 @@ use geozero::{CoordDimensions, ToWkb};
 
 const COUNTRY: u64 = 1;
 
-fn relation(osm_id: u64) -> i64 {
+pub(crate) fn relation(osm_id: u64) -> i64 {
   ((osm_id << 1) | 1) as i64
 }
 
-struct row {
+pub(crate) struct row {
   id: i64,
   relation_id: Option<i64>,
   way_id: Option<i64>,
@@ -21,7 +23,13 @@ struct row {
   geometry: Geometry<f64>,
 }
 
-fn area(osm_id: u64, level: u8, name: &'static str, min: [f64; 2], max: [f64; 2]) -> row {
+pub(crate) fn area(
+  osm_id: u64,
+  level: u8,
+  name: &'static str,
+  min: [f64; 2],
+  max: [f64; 2],
+) -> row {
   let ring = LineString(vec![
     coord! { x: min[0], y: min[1] },
     coord! { x: max[0], y: min[1] },
@@ -39,7 +47,7 @@ fn area(osm_id: u64, level: u8, name: &'static str, min: [f64; 2], max: [f64; 2]
   }
 }
 
-fn street(osm_id: u64, name: &'static str, points: &[[f64; 2]]) -> row {
+pub(crate) fn street(osm_id: u64, name: &'static str, points: &[[f64; 2]]) -> row {
   let line: Vec<Coord<f64>> = points.iter().map(|p| coord! { x: p[0], y: p[1] }).collect();
   row {
     id: way(osm_id),
@@ -66,7 +74,7 @@ fn wkb(geometry: &Geometry<f64>) -> Vec<u8> {
 
 // the chunk index is the cheapest stage that opens the database for writing, which is what creates
 // the schema the synthetic rows go into
-fn resolved(w: &world, name: &str, rows: &[row]) -> rusqlite::Connection {
+pub(crate) fn resolved_at(w: &world, name: &str, rows: &[row]) -> PathBuf {
   const SQL_INSERT: &str = "
     INSERT INTO admin_levels (
       id,
@@ -108,7 +116,11 @@ fn resolved(w: &world, name: &str, rows: &[row]) -> rusqlite::Connection {
     }
   }
   index_at(w, &dir, "admin-levels-hierarchy");
-  open_sqlite_at(&dir.join("database.sqlite3"))
+  dir
+}
+
+fn resolved(w: &world, name: &str, rows: &[row]) -> rusqlite::Connection {
+  open_sqlite_at(&resolved_at(w, name, rows).join("database.sqlite3"))
 }
 
 // 00.00. half of the samples nests an area under a peer of its level: 32 of 65 stay beside it,

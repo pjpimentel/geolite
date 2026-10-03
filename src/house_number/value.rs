@@ -62,6 +62,10 @@ impl house_number {
     Self::from_text(text)
   }
 
+  pub fn presumed(value: u32) -> Self {
+    Self::from_text(&value.to_string())
+  }
+
   fn from_text(text: &str) -> Self {
     let key = comparison_key_of(text);
     Self {

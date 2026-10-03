@@ -82,14 +82,35 @@ ring of a country out of the pass. a ring longer than five hundred edges is inde
 band when it is loaded, so a point test walks a few dozen edges instead of the whole boundary of a
 state.
 
+## the isolated areas — `isolated`
+
+an extract brings rows no address ever names: the neighbouring country whose boundary came with the
+file and holds nothing, and the street the resolver found inside no area. `isolated` deletes both
+after the resolver and before the street merge, so the fold and the two indexes work over the rows
+that stay: it is `geolite exec optimize-delete-isolated-admin-levels`, which `build` and
+`geolite merge` run between `index-admin-levels-hierarchy` and `optimize-merge-admin-levels`.
+
+the rule names two levels and reads the edges as they are. a **country without children** is a row
+of level 2 that is the `parent_id` of no edge; a **street without parents** is a row of level 12
+with no edge but the root one. a child is a child whatever it holds, so a country whose states are
+empty stays, and no other level is touched: a state without children and a neighbourhood without
+parents are left alone. the rule runs once and not to a fixed point — a country that was the only
+child of another goes, and the outer one is without children only for the next run. it has no floor
+either: where every row is isolated the base ends empty, and the stage after it refuses.
+
+the edges and the house numbers of a row leave with it, because both reference `admin_levels(id)`
+and cascade on delete, and a row that goes is the parent of none that stays, so the hierarchy still
+covers every row. the search index and the rtree are cleared before the first write, as the street
+merge clears them; a run that finds nothing isolated touches neither.
+
 ## the street merge — `street_merge`
 
 a street mapped in several ways answers several times under one label, and its numbers sit on
 whichever way they were linked to. `street_merge` folds the ways of one street into one row after
 the resolver has said which areas each way is in and before the search index is built, because the
 rule needs the areas and the index needs the rows: it is `geolite exec optimize-merge-admin-levels`,
-which `build` and `geolite merge` run between `index-admin-levels-hierarchy` and
-`index-user-friendly-name`. no index stage folds on its own.
+which `build` and `geolite merge` run between `optimize-delete-isolated-admin-levels` and
+`index-addresses`. no index stage folds on its own.
 
 two ways of the same name are one street when they **share an area**, their post codes agree (a
 missing code agrees with any, two different codes do not) and they **touch or come within 20 m**: the
@@ -122,10 +143,17 @@ three field variants — folded (lower case, no diacritics), strict (as written)
 (diacritics kept). a preset's abbreviations are expanded in both directions into the folded text,
 so `rua` finds `r.` and back.
 
-`search` runs two queries with a fallback: the strict one demands every token exactly, in the name
-or in the ancestry, and wins when it finds anything — phrase order and the strict and lower forms
-only re-rank that set, never widen it; the loose one runs only when the strict one is empty, with
-exact and fuzzy terms as optional clauses, which covers a typo, an extra word or partial coverage.
+`search` runs three queries, each one only when the one before is empty. the strict one demands
+every token exactly, in the name or in the ancestry, and wins when it finds anything — phrase order
+and the strict and lower forms only re-rank that set, never widen it. the second one is the strict
+one without demanding the words the caller names as optional, which the text service fills with
+the words that read as a house number: `11` in `euclides da cunha 11 gonzaga santos` is a word no
+document holds, so the documents covering every other word come back, and one that does hold the
+number (`25` in `rua 25 de marco 100`) ranks above the ones that do not; the phrase is then the
+one the demanded tokens make. it is skipped when no word is optional or none is left to demand.
+the loose one takes exact and fuzzy terms as optional clauses, which covers a typo, an extra word
+or partial coverage; it ranks by bm25 alone, so a document repeating half of the query outranks
+one covering most of it — which is why a house number must not be what sends a query there.
 the score is the raw bm25 of whichever query found the document. `last_admin_levels` and the
 region filter are Must clauses with boost 0.0: they restrict the document set without touching the
 score. why exact and fuzzy carry separate
@@ -147,10 +175,10 @@ tantivy: the multi-threaded writer lays the documents out differently on every b
 scored collector prunes with block-wand and drops a document that merely ties the threshold, so a
 sort after the fact would still see a different set per layout — the ids in the key are what make
 the ranking a contract. `load` refuses an index missing either fast field: one built by an earlier
-version reads as absent, and the cli asks for `geolite exec index-user-friendly-name`. the score in that
+version reads as absent, and the cli asks for `geolite exec index-addresses`. the score in that
 key is rounded to three decimals: bm25 separates two identical documents by an ulp, according to the
 segment each one fell in, and the raw value would let that noise decide ahead of the ids.
 
 `build` reads the names, post codes and levels through `admin_level::repository::load_all_names`,
 so the index knows the table only through its owner. `run` is what the cli's
-`geolite exec index-user-friendly-name` calls: the build, with the row count reported around it.
+`geolite exec index-addresses` calls: the build, with the row count reported around it.

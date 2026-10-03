@@ -1,18 +1,24 @@
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Position, Rect};
+use ratatui::layout::{Constraint, Layout, Margin, Position, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, Cell, Row, Table, TableState};
+use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 use ratatui::{DefaultTerminal, Frame};
 use rusqlite::Connection;
 
+use super::fields::sheet;
 use super::filter::filter;
-use super::tree::{folder, item, tree};
+use super::leaf::leaf;
+use super::map::{self, zoom};
+use super::tree::{folder, item, opened, tree};
 
 const MAX_WIDTH: u16 = 100;
 const KEYS: &str = "↑↓ move  ⏎ enter  ⌫ up  / filter  q quit";
 const KEYS_FILTERED: &str = "↑↓ move  ⏎ enter  ⌫ up  / filter  esc clear  q quit";
 const KEYS_TYPING: &str = "↑↓ move  ⏎ enter  ⌫ erase  esc clear";
+const KEYS_LEAF: &str = "+ - zoom  ⌫ up  q quit";
+const KEYS_LEAF_SCROLLED: &str = "↑↓ scroll  + - zoom  ⌫ up  q quit";
+const MAP_ROWS_KEPT: u16 = 8;
 const PROMPT: &str = "  / ";
 const PLACEHOLDER: &str = "filter";
 
@@ -20,23 +26,37 @@ struct view<'a> {
   conn: &'a Connection,
   tree: tree,
   folder: folder,
+  leaf: Option<Box<leaf>>,
+  zoom: zoom,
+  scroll: u16,
   filter: filter,
   typing: bool,
   state: TableState,
   page: u16,
 }
 
-pub fn run(conn: &Connection, tree: tree, folder: folder) {
+pub fn run(conn: &Connection, tree: tree, opened: opened) {
+  let (folder, leaf) = match opened {
+    opened::folder(folder) => (folder, None),
+    opened::leaf(folder, leaf) => (folder, Some(leaf)),
+  };
   let mut view = view {
     conn,
     tree,
     filter: filter::over(&folder),
     folder,
+    leaf: None,
+    zoom: zoom::default(),
+    scroll: 0,
     typing: false,
     state: TableState::default(),
     page: 1,
   };
   view.select_first_item();
+  if let Some(leaf) = leaf {
+    view.select_leaf(&leaf);
+    view.leaf = Some(leaf);
+  }
   ratatui::run(|terminal| view.run(terminal)).expect("failed to run the tui");
 }
 
@@ -65,6 +85,54 @@ impl view<'_> {
       Constraint::Fill(1),
     ])
     .areas(frame.area());
+    if self.leaf.is_some() {
+      self.draw_leaf(frame, column);
+    } else {
+      self.draw_folder(frame, column);
+    }
+  }
+
+  fn draw_leaf(&mut self, frame: &mut Frame, column: Rect) {
+    let Some(leaf) = self.leaf.as_deref() else {
+      return;
+    };
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let inner = Block::bordered().inner(column);
+    let fields = leaf.fields();
+    let sheet = sheet::of(&fields, inner.width.saturating_sub(2));
+    let room = inner.height.saturating_sub(MAP_ROWS_KEPT + 1).max(1);
+    let shown = sheet.height().min(room);
+    let hidden = sheet.height() - shown;
+    self.scroll = self.scroll.min(hidden);
+    self.page = shown.max(1);
+    let keys = if hidden > 0 { KEYS_LEAF_SCROLLED } else { KEYS_LEAF };
+    let block = Block::bordered()
+      .title(format!(" {} ", leaf.breadcrumb()))
+      .title_bottom(format!(" {keys} "));
+    let [data, rule, drawn] = Layout::vertical([
+      Constraint::Length(shown),
+      Constraint::Length(1),
+      Constraint::Fill(1),
+    ])
+    .areas(inner);
+    frame.render_widget(block, column);
+    sheet.render(self.scroll, data.inner(Margin::new(1, 0)), frame.buffer_mut());
+    self.zoom = map::settled(&leaf.drawing, drawn, self.zoom);
+    let width = map::ground_width(&leaf.drawing, drawn, self.zoom);
+    let mut ruled = Block::new()
+      .borders(Borders::TOP)
+      .border_style(dim)
+      .title(Line::from(format!(" ↔ {width} ")).right_aligned());
+    if hidden > 0 {
+      let first = self.scroll + 1;
+      let last = self.scroll + shown;
+      ruled = ruled.title(format!(" {first}-{last} of {} ", sheet.height()));
+    }
+    frame.render_widget(ruled, rule);
+    map::render(&leaf.drawing, self.zoom, drawn, frame.buffer_mut());
+  }
+
+  fn draw_folder(&mut self, frame: &mut Frame, column: Rect) {
     let dim = Style::default().add_modifier(Modifier::DIM);
     let block = Block::bordered()
       .title(format!(" {} ", self.folder.breadcrumb()))
@@ -160,6 +228,9 @@ impl view<'_> {
   }
 
   fn handle(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    if self.leaf.is_some() {
+      return self.read(code, modifiers);
+    }
     let page = self.page;
     match code {
       KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => return true,
@@ -191,6 +262,24 @@ impl view<'_> {
     }
   }
 
+  fn read(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+    match code {
+      KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => return true,
+      KeyCode::Char('q') => return true,
+      KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') | KeyCode::Esc => self.leaf = None,
+      KeyCode::Char('+') | KeyCode::Char('=') => self.zoom = self.zoom.closer(),
+      KeyCode::Char('-') => self.zoom = self.zoom.farther(),
+      KeyCode::Up | KeyCode::Char('k') => self.scroll = self.scroll.saturating_sub(1),
+      KeyCode::Down | KeyCode::Char('j') => self.scroll = self.scroll.saturating_add(1),
+      KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(self.page),
+      KeyCode::PageDown => self.scroll = self.scroll.saturating_add(self.page),
+      KeyCode::Home => self.scroll = 0,
+      KeyCode::End => self.scroll = u16::MAX,
+      _ => {}
+    }
+    false
+  }
+
   fn browsed(&mut self, code: KeyCode) -> bool {
     match code {
       KeyCode::Char('q') => return true,
@@ -204,7 +293,7 @@ impl view<'_> {
     false
   }
 
-  // `.` stays, `..` goes up, a folder is entered, a street is not
+  // `.` stays, `..` goes up, a folder is entered, the deepest level is opened
   fn enter(&mut self) {
     self.typing = false;
     let Some(row) = self.state.selected() else {
@@ -221,9 +310,16 @@ impl view<'_> {
     let Some(&index) = self.filter.shown.get(row - head) else {
       return;
     };
-    if let Some(entered) = self.tree.enter(self.conn, &self.folder, index) {
-      self.list(entered);
-      self.select_first_item();
+    match self.tree.enter(self.conn, &self.folder, index) {
+      Some(entered) => {
+        self.list(entered);
+        self.select_first_item();
+      }
+      None => {
+        self.leaf = super::leaf::open(self.conn, &self.folder, index).map(Box::new);
+        self.zoom = zoom::default();
+        self.scroll = 0;
+      }
     }
   }
 
@@ -274,10 +370,20 @@ impl view<'_> {
     let row = if self.filter.shown.is_empty() { 0 } else { head_rows(&self.folder) };
     *self.state.selected_mut() = Some(row);
   }
+
+  fn select_leaf(&mut self, leaf: &leaf) {
+    let position = leaf
+      .path
+      .last()
+      .and_then(|opened| self.folder.items.iter().position(|item| item.same_as(opened)));
+    if let Some(position) = position {
+      *self.state.selected_mut() = Some(head_rows(&self.folder) + position);
+    }
+  }
 }
 
 fn item_row(item: &item) -> Row<'static> {
-  let inside = item.entry.is_folder().then_some(item.inside);
+  let inside = item.is_folder.then_some(item.inside);
   let row = cells(item.entry.level().name(), inside, &item.entry.name());
   if item.entry.is_missing() {
     row.style(Style::default().add_modifier(Modifier::DIM))

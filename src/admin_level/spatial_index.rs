@@ -222,6 +222,7 @@ pub struct nearest_street {
   pub level: level,
   pub closest_point: Point<f64>,
   pub distance_in_meters: Option<u32>,
+  pub geometry: Geometry<f64>,
 }
 
 struct street_query_row {
@@ -295,9 +296,9 @@ pub fn nearest(conn: &Connection, point: Point<f64>, envelope: bounding_box) -> 
         continue;
       }
     };
-    let linestrings: Vec<LineString<f64>> = match geom {
+    let linestrings: Vec<&LineString<f64>> = match &geom {
       Geometry::LineString(ls) => vec![ls],
-      Geometry::MultiLineString(mls) => mls.0,
+      Geometry::MultiLineString(mls) => mls.0.iter().collect(),
       _ => {
         rej_not_linestring += 1;
         continue;
@@ -305,7 +306,7 @@ pub fn nearest(conn: &Connection, point: Point<f64>, envelope: bounding_box) -> 
     };
     let mut best: Option<(Point<f64>, f64)> = None;
     let mut had_non_empty = false;
-    for ls in &linestrings {
+    for ls in linestrings {
       if ls.0.is_empty() {
         continue;
       }
@@ -336,6 +337,7 @@ pub fn nearest(conn: &Connection, point: Point<f64>, envelope: bounding_box) -> 
       level: s.level,
       closest_point,
       distance_in_meters: Some(dist.round().clamp(0.0, u32::MAX as f64) as u32),
+      geometry: geom,
     });
   }
 
