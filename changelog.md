@@ -14,6 +14,8 @@
 1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
 1. ADDED a query cache to `http-server` and `query`, bounded by a cli option, so a repeated question answers at once.
+1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
+1. REMOVED the admin level 30 from the ladder, the house number of a match restructured as its own object in the response (not backward compatible), so the ladder holds only areas and the number is read from one place.
 
 ## **2026-10-03** - 0.0.15
 
