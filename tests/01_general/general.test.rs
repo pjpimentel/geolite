@@ -4,7 +4,7 @@ use crate::common::harness::{
 };
 use crate::common::query::{first, kind_of, matches, number_of};
 use crate::extract::{REGENERATE, extracted};
-use crate::house_number::HOUSE_NUMBERS;
+use crate::house_number::{HOUSE_NUMBERS, NODE_OF_197};
 use crate::isolated_admin_levels::NOTHING_ISOLATED;
 use crate::street_merge::{NUMBERS_MOVED, merged_summary};
 use serde_json::{Value, json};
@@ -803,7 +803,12 @@ fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
   let read = get(colombia.port, &path).json();
   assert_eq!(
     first(&read)["house_number"],
-    json!({ "number": "197", "kind": "from_osm_data" }),
+    json!({
+      "number": "197",
+      "kind": "from_osm_data",
+      "osm_node_ids": [NODE_OF_197],
+      "meters_per_number": null,
+    }),
   );
 
   let brazil = w.start_server_with_preset("brazil");
@@ -885,6 +890,29 @@ fn _01_28_the_web_ui_draws_the_map_from_openstreetmap_tiles() {
   assert!(
     !page.contains("cartocdn"),
     "the carto tiles ask for an api key"
+  );
+}
+
+// 01.29. contract: the origin of a house number is documented: the nodes an integer list that is
+// always there, the metres per number a number that can be null
+#[test]
+#[ignore]
+fn _01_29_the_response_schema_documents_the_origin_of_a_house_number() {
+  let s = world().start_server();
+  let spec = get(s.port, "/openapi.json").json();
+  let number = &spec["components"]["schemas"]["query_house_number"];
+  assert_eq!(
+    number["properties"]["osm_node_ids"]["items"]["type"],
+    "integer"
+  );
+  assert_eq!(
+    number["properties"]["meters_per_number"]["type"],
+    json!(["number", "null"])
+  );
+  assert_eq!(
+    number["required"],
+    json!(["number", "kind", "osm_node_ids"]),
+    "the metres are the one key that can be null"
   );
 }
 

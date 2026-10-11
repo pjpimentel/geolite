@@ -39,11 +39,12 @@ the filters.
 
 `query_by_coordinates` asks the rtree for the streets around the point (`RTREE_DELTA_DEG`), keeps
 the lines only, projects the point onto each one (`ClosestPoint`, haversine) and sorts by level and
-distance. there is no distance cap on streets: `min_quality` runs on the candidates and, when no
-`last_admin_levels` was asked, the cut at ten happens before the loads. the match carries the
-closest point and the distance in metres, and every street answers a number: the stored one
-within 50 m of the point, else the one read at the closest point from the street's own numbers or
-from the preset's metres per number, appended as level 30 and named by `house_number.kind`.
+distance. there is no distance cap on streets: the region, `min_quality` and `last_admin_levels`
+run on the candidates, whose leaf is the street itself, and the cut at ten happens before the
+loads. the match carries the closest point and the distance in metres, and every street answers a
+number: the stored one within 50 m of the point, else the one read at the closest point from the
+street's own numbers or from the preset's metres per number, answered in `house_number` and named
+by `house_number.kind`.
 
 ## the address of a path — `path`
 
@@ -64,30 +65,39 @@ the adapter between a street and `house_number`, run once per street before any 
 a match is composed once and nothing is re-rendered afterwards. on the text path `from_query` has
 `token::first_house_number` pick the number left after the street's own name tokens are removed and
 `resolution::place` put it on the street's geometry; the match is built on the number's point,
-with level 30 on the ladder and in the label, and `similarity` gains +0.01 when the number came
-from the street's own numbers (`from_osm_data` or presumed from two or more references): a street
-split into several osm segments shares one score, and the nudge is what lifts the segment that
-holds the number above the ones that presumed it from less. a text without a number, a compound
-number the street does not store and a hit that is not a street answer bare. on the coordinate
-path `at_point` asks `resolution::number_at` for the number at each candidate's closest point,
-the candidate carrying its geometry from `spatial_index::nearest` so nothing is read twice. the
-numbers of both paths come from `house_number::repository::numbers_by_street`, and `reported`
-turns a resolution into the `house_number` of the response, which `match_at` sets together with
-the level-30 rung: a rung without the object, or the object without the rung, cannot happen.
+with the number in `house_number` and in the label, and `similarity` gains +0.01 when the number
+came from the street's own numbers (`from_osm_data` or presumed from two or more references): a
+street split into several osm segments shares one score, and the nudge is what lifts the segment
+that holds the number above the ones that presumed it from less. a text without a number, a
+compound number the street does not store and a hit that is not a street answer bare. on the
+coordinate path `at_point` asks `resolution::number_at` for the number at each candidate's closest
+point, the candidate carrying its geometry from `spatial_index::nearest` so nothing is read twice.
+the numbers of both paths come from `house_number::repository::numbers_by_street`, and `reported`
+turns a resolution into the `house_number` of the response, the one place a number is read from:
+the number, the word of its origin (`kind`, the `scenario()` of the origin), the osm nodes it was
+read from (`osm_node_ids`) and the metres per number behind it (`meters_per_number`, `null`
+unless the arithmetic used it). the ladder holds only areas, and the label reads the object, with
+a template (`{house_number}`) or without.
 
 ## the response — `entity`
 
 the seven types of the json (`query_output`, `query_service`, `query_match`, `admin_level`,
 `query_match_attributes`, `query_house_number`, and `house_number_scenario`, which `house_number`
 owns) are the openapi schema and keep their names; coordinates are rounded to five decimals
-(`round5`). the ladder of a match is
-built once, in `match_sources`: the paths of the ids climbed from the edges, the metadata of the
-ids and their ancestors, and the wkt only when `include_wkt` asks for it (the polygons of countries
-and states are megabytes). every level of the ladder carries its own `post_code`, `null` when the
-area has none, the house number included. a street folded from several ways carries
-`osm_merged_way_ids`, the osm way of each line of its `wkt`, in the order of the lines; the key is
-absent everywhere else, and it is read on every query rather than under `include_wkt`, because it
-also says which ways a street stands for when no shape is asked.
+(`round5`). the ladder of a match is built once, in `match_sources`: the paths of the ids climbed
+from the edges, the metadata of the ids and their ancestors, and the wkt only when `include_wkt`
+asks for it (the polygons of countries and states are megabytes). every level of the ladder
+carries its own `post_code`, `null` when the area has none. a street folded from several ways
+carries `osm_merged_way_ids`, the osm way of each line of its `wkt`, in the order of the lines;
+the key is absent everywhere else, and it is read on every query rather than under
+`include_wkt`, because it also says which ways a street stands for when no shape is asked.
+
+`query_house_number` is the number and where it came from: `kind` the word, `osm_node_ids` the
+osm nodes the number was read from — the one node of a stored number, every reference of a street
+that presumed it from several, the one reference it was presumed from, none from the constants —
+and `meters_per_number` the preset's metres behind a number presumed from one reference or from
+the constants, `null` for the other two. every key is always present, so a client reads the
+object by its shape and not by its kind.
 
 **one answer is one path, not one area.** a street inside two neighbourhoods answers twice, once
 per path, and `matches[].id` is the uuid v5 of that path — the area ids from the root down to the
@@ -108,16 +118,17 @@ code met walking the path outward from the area itself, the order the label foll
 
 ## the label — `label`
 
-`friendly_name_format` is a template over the ladder: `{admin_level_<N>_name}` and
-`{house_number}` (the alias of level 30). the parse is strict — any other `{...}`, an unterminated
+`friendly_name_format` is a template over the match: `{admin_level_<N>_name}` reads the ladder and
+`{house_number}` reads `house_number`. the parse is strict — any other `{...}`, an unterminated
 one or a level that is not a `u8` is an error — and it runs at the boundary
 (`validate_friendly_name_format` is the cli `value_parser` and the http check), so `render` never
-sees a bad template. a placeholder without a level swallows the literal that follows it
-(`"{a}, {b}, {c}"` with `b` missing renders `a, c`) and the result is trimmed of commas and
-whitespace. without a template the label is `place_label` over the match's own path: the names from
-the area outward, the house number right after the area's own name, then the post codes from the
-root inward — one rule with or without a number, following the path rather than the ladder, so both
-services write the same label for the same path.
+sees a bad template. a placeholder without a value — a level the ladder lacks, or
+`{house_number}` on a bare match — swallows the literal that follows it (`"{a}, {b}, {c}"` with
+`b` missing renders `a, c`) and the result is trimmed of commas and whitespace. without a template
+the label is `place_label` over the match's own path: the names from the area outward, the house
+number right after the area's own name, then the post codes from the root inward — one rule with
+or without a number, following the path rather than the ladder, so both services write the same
+label for the same path.
 
 ## the filters — `filter`
 
@@ -126,12 +137,14 @@ services write the same label for the same path.
 filter never sees a value outside `[0, 1]`, which would silently empty or bypass the cut.
 
 the region of `--bounding-wkt` is `admin_level::geometry::bounding_geometry`: the polygon for the
-exact containment and its envelope for the rtree. the last pass of both services runs in one order — quality (the
-similarity, or `1 - distance / 100 m` for a coordinate), the exact containment in the polygon (the
-rtree tested the envelope only), the leaf level against `last_admin_levels` — and cuts at
-`MAX_RESULTS` (ten) only after every filter, so no filter discards a match that would have made the
-cut. the leaf a presumed number sits on is the street: `12` keeps the bare streets and the ones
-whose number was presumed, `30` keeps only the numbers that came from the osm data.
+exact containment and its envelope for the rtree. the last pass of both services runs in one
+order — quality (the similarity, or `1 - distance / 100 m` for a coordinate), then the exact
+containment in the polygon (the rtree tested the envelope only) — and cuts at `MAX_RESULTS` (ten)
+only after every filter, so no filter discards a match that would have made the cut.
+`last_admin_levels` runs where each service reads its candidates, a term of the index on the text
+path and the level of the street on the coordinate path: the leaf of a numbered street is the
+street, so `12` keeps it, bare or numbered, and `30` is refused where the levels are parsed, like
+any value outside the scale.
 
 ## what belongs elsewhere
 

@@ -156,7 +156,7 @@ fn build_match(
   // bare street and the ones that presumed it from less
   if resolution.is_some_and(|placed| {
     matches!(
-      placed.scenario,
+      placed.origin.scenario(),
       house_number_scenario::from_osm_data
         | house_number_scenario::presumed_from_multiple_references_from_street
     )

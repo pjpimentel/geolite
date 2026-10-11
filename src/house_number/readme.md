@@ -76,16 +76,18 @@ document for.
 
 ## where a number comes from — `scenario`
 
-every street answer carries a number, and `house_number_scenario` says how it was obtained; it is
-the word the api answers in `house_number.kind` too, so the enum derives the json and the openapi
-schema itself. `from_osm_data` is a stored number, equal to the typed one on the text path or
-within 50 m of the point on the coordinate path. the other three are presumed from what the
-street offers: `presumed_from_multiple_references_from_street` when it stores two or more
-distinct numbers, `presumed_from_one_ref_from_street` when it stores one, and
-`presumed_from_constants` when it stores none. a presumed number is an estimate, and the enum is
-how far to trust it; measured against the 473 numbers of the santos fixture, leaving each one out
-in turn, the median error is 15 m between two references, 17 m from one, and 160 to 250 m from
-the constants, against the 267 m of the point of the street that answered before.
+every street answer carries a number, and `house_number_scenario` is the word the api says for
+where it came from, `house_number.kind`, so the enum derives the json and the openapi schema
+itself. `from_osm_data` is a stored number, equal to the typed one on the text path or within
+50 m of the point on the coordinate path. the other three are presumed from what the street
+offers: `presumed_from_multiple_references_from_street` when it stores two or more distinct
+numbers, `presumed_from_one_ref_from_street` when it stores one, and `presumed_from_constants`
+when it stores none. a presumed number is an estimate, and the word is how far to trust it;
+measured against the 473 numbers of the santos fixture, leaving each one out in turn, the median
+error is 15 m between two references, 17 m from one, and 160 to 250 m from the constants, against
+the 267 m of the point of the street that answered before. the word is only the name of the
+scenario: what the number was actually read from is `house_number_origin`, in `resolution`, and
+the scenario is what the origin answers when asked for its word.
 
 ## the street as one line — `axis`
 
@@ -111,12 +113,12 @@ does, so a metre east is a metre north.
 the **references** of a street are its stored numbers with a leading value that are not compound,
 within 100 m of the axis (`REFERENCE_MAX_DISTANCE_FROM_AXIS_IN_METERS`: the far carriageway of a
 wide avenue counts, a piece the axis never reached does not), one per distinct value, the first
-in node id order, read as (value, chainage). the **factor** of a street with two or more of them
-is the signed metres per number between the lowest and the highest; the **direction** of a
-street with one is read from the reference itself: the numbering grows from the end of the axis
-whose distance to the reference best matches the reference read as metres (`|c − v·m|` against
-`|(L − c) − v·m|`, `m` the preset's `meters_per_number`), which is right for 87 of the 92
-references on the clean streets of the fixture.
+in node id order, read as (node, value, chainage). the **factor** of a street with two or more
+of them is the signed metres per number between the lowest and the highest; the **direction**
+of a street with one is read from the reference itself: the numbering grows from the end of the
+axis whose distance to the reference best matches the reference read as metres (`|c − v·m|`
+against `|(L − c) − v·m|`, `m` the preset's `meters_per_number`), which is right for 87 of the
+92 references on the clean streets of the fixture.
 
 `place` answers the text path with a typed number: equal to a stored one, the stored point
 (`from_osm_data`); compound, no number at all — `82-56` between `82-52` and `82-60` is not a
@@ -136,6 +138,13 @@ references around it, beyond them from the nearest one in chainage at the factor
 value when the factor is zero), from the one reference in its direction, or the metres from the
 start over the metres per number — rounded, never below one, and never in place of the street's
 own point: the coordinate path reads a number, it does not move a match.
+
+what both answer is a `house_number_resolution`: the number, its point and its
+`house_number_origin`, the data the number was read from — `osm_node` the one stored node,
+`references` every reference of the street in the order of their values, `reference` the one
+reference and the metres per number, `constants` the metres per number alone. the origin is what
+the resolution knows; `scenario()` is the word the api says for it, and `address::house_number`
+reads both into the response.
 
 ## the extraction — `extract` and `linker`
 
@@ -163,10 +172,10 @@ on the ledger after it.
 
 the ddl, the one index (`house_numbers_search_by_admin_level_id`, the read of every query), the
 candidate scan of `osm_data.osm_nodes` (`load_all_candidates`, where `normalize` runs), the
-numbers of a set of streets with their points (`numbers_by_street`, in node id order — the order
-the first-match rules of the resolution see, whatever the insertion order — where `from_stored`
-runs) and the
-insert. the streets come through `admin_level::repository` — `streets_with_centroid` for the
-tiles, `geometry_by_ids` for the linker — so only the owner writes sql over `admin_levels`.
+numbers of a set of streets (`numbers_by_street`, one `stored_number` per row — the osm node, the
+number and its point — in node id order, the order the first-match rules of the resolution see,
+whatever the insertion order, where `from_stored` runs) and the insert. the streets come through
+`admin_level::repository` — `streets_with_centroid` for the tiles, `geometry_by_ids` for the
+linker — so only the owner writes sql over `admin_levels`.
 `osm_pbf_file::repository::update_house_numbers_count` reads the table the other way round, for
 the ledger.

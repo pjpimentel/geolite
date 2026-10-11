@@ -41,6 +41,8 @@ pub struct query_match_attributes {
 pub struct query_house_number {
   pub number: String,
   pub kind: house_number_scenario,
+  pub osm_node_ids: Vec<u64>,
+  pub meters_per_number: Option<f64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -206,12 +208,7 @@ impl match_sources {
       .find_map(|m| m.post_code.clone())
   }
 
-  pub(super) fn level_ladder(
-    &self,
-    ancestors: &[&admin_meta_row],
-    leaf: &leaf,
-    house_number: Option<&str>,
-  ) -> Vec<admin_level> {
+  fn level_ladder(&self, ancestors: &[&admin_meta_row], leaf: &leaf) -> Vec<admin_level> {
     let mut admin_levels: Vec<admin_level> = ancestors
       .iter()
       .map(|a| admin_level {
@@ -233,17 +230,6 @@ impl match_sources {
       osm_merged_way_ids: self.merged_way_ids_of(leaf.id),
       wkt: self.wkt.get(&leaf.id).cloned(),
     });
-    if let Some(number) = house_number {
-      admin_levels.push(admin_level {
-        level: level::house_number.value(),
-        name: number.to_string(),
-        post_code: None,
-        osm_relation_id: None,
-        osm_way_id: None,
-        osm_merged_way_ids: None,
-        wkt: None,
-      });
-    }
     admin_levels
   }
 
@@ -256,8 +242,8 @@ impl match_sources {
     house_number: Option<&query_house_number>,
     format: Option<&str>,
   ) -> query_match {
+    let admin_levels = self.level_ladder(ancestors, leaf);
     let number = house_number.map(|house_number| house_number.number.as_str());
-    let admin_levels = self.level_ladder(ancestors, leaf, number);
     let friendly_name = friendly_name_of(
       format,
       &admin_levels,
@@ -295,7 +281,7 @@ fn friendly_name_of(
   chain: &[i64],
 ) -> String {
   match format {
-    Some(fmt) => label::render_friendly_name(fmt, admin_levels),
+    Some(fmt) => label::render_friendly_name(fmt, admin_levels, house_number),
     None => sources.default_label(own_id, own_name, house_number, chain),
   }
 }
