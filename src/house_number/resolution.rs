@@ -2,6 +2,7 @@ use geo::{Geometry, HaversineDistance, Point};
 
 use super::axis::street_axis;
 use super::policy::house_number_policy;
+use super::repository::stored_number;
 use super::scenario::house_number_scenario;
 use super::value::{house_number, house_number_shape};
 
@@ -10,28 +11,51 @@ use super::value::{house_number, house_number_shape};
 const NEAREST_MAX_DISTANCE_IN_METERS: f64 = 50.0;
 const REFERENCE_MAX_DISTANCE_FROM_AXIS_IN_METERS: f64 = 100.0;
 
+pub enum house_number_origin {
+  osm_node(u64),
+  references(Vec<u64>),
+  reference { node_id: u64, meters_per_number: f64 },
+  constants { meters_per_number: f64 },
+}
+
+impl house_number_origin {
+  pub fn scenario(&self) -> house_number_scenario {
+    match self {
+      house_number_origin::osm_node(_) => house_number_scenario::from_osm_data,
+      house_number_origin::references(_) => {
+        house_number_scenario::presumed_from_multiple_references_from_street
+      }
+      house_number_origin::reference { .. } => {
+        house_number_scenario::presumed_from_one_ref_from_street
+      }
+      house_number_origin::constants { .. } => house_number_scenario::presumed_from_constants,
+    }
+  }
+}
+
 pub struct house_number_resolution {
   pub number: house_number,
-  pub scenario: house_number_scenario,
+  pub origin: house_number_origin,
   pub point: Point<f64>,
 }
 
 struct reference {
+  node_id: u64,
   value: u32,
   chainage: f64,
 }
 
 pub fn place(
   wanted: &house_number,
-  known: &[(house_number, Point<f64>)],
+  known: &[stored_number],
   geometry: &Geometry<f64>,
   policy: &house_number_policy,
 ) -> Option<house_number_resolution> {
-  if let Some((_, point)) = known.iter().find(|(number, _)| number == wanted) {
+  if let Some(stored) = known.iter().find(|stored| stored.number == *wanted) {
     return Some(house_number_resolution {
       number: wanted.clone(),
-      scenario: house_number_scenario::from_osm_data,
-      point: *point,
+      origin: house_number_origin::osm_node(stored.node_id),
+      point: stored.point,
     });
   }
   if wanted.shape() == house_number_shape::compound {
@@ -41,24 +65,24 @@ pub fn place(
   let axis = street_axis::of(geometry)?;
   let references = references(known, &axis);
   let meters = policy.meters_per_number;
-  let (scenario, chainage) = match references.as_slice() {
+  let (origin, chainage) = match references.as_slice() {
     [] => (
-      house_number_scenario::presumed_from_constants,
+      house_number_origin::constants { meters_per_number: meters },
       f64::from(value) * meters,
     ),
     [only] => (
-      house_number_scenario::presumed_from_one_ref_from_street,
+      house_number_origin::reference { node_id: only.node_id, meters_per_number: meters },
       only.chainage
         + direction_of(only, axis.length(), meters) * (f64::from(value) - f64::from(only.value)) * meters,
     ),
     _ => (
-      house_number_scenario::presumed_from_multiple_references_from_street,
+      house_number_origin::references(node_ids_of(&references)),
       chainage_of_value(value, &references),
     ),
   };
   Some(house_number_resolution {
     number: wanted.clone(),
-    scenario,
+    origin,
     point: axis.point_at(chainage),
   })
 }
@@ -66,14 +90,14 @@ pub fn place(
 pub fn number_at(
   point: Point<f64>,
   on_street: Point<f64>,
-  known: &[(house_number, Point<f64>)],
+  known: &[stored_number],
   geometry: &Geometry<f64>,
   policy: &house_number_policy,
 ) -> Option<house_number_resolution> {
-  if let Some(number) = nearest(point, known) {
+  if let Some(stored) = nearest(point, known) {
     return Some(house_number_resolution {
-      number: number.clone(),
-      scenario: house_number_scenario::from_osm_data,
+      number: stored.number.clone(),
+      origin: house_number_origin::osm_node(stored.node_id),
       point: on_street,
     });
   }
@@ -81,54 +105,55 @@ pub fn number_at(
   let references = references(known, &axis);
   let chainage = axis.chainage_of(&on_street).along;
   let meters = policy.meters_per_number;
-  let (scenario, value) = match references.as_slice() {
+  let (origin, value) = match references.as_slice() {
     [] => (
-      house_number_scenario::presumed_from_constants,
+      house_number_origin::constants { meters_per_number: meters },
       chainage / meters,
     ),
     [only] => (
-      house_number_scenario::presumed_from_one_ref_from_street,
+      house_number_origin::reference { node_id: only.node_id, meters_per_number: meters },
       f64::from(only.value)
         + direction_of(only, axis.length(), meters) * (chainage - only.chainage) / meters,
     ),
     _ => (
-      house_number_scenario::presumed_from_multiple_references_from_street,
+      house_number_origin::references(node_ids_of(&references)),
       value_at_chainage(chainage, &references),
     ),
   };
   Some(house_number_resolution {
     number: house_number::presumed(value.round().max(1.0) as u32),
-    scenario,
+    origin,
     point: on_street,
   })
 }
 
-fn nearest(point: Point<f64>, known: &[(house_number, Point<f64>)]) -> Option<&house_number> {
+fn nearest(point: Point<f64>, known: &[stored_number]) -> Option<&stored_number> {
   known
     .iter()
-    .filter_map(|(number, at)| {
-      let distance = point.haversine_distance(at);
-      (distance <= NEAREST_MAX_DISTANCE_IN_METERS).then_some((number, distance))
+    .filter_map(|stored| {
+      let distance = point.haversine_distance(&stored.point);
+      (distance <= NEAREST_MAX_DISTANCE_IN_METERS).then_some((stored, distance))
     })
     .min_by(|(_, a), (_, b)| a.total_cmp(b))
-    .map(|(number, _)| number)
+    .map(|(stored, _)| stored)
 }
 
-fn references(known: &[(house_number, Point<f64>)], axis: &street_axis) -> Vec<reference> {
+fn references(known: &[stored_number], axis: &street_axis) -> Vec<reference> {
   let mut references: Vec<reference> = Vec::new();
-  for (number, point) in known {
-    if number.shape() == house_number_shape::compound {
+  for stored in known {
+    if stored.number.shape() == house_number_shape::compound {
       continue;
     }
-    let Some(value) = number.leading_value() else {
+    let Some(value) = stored.number.leading_value() else {
       continue;
     };
     if references.iter().any(|reference| reference.value == value) {
       continue;
     }
-    let at = axis.chainage_of(point);
+    let at = axis.chainage_of(&stored.point);
     if at.off_axis_in_meters <= REFERENCE_MAX_DISTANCE_FROM_AXIS_IN_METERS {
       references.push(reference {
+        node_id: stored.node_id,
         value,
         chainage: at.along,
       });
@@ -136,6 +161,10 @@ fn references(known: &[(house_number, Point<f64>)], axis: &street_axis) -> Vec<r
   }
   references.sort_by_key(|reference| reference.value);
   references
+}
+
+fn node_ids_of(references: &[reference]) -> Vec<u64> {
+  references.iter().map(|reference| reference.node_id).collect()
 }
 
 fn factor_of(references: &[reference]) -> f64 {

@@ -55,7 +55,7 @@ pub(crate) struct ApiError {
     ("friendly_name_format" = Option<String>, Query, description = "template for `friendly_name`, e.g. `{admin_level_8_name}` and/or `{house_number}`"),
     ("quality" = Option<f64>, Query, minimum = 0.0, maximum = 1.0, description = "minimum match quality in `[0, 1]`; lower-quality matches are dropped, a value outside the range is a 400"),
     ("bounding_wkt" = Option<String>, Query, description = "WKT POLYGON or MULTIPOLYGON; keeps only matches inside it"),
-    ("last_admin_levels" = Option<String>, Query, description = "comma-separated admin levels (e.g. `8,10`); keeps matches whose last admin level is one of them (OR); a presumed house number does not count as the last level"),
+    ("last_admin_levels" = Option<String>, Query, description = "comma-separated admin levels (e.g. `8,10`); keeps matches whose last admin level is one of them (OR); a house number is not a level, a numbered street ends at `12`"),
     ("include_wkt" = Option<bool>, Query, description = "include admin-level `wkt` geometry in the response (default `true`; set `false` to omit)"),
   ),
   responses(

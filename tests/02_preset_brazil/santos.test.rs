@@ -5,7 +5,7 @@ use crate::common::query::{
   point_of, street_way, way_ids, wkt_at,
 };
 use crate::house_number::{
-  CONSTANTS, FROM_OSM_DATA, MULTIPLE_REFERENCES, PLACEMENT_TOLERANCE_IN_METERS,
+  CONSTANTS, FROM_OSM_DATA, MULTIPLE_REFERENCES, PLACEMENT_TOLERANCE_IN_METERS, assert_numbered,
 };
 use geo::{EuclideanDistance, Geometry, HaversineDistance, Point};
 use geozero::{ToGeo, wkb::SpatiaLiteWkb, wkt::Wkt};
@@ -155,7 +155,11 @@ fn _00_00_a_house_number_on_the_street_resolves_from_osm_data() {
       }],
     }),
   );
-  assert!(levels_of(first(&result)).contains(&30));
+  assert_eq!(
+    levels_of(first(&result)).last(),
+    Some(&12),
+    "the ladder ends at the street, the number is the object"
+  );
 }
 
 // 00.01. result quality
@@ -163,11 +167,10 @@ fn _00_00_a_house_number_on_the_street_resolves_from_osm_data() {
 #[ignore]
 fn _00_01_a_house_number_between_two_known_ones_is_presumed_from_the_references_of_the_street() {
   let w = world();
-  let result = w.assert_cli(
+  w.assert_cli(
     &ask("rua januario dos santos, santos 210"),
     &json!({ "matches": [{ "house_number": { "number": "210", "kind": MULTIPLE_REFERENCES } }] }),
   );
-  assert!(levels_of(first(&result)).contains(&30));
 }
 
 // 00.02. result quality: a number beyond every stored one is presumed from them and stops at the
@@ -183,8 +186,8 @@ fn _00_02_an_out_of_range_house_number_is_presumed_and_clamped_at_the_end_of_the
   let top = first(&numbered);
   assert_eq!(
     levels_of(top).last().copied(),
-    Some(30),
-    "a presumed number is a level too"
+    Some(12),
+    "a presumed number is not a level"
   );
   assert_at_the_end_of_the_street(top, NUMBERED_STREET_END);
 }
@@ -311,13 +314,6 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
           "osm_way_id": 255710390,
           "osm_merged_way_ids": [255710390, 729205713],
         },
-        {
-          "level": 30,
-          "name": "35",
-          "post_code": null,
-          "osm_relation_id": null,
-          "osm_way_id": null,
-        },
       ],
       "attributes": {
         "country_iso_3166_1_alpha_2_code": "BR",
@@ -325,7 +321,12 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
       },
       "coordinates_distance_in_meters": 3,
       "friendly_name": "Rua Castro Alves, 35, Embaré, Santos, São Paulo, Brasil",
-      "house_number": { "number": "35", "kind": FROM_OSM_DATA },
+      "house_number": {
+        "number": "35",
+        "kind": FROM_OSM_DATA,
+        "osm_node_ids": [6_192_895_729_u64],
+        "meters_per_number": null,
+      },
       "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
       "latitude": -23.9709,
       "longitude": -46.3188,
@@ -362,7 +363,6 @@ fn _00_06_a_point_reads_the_stored_number_within_fifty_metres_and_a_presumed_one
     );
     let number = number_of(top).unwrap_or_else(|| panic!("point {point} answers no number"));
     assert!(numbers.contains(&number), "point {point}: {number}");
-    assert_eq!(name_at(top, 30).as_deref(), Some(number), "point {point}");
     assert_eq!(kind_of(top), Some(kind), "point {point}");
   }
 }
@@ -426,8 +426,8 @@ fn _00_09_both_services_write_the_numbered_label_along_the_path() {
   }
 }
 
-// 00.10. result quality: a number beyond every stored one joins the ladder and the label like a
-// stored one, and lands at the end of the street its numbering grows to
+// 00.10. result quality: a number beyond every stored one joins the label like a stored one, and
+// lands at the end of the street its numbering grows to
 #[test]
 #[ignore]
 fn _00_10_an_out_of_range_number_joins_the_label_and_stops_at_the_end_the_numbering_grows_towards()
@@ -442,7 +442,7 @@ fn _00_10_an_out_of_range_number_joins_the_label_and_stops_at_the_end_the_number
     }),
   );
   let top = first(&result);
-  assert_eq!(levels_of(top), [2, 4, 10, 12, 30]);
+  assert_eq!(levels_of(top), [2, 4, 10, 12]);
   assert_at_the_end_of_the_street(top, POST_CODED_NUMBERED_STREET_END);
 }
 
@@ -460,10 +460,10 @@ fn _00_11_a_presumed_number_keeps_the_post_code_at_the_end() {
       }]
     }),
   );
-  assert_eq!(levels_of(first(&result)).last(), Some(&30));
+  assert_eq!(levels_of(first(&result)).last(), Some(&12));
 }
 
-// 00.12. result quality: a template reads the ladder, number included, and never the post codes the
+// 00.12. result quality: a template reads the ladder and the number, and never the post codes the
 // default label ends with
 #[test]
 #[ignore]
@@ -485,10 +485,7 @@ fn _00_13_a_point_beyond_fifty_metres_of_every_stored_number_answers_a_presumed_
     name_at(&near, 12).as_deref(),
     Some("Avenida Washington Luiz")
   );
-  assert_eq!(
-    near["house_number"],
-    json!({ "number": "565", "kind": FROM_OSM_DATA })
-  );
+  assert_numbered(&near, "565", FROM_OSM_DATA, "the point beside 565");
 
   let at_far_point = w.run(&[AVENUE_FAR_POINT]);
   let far = matches(&at_far_point)
@@ -502,7 +499,7 @@ fn _00_13_a_point_beyond_fifty_metres_of_every_stored_number_answers_a_presumed_
   // the avenue carries 361 and 565 on two of its fourteen lines, none within 50 m of the point;
   // the axis joins the two lines through lines that touch end to end and keep their heading
   assert_eq!(kind_of(far), Some(MULTIPLE_REFERENCES));
-  assert_eq!(levels_of(far), [2, 4, 8, 10, 12, 30]);
+  assert_eq!(levels_of(far), [2, 4, 8, 10, 12]);
 }
 
 // 00.14. result quality: the text path and the coordinate path read the same stored numbers
@@ -520,8 +517,8 @@ fn _00_14_both_paths_read_the_same_stored_number() {
     }),
   );
   assert_eq!(
-    name_at(first(&w.run(&[AVENUE_NUMBER_POINT])), 30).as_deref(),
-    Some("565"),
+    number_of(first(&w.run(&[AVENUE_NUMBER_POINT]))),
+    Some("565")
   );
 }
 
@@ -580,12 +577,12 @@ fn _00_17_a_suffixed_number_matches_its_stored_form_whatever_the_case_typed() {
       Some("Rua Inglaterra"),
       "{typed}: the street ranks first"
     );
-    assert_eq!(
-      first(&result)["house_number"],
-      json!({ "number": typed, "kind": FROM_OSM_DATA }),
-      "{typed}: the fixture stores 40A on Rua Inglaterra"
+    assert_numbered(
+      first(&result),
+      typed,
+      FROM_OSM_DATA,
+      &format!("{typed}: the fixture stores 40A on Rua Inglaterra"),
     );
-    assert!(levels_of(first(&result)).contains(&30), "{typed}");
   }
 }
 
@@ -929,40 +926,42 @@ fn _03_02_the_friendly_name_never_repeats_an_admin_level_name() {
   }
 }
 
-// 03.03. regression guard: the leaf filter runs at retrieval (12) and again after enrichment, where
-// a number from the osm data makes the leaf 30 and a presumed one leaves it at the street
+// 03.03. regression guard: the leaf of a numbered street is the street, so `12` keeps the match
+// whose number came from the osm data, and `30` is no level: both services refuse it where the
+// levels are parsed
 #[test]
 #[ignore]
-fn _03_03_a_house_number_leaf_needs_both_the_street_and_the_house_number_level() {
+fn _03_03_a_numbered_street_keeps_its_leaf_at_the_street_and_level_30_is_refused() {
+  let w = world();
   let query = NUMBERED_HOMONYM_QUERY;
 
-  let street_only = world().run(&[query, "--last-admin-levels", "12"]);
-  assert!(!matches(&street_only).is_empty());
-  for m in matches(&street_only) {
-    assert_ne!(
-      kind_of(m),
-      Some(FROM_OSM_DATA),
-      "the enriched match is dropped: its leaf is 30, not 12"
-    );
-    assert_ne!(
-      street_way(m),
-      Some(NUMBERED_HOMONYM_WAY),
-      "the street that stores 87 ends at level 30"
-    );
-  }
-
-  let both = world().run(&[query, "--last-admin-levels", "12,30"]);
+  let streets = w.run(&[query, "--last-admin-levels", "12"]);
+  let top = first(&streets);
   assert_eq!(
-    levels_of(first(&both)).last().copied(),
-    Some(30),
-    "with both levels allowed, the enriched match ranks first"
+    kind_of(top),
+    Some(FROM_OSM_DATA),
+    "the street that stores 87 ranks first"
   );
-  assert_eq!(kind_of(first(&both)), Some(FROM_OSM_DATA));
-
-  let leaf_only = world().run(&[query, "--last-admin-levels", "30"]);
+  assert_eq!(street_way(top), Some(NUMBERED_HOMONYM_WAY));
   assert!(
-    matches(&leaf_only).is_empty(),
-    "no indexed document has a level 30 leaf, so the search stage returns nothing"
+    leaves(&streets).iter().all(|&leaf| leaf == 12),
+    "the number never enters the ladder: every leaf is the street"
+  );
+
+  let out = w.geolite(&["query", query, "--last-admin-levels", "30"]);
+  assert_eq!(out.status, 2);
+  assert!(
+    out.stderr.contains("level 30 is not supported"),
+    "stderr: {}",
+    out.stderr
+  );
+
+  let s = w.start_server();
+  let r = get(s.port, &ask(query).last_admin_levels("30").http_path());
+  assert_eq!(r.status, 400, "body: {}", r.text());
+  assert_eq!(
+    r.json()["error"],
+    "last_admin_levels: level 30 is not supported"
   );
 }
 
@@ -995,46 +994,30 @@ fn _03_04_a_response_past_the_chunked_threshold_stays_identity_encoded() {
   );
 }
 
-// 03.05. regression guard: on the coordinate path the leaf filter reads the level after the
-// house-number step, so every candidate is kept until the end instead of being cut at ten early
+// 03.05. regression guard: on the coordinate path the leaf filter runs on the candidates, whose
+// leaf is the street itself, so the cut at ten comes before the loads and `12` keeps the numbered
+// street at 0 m first
 #[test]
 #[ignore]
-fn _03_05_last_admin_levels_on_coordinates_reads_the_leaf_after_the_house_number() {
+fn _03_05_last_admin_levels_on_coordinates_keeps_the_numbered_street_under_the_street_level() {
   let w = world();
   let ask_levels = |levels: &str| w.run(&[NUMBERED_POINT, "--last-admin-levels", levels]);
-
-  let numbered = ask_levels("30");
-  assert_eq!(leaves(&numbered), [30]);
-  assert_eq!(name_at(first(&numbered), 30).as_deref(), Some("197"));
-  assert_eq!(kind_of(first(&numbered)), Some(FROM_OSM_DATA));
 
   let streets = ask_levels("12");
   assert_eq!(
     leaves(&streets),
-    vec![30; 10],
-    "every street a point answers carries a number"
+    vec![12; 10],
+    "every street a point answers ends at the street"
   );
-  assert!(
-    matches(&streets)
-      .iter()
-      .all(|m| kind_of(m) != Some(FROM_OSM_DATA)),
-    "a presumed number leaves the leaf at the street"
-  );
+  let top = first(&streets);
+  assert_eq!(name_at(top, 12).as_deref(), Some(NUMBERED_STREET_NAME));
+  assert_eq!(number_of(top), Some("197"));
+  assert_eq!(kind_of(top), Some(FROM_OSM_DATA));
   assert_eq!(
     distances(&streets)[0],
-    64,
-    "the enriched street is dropped: its leaf is 30"
+    0,
+    "the numbered street is kept, number and all"
   );
-  assert!(
-    matches(&streets)
-      .iter()
-      .all(|m| name_at(m, 12).as_deref() != Some(NUMBERED_STREET_NAME)),
-    "the numbered street has one segment and it ends at level 30"
-  );
-
-  let both_levels = ask_levels("12,30");
-  assert_eq!(leaves(&both_levels)[0], 30);
-  assert_eq!(kind_of(first(&both_levels)), Some(FROM_OSM_DATA));
   assert!(
     matches(&ask_levels("10")).is_empty(),
     "the coordinate service only answers streets"
@@ -1045,9 +1028,20 @@ fn _03_05_last_admin_levels_on_coordinates_reads_the_leaf_after_the_house_number
     "--bounding-wkt",
     APARECIDA_POLYGON,
     "--last-admin-levels",
-    "30",
+    "12",
   ]);
-  assert_eq!(leaves(&both), [30], "the filters apply as an and");
+  assert!(
+    leaves(&both).iter().all(|&leaf| leaf == 12),
+    "the filters apply as an and"
+  );
+  assert!(
+    matches(&both).len() < matches(&streets).len(),
+    "the polygon keeps fewer than the ten streets"
+  );
+  assert_eq!(
+    name_at(first(&both), 12).as_deref(),
+    Some(NUMBERED_STREET_NAME)
+  );
 }
 
 // 03.06. regression guard: every level answers its own post code, and the attributes the most
@@ -1074,24 +1068,21 @@ fn _03_06_both_services_answer_the_street_post_code() {
 }
 
 // 03.07. regression guard: within one level the coordinate path lists the ancestors from the
-// general to the specific and the text path the other way round; the readme documents it. the
-// point's ladder ends in a presumed number, the text's, typed without one, does not
+// general to the specific and the text path the other way round; the readme documents it
 #[test]
 #[ignore]
 fn _03_07_the_two_services_order_same_level_ancestors_differently() {
   let w = world();
-  for (input, level_10_names, rendered, levels) in [
+  for (input, level_10_names, rendered) in [
     (
       NESTED_POINT,
       ["Aparecida", "Conjunto Habitacional Jaú"],
       "Aparecida",
-      &[2, 4, 8, 10, 10, 12, 30][..],
     ),
     (
       NESTED_QUERY,
       ["Conjunto Habitacional Jaú", "Aparecida"],
       "Conjunto Habitacional Jaú",
-      &[2, 4, 8, 10, 10, 12][..],
     ),
   ] {
     let result = w.assert_cli(
@@ -1099,7 +1090,7 @@ fn _03_07_the_two_services_order_same_level_ancestors_differently() {
       &json!({ "matches": [{ "id": "9695f186-46eb-539f-a831-ac0489ebd841" }] }),
     );
     let top = first(&result);
-    assert_eq!(levels_of(top), levels, "input {input:?}");
+    assert_eq!(levels_of(top), [2, 4, 8, 10, 10, 12], "input {input:?}");
     assert_eq!(names_at(top, 10), level_10_names, "input {input:?}");
 
     w.assert_cli(
@@ -1162,10 +1153,10 @@ fn _03_10_a_point_answers_a_street_across_two_neighbourhoods_under_the_one_that_
 }
 
 // 03.11. regression guard: the http api names the ways of a folded street exactly as the cli does,
-// and neither names them on a level that is not a fold, the house number included
+// and neither names them on a level that is not a fold
 #[test]
 #[ignore]
-fn _03_11_the_http_api_names_the_ways_of_a_folded_street_and_never_of_a_house_number() {
+fn _03_11_the_http_api_names_the_ways_of_a_folded_street_and_of_no_other_level() {
   let w = world();
   let s = w.start_server();
   let result = w.assert_both(
@@ -1178,7 +1169,7 @@ fn _03_11_the_http_api_names_the_ways_of_a_folded_street_and_never_of_a_house_nu
     level_at(top, 12).map(|street| &street["osm_merged_way_ids"]),
     Some(&json!([255_710_390_u64, 729_205_713_u64]))
   );
-  for level in [10, 30] {
+  for level in levels_of(top).into_iter().filter(|level| *level != 12) {
     assert!(
       level_at(top, level).is_some_and(|l| l.get("osm_merged_way_ids").is_none()),
       "level {level} is not a fold"
@@ -1234,16 +1225,14 @@ fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
   );
 }
 
-// 05.01. contract: the coordinate path loads the same geometry per level, and the level appended
-// by the house-number step has none
+// 05.01. contract: the coordinate path loads the same geometry per level
 #[test]
 #[ignore]
-fn _05_01_include_wkt_attaches_geometry_to_every_level_but_the_house_number_on_the_coordinate_path()
-{
+fn _05_01_include_wkt_attaches_geometry_to_every_level_on_the_coordinate_path() {
   // the quality cut leaves the one match at 0 m: every match would carry the country ring
   let result = world().query_json(&[NUMBERED_POINT, "--min-quality", "1"]);
   let top = first(&result);
-  assert_eq!(levels_of(top), [2, 4, 8, 10, 12, 30]);
+  assert_eq!(levels_of(top), [2, 4, 8, 10, 12]);
   assert!(
     wkt_at(top, 12).is_some_and(|wkt| wkt.starts_with("LINESTRING")),
     "streets are always lines"
@@ -1254,10 +1243,6 @@ fn _05_01_include_wkt_attaches_geometry_to_every_level_but_the_house_number_on_t
       "level {level} is an area"
     );
   }
-  assert!(
-    level_at(top, 30).is_some_and(|l| l.get("wkt").is_none()),
-    "the house number is a point the service never loads"
-  );
 }
 
 // 05.02. contract: the wkt of a folded street and the ways it names describe each other: one line
@@ -1323,10 +1308,7 @@ fn _06_01_a_typo_beside_a_number_still_resolves_the_number() {
     .iter()
     .find(|m| name_at(m, 12).as_deref() == Some("Rua Castro Alves"))
     .expect("the fuzzy fallback must still find the street");
-  assert_eq!(
-    street["house_number"],
-    json!({ "number": "35", "kind": FROM_OSM_DATA })
-  );
+  assert_numbered(street, "35", FROM_OSM_DATA, "35 beside a typo");
 }
 ///////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////
@@ -1508,8 +1490,8 @@ fn _02_07_every_spelling_of_the_numbered_address_lands_on_the_same_house() {
     );
     assert_eq!(
       levels_of(first(&result)),
-      vec![2, 4, 8, 10, 12, 30],
-      "{input:?} must resolve the full ladder down to the house number"
+      vec![2, 4, 8, 10, 12],
+      "{input:?} must resolve the full ladder down to the street"
     );
   }
 }
@@ -1581,8 +1563,8 @@ fn _02_09_every_spelling_of_the_square_address_lands_on_the_street_along_it_with
     );
     assert_eq!(
       levels_of(first(&result)),
-      vec![2, 4, 8, 10, 12, 30],
-      "{input:?} must resolve the full ladder, the presumed number included"
+      vec![2, 4, 8, 10, 12],
+      "{input:?} must resolve the full ladder down to the street, the number presumed beside it"
     );
   }
 }

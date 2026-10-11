@@ -10,18 +10,17 @@ calls into the first two; `src/database/admin_levels.rs`, `src/index/coordinates
 ## the scale — `level`
 
 the scale every named area sits on. osm tags levels 1..11 on boundary relations; geolite extends it
-with 12 for streets, which are mapped as ways rather than boundaries, and 30 for house numbers,
-which are synthesized while answering a query and never stored as an area.
+with 12 for streets, which are mapped as ways rather than boundaries. a house number is not a
+level: a query answers it beside the ladder, in the `house_number` of the match.
 
 | level | name | | level | name |
 |---:|---|---|---:|---|
-| 1 | continent | | 8 | city |
-| 2 | country | | 9 | locality |
-| 3 | region | | 10 | neighborhood |
-| 4 | state | | 12 | street |
-| 5 | district | | 14 | address |
-| 6 | county | | 30 | house_number |
-| 7 | municipality | | | |
+| 1 | continent | | 7 | municipality |
+| 2 | country | | 8 | city |
+| 3 | region | | 9 | locality |
+| 4 | state | | 10 | neighborhood |
+| 5 | district | | 12 | street |
+| 6 | county | | 14 | address |
 
 **the set is closed on the way in.** `new` accepts only the levels above, and everything that
 writes a level goes through it: the entity carries a `level`, the presets list `level`s, and

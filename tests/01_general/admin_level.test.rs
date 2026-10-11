@@ -231,8 +231,7 @@ fn _00_03_recreate_empties_the_hierarchy_and_the_rtree() {
 fn _00_04_the_stage_names_every_level_of_the_scale() {
   let w = world();
   let s = extracted(w, "admin_level_names", "2", &[]);
-  let out =
-    plain(&admin_levels_at(w, &s.dir, "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 30", &[]).stdout);
+  let out = plain(&admin_levels_at(w, &s.dir, "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14", &[]).stdout);
 
   let headers = [
     "level 1 (continent)",
@@ -247,7 +246,6 @@ fn _00_04_the_stage_names_every_level_of_the_scale() {
     "level 10 (neighborhood)",
     "level 12 (street)",
     "level 14 (address)",
-    "level 30 (house_number)",
   ];
   let positions: Vec<usize> = headers
     .iter()

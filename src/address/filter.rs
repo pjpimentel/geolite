@@ -1,7 +1,5 @@
 use super::entity::query_match;
 use super::query_opts;
-use crate::admin_level::level;
-use crate::house_number::house_number_scenario;
 
 pub(super) const MAX_RESULTS: u8 = 10;
 const COORDINATE_QUALITY_REFERENCE_M: f64 = 100.0;
@@ -17,22 +15,7 @@ pub(super) fn apply_filters_and_truncate(matches: &mut Vec<query_match>, opts: &
     // the geometry; this exact containment is the authoritative one
     matches.retain(|m| b.contains(m.latitude, m.longitude));
   }
-  if let Some(levels) = opts.last_admin_levels.as_deref() {
-    matches.retain(|m| leaf_level_of(m).is_some_and(|leaf| levels.iter().any(|l| l.value() == leaf)));
-  }
   matches.truncate(MAX_RESULTS as usize);
-}
-
-fn leaf_level_of(m: &query_match) -> Option<u8> {
-  let presumed = m
-    .house_number
-    .as_ref()
-    .is_some_and(|number| number.kind != house_number_scenario::from_osm_data);
-  m.admin_levels
-    .iter()
-    .rev()
-    .find(|a| !(presumed && a.level == level::house_number.value()))
-    .map(|a| a.level)
 }
 
 pub fn parse_min_quality(text: &str) -> Result<f64, String> {
