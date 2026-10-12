@@ -101,3 +101,16 @@ pub fn way_ids(result: &Value) -> Vec<u64> {
   ids.dedup();
   ids
 }
+
+pub fn osm_node_ids(m: &Value) -> Vec<u64> {
+  m["house_number"]["osm_node_ids"]
+    .as_array()
+    .expect("osm_node_ids must be an array")
+    .iter()
+    .map(|id| id.as_u64().expect("an osm node id must be a number"))
+    .collect()
+}
+
+pub fn meters_per_number(m: &Value) -> Option<f64> {
+  m["house_number"]["meters_per_number"].as_f64()
+}

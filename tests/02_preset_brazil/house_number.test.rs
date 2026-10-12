@@ -1,9 +1,10 @@
 use crate::common::ask::ask;
 use crate::common::harness::{decode_wkb, query_at};
 use crate::common::query::{
-  distances, first, kind_of, levels_of, matches, name_at, number_of, point_of, street_way, wkt_at,
+  distances, first, kind_of, levels_of, matches, meters_per_number, name_at, number_of,
+  osm_node_ids, point_of, street_way, wkt_at,
 };
-use crate::hierarchy::{REGENERATE, geometry_of};
+use crate::hierarchy::{REGENERATE, geometry_of, way};
 use crate::santos::world;
 use geo::{
   EuclideanDistance, Geometry, HaversineDistance, HaversineLength, LineInterpolatePoint,
@@ -75,11 +76,11 @@ fn street_line(id: i64) -> LineString<f64> {
   }
 }
 
-// the stored numbers of a street as (value, metres along its line), one per value, the first in
-// node id order
-fn references_of(id: i64, line: &LineString<f64>) -> Vec<(u32, f64)> {
+// the stored numbers of a street as (node, value, point), one per value, the first in node id
+// order
+fn stored_references_of(id: i64) -> Vec<(u64, u32, Point<f64>)> {
   const SQL_SELECT_STORED_NUMBERS: &str = "
-    SELECT number, wkb
+    SELECT node_id, number, wkb
     FROM house_numbers
     WHERE admin_level_id = ?1
     ORDER BY node_id
@@ -89,24 +90,59 @@ fn references_of(id: i64, line: &LineString<f64>) -> Vec<(u32, f64)> {
   let mut stmt = conn
     .prepare(SQL_SELECT_STORED_NUMBERS)
     .expect("failed to prepare the stored numbers");
-  let rows: Vec<(String, Vec<u8>)> = stmt
-    .query_map([id], |r| Ok((r.get(0)?, r.get(1)?)))
+  let rows: Vec<(u64, String, Vec<u8>)> = stmt
+    .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
     .expect("failed to query the stored numbers")
     .map(|r| r.expect("failed to read a stored number"))
     .collect();
-  let mut references: Vec<(u32, f64)> = Vec::new();
-  for (number, blob) in &rows {
+  let mut references: Vec<(u64, u32, Point<f64>)> = Vec::new();
+  for (node, number, blob) in &rows {
     let value: u32 = number
       .parse()
       .unwrap_or_else(|_| panic!("{number} is not a plain number; {REGENERATE}"));
     let Geometry::Point(point) = decode_wkb(blob) else {
       panic!("the stored number {number} is not a point; {REGENERATE}")
     };
-    if !references.iter().any(|(stored, _)| *stored == value) {
-      references.push((value, metres_along(line, point)));
+    if !references.iter().any(|(_, stored, _)| *stored == value) {
+      references.push((*node, value, point));
     }
   }
   references
+}
+
+// the stored numbers of a street as (value, metres along its line)
+fn references_of(id: i64, line: &LineString<f64>) -> Vec<(u32, f64)> {
+  stored_references_of(id)
+    .into_iter()
+    .map(|(_, value, point)| (value, metres_along(line, point)))
+    .collect()
+}
+
+// the node of every reference of a street, in the order of their values
+fn reference_nodes_of(id: i64) -> Vec<u64> {
+  let mut references = stored_references_of(id);
+  references.sort_by_key(|(_, value, _)| *value);
+  references.into_iter().map(|(node, _, _)| node).collect()
+}
+
+pub(crate) fn stored_number(conn: &rusqlite::Connection, node_id: u64) -> (i64, String) {
+  const SQL_SELECT_STORED_NUMBER: &str = "
+    SELECT admin_level_id, number
+    FROM house_numbers
+    WHERE node_id = ?1
+  ";
+
+  conn
+    .query_row(SQL_SELECT_STORED_NUMBER, [node_id], |row| {
+      Ok((row.get(0)?, row.get(1)?))
+    })
+    .unwrap_or_else(|e| panic!("node {node_id} is not a stored number: {e}"))
+}
+
+// what the comparison of a typed number against a stored one ignores: the case of a letter and
+// the hyphen of a compound
+fn number_key(number: &str) -> String {
+  number.to_uppercase().replace('-', "")
 }
 
 fn chainage_of(references: &[(u32, f64)], value: u32) -> f64 {
@@ -242,18 +278,15 @@ fn coordinate_answer(preset: &str, line: &LineString<f64>, metres: f64, street: 
   m.clone()
 }
 
-fn assert_numbered(m: &Value, number: &str, kind: &str, context: &str) {
-  assert_eq!(
-    m["house_number"],
-    json!({ "number": number, "kind": kind }),
-    "{context}"
-  );
+pub(crate) fn assert_numbered(m: &Value, number: &str, kind: &str, context: &str) {
+  assert_eq!(number_of(m), Some(number), "{context}");
+  assert_eq!(kind_of(m), Some(kind), "{context}");
+  assert_origin(m, kind, context);
   assert_eq!(
     levels_of(m).last().copied(),
-    Some(30),
-    "{context}: the number is the last level"
+    Some(12),
+    "{context}: the ladder ends at the street, the number is the object"
   );
-  assert_eq!(name_at(m, 30).as_deref(), Some(number), "{context}");
   let label = m["friendly_name"]
     .as_str()
     .expect("friendly_name must be a string");
@@ -263,14 +296,56 @@ fn assert_numbered(m: &Value, number: &str, kind: &str, context: &str) {
   );
 }
 
+// the nodes a match names are rows of its own street, and each kind answers the keys its
+// arithmetic used: the stored node alone, every reference, the one reference and the metres, or
+// the metres alone
+fn assert_origin(m: &Value, kind: &str, context: &str) {
+  let street = way(street_way(m).expect("a numbered match is a street"));
+  let conn = world().open_sqlite();
+  let nodes = osm_node_ids(m);
+  let stored: Vec<(i64, String)> = nodes
+    .iter()
+    .map(|&node| stored_number(&conn, node))
+    .collect();
+  assert!(
+    stored.iter().all(|(id, _)| *id == street),
+    "{context}: a node off the street in {nodes:?}"
+  );
+  let metres = meters_per_number(m);
+  match kind {
+    FROM_OSM_DATA => {
+      assert_eq!(stored.len(), 1, "{context}: one stored node");
+      assert_eq!(
+        number_key(&stored[0].1),
+        number_key(number_of(m).unwrap_or_default()),
+        "{context}: the node stores the number"
+      );
+      assert_eq!(metres, None, "{context}: no constant was used");
+    }
+    MULTIPLE_REFERENCES => {
+      assert!(stored.len() >= 2, "{context}: two or more references");
+      let mut values: Vec<&str> = stored.iter().map(|(_, number)| number.as_str()).collect();
+      values.sort_unstable();
+      values.dedup();
+      assert_eq!(values.len(), stored.len(), "{context}: one node per value");
+      assert_eq!(metres, None, "{context}: no constant was used");
+    }
+    ONE_REFERENCE => {
+      assert_eq!(stored.len(), 1, "{context}: one reference");
+      assert!(metres.is_some(), "{context}: the metres per number");
+    }
+    CONSTANTS => {
+      assert!(stored.is_empty(), "{context}: no node");
+      assert!(metres.is_some(), "{context}: the metres per number");
+    }
+    other => panic!("{context}: unknown kind {other}"),
+  }
+}
+
 fn assert_bare(m: &Value, context: &str) {
   assert!(
     m.get("house_number").is_none(),
     "{context}: no number was asked"
-  );
-  assert!(
-    !levels_of(m).contains(&30),
-    "{context}: no level 30 without a number"
   );
 }
 
@@ -334,6 +409,11 @@ fn _00_01_a_number_between_two_references_lands_in_proportion_between_them() {
     let context = format!("{typed} between {below} and {above}");
     let m = text_answer("brazil", NUMBERED_STREET_QUERY, typed, NUMBERED_STREET);
     assert_numbered(&m, &typed.to_string(), MULTIPLE_REFERENCES, &context);
+    assert_eq!(
+      osm_node_ids(&m),
+      reference_nodes_of(NUMBERED_STREET_ID),
+      "{context}: every reference of the street, by value"
+    );
     let (from, to) = (
       chainage_of(&references, below),
       chainage_of(&references, above),
@@ -376,6 +456,11 @@ fn _00_03_a_number_with_one_reference_walks_the_preset_metres_in_the_numbering_d
       ONE_REFERENCE_STREET,
     );
     assert_numbered(&m, &typed.to_string(), ONE_REFERENCE, &context);
+    assert_eq!(
+      meters_per_number(&m),
+      Some(BRAZIL_METERS_PER_NUMBER),
+      "{context}"
+    );
     let steps = f64::from(typed) - f64::from(ONE_REFERENCE_NUMBER);
     assert_placed_at(
       &m,
@@ -400,6 +485,11 @@ fn _00_04_a_number_on_a_street_without_references_walks_from_the_start_of_the_li
     let context = format!("{typed} on a bare street");
     let m = text_answer("brazil", BARE_STREET_QUERY, typed, BARE_STREET);
     assert_numbered(&m, &typed.to_string(), CONSTANTS, &context);
+    assert_eq!(
+      meters_per_number(&m),
+      Some(BRAZIL_METERS_PER_NUMBER),
+      "{context}"
+    );
     assert_placed_at(
       &m,
       &line,
@@ -522,6 +612,7 @@ fn _00_07_the_metres_per_number_come_from_the_preset() {
     let context = format!("100 under {preset}");
     let m = text_answer(preset, BARE_STREET_QUERY, 100, BARE_STREET);
     assert_numbered(&m, "100", CONSTANTS, &context);
+    assert_eq!(meters_per_number(&m), Some(meters), "{context}");
     assert_placed_at(&m, &line, 100.0 * meters, &context);
   }
 
@@ -533,6 +624,11 @@ fn _00_07_the_metres_per_number_come_from_the_preset() {
     ONE_REFERENCE_STREET,
   );
   assert_numbered(&m, "400", ONE_REFERENCE, "400 under default");
+  assert_eq!(
+    meters_per_number(&m),
+    Some(DEFAULT_METERS_PER_NUMBER),
+    "400 under default"
+  );
   let steps = 400.0 - f64::from(ONE_REFERENCE_NUMBER);
   assert_placed_at(
     &m,

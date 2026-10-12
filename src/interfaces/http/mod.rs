@@ -8,6 +8,7 @@ use tiny_http::{Header, Method, Response, Server, StatusCode};
 use crate::admin_level::{level, level_error};
 use crate::admin_level_hierarchy::tantivy_index;
 
+mod etag;
 mod openapi;
 mod status;
 
@@ -103,7 +104,9 @@ pub fn serve(
         // shutdown flag every poll interval (tiny_http's unblock() only wakes one thread).
         while !SHUTDOWN.load(Ordering::Relaxed) {
           match server.recv_timeout(Duration::from_millis(250)) {
-            Ok(Some(request)) => handle(request, &conn, index.as_deref(), &db_file, &preset),
+            Ok(Some(request)) => {
+              handle(request, &conn, index.as_deref(), &db_file, &preset)
+            }
             Ok(None) => {}
             Err(_) => break,
           }
@@ -145,7 +148,7 @@ fn handle(
         .with_status_code(StatusCode(204))
         .with_header(cors_origin())
         .with_header(Header::from_bytes("Access-Control-Allow-Methods", "GET, OPTIONS").unwrap())
-        .with_header(Header::from_bytes("Access-Control-Allow-Headers", "Content-Type").unwrap()),
+        .with_header(cors_allowed_headers()),
     );
     request.respond(response).ok();
     log_access(&method, &url, 204, start.elapsed().as_millis());
@@ -166,13 +169,9 @@ fn handle(
     "/" => respond_html(request, StatusCode(200), INDEX_HTML),
     "/status" => {
       let report = status::build(db_file, conn, index);
-      let code = if report.is_ok {
-        StatusCode(200)
-      } else {
-        StatusCode(503)
-      };
       match serde_json::to_string(&report) {
-        Ok(body) => respond_json(request, code, &body),
+        Ok(body) if report.is_ok => respond_ok(request, &body),
+        Ok(body) => respond_json(request, StatusCode(503), &body),
         Err(_) => respond_json(
           request,
           StatusCode(500),
@@ -180,7 +179,7 @@ fn handle(
         ),
       }
     }
-    "/openapi.json" => respond_json(request, StatusCode(200), openapi::spec_json()),
+    "/openapi.json" => respond_ok(request, openapi::spec_json()),
     "/docs" => respond_html(request, StatusCode(200), openapi::SWAGGER_HTML),
     "/geocode" => {
       let q = query_param(&query_string, "query");
@@ -242,21 +241,26 @@ fn handle(
               last_admin_levels,
               include_wkt,
             };
-            let address = crate::address::address::open(conn, index, &preset.house_numbers);
-            let result = match input {
-              crate::address::query_input::coordinates {
-                latitude,
-                longitude,
-              } => address.query_by_coordinates(latitude, longitude, &opts),
-              crate::address::query_input::text => address.query_by_text(&raw, &opts),
-            };
-            match serde_json::to_string(&result) {
-              Ok(body) => respond_json(request, StatusCode(200), &body),
-              Err(_) => respond_json(
-                request,
-                StatusCode(500),
-                r#"{"error":"serialization error"}"#,
-              ),
+            let etag = etag::of_question(&raw, &opts);
+            if etag::none_match(&request, &etag) {
+              respond_not_modified(request, &etag)
+            } else {
+              let address = crate::address::address::open(conn, index, &preset.house_numbers);
+              let result = match input {
+                crate::address::query_input::coordinates {
+                  latitude,
+                  longitude,
+                } => address.query_by_coordinates(latitude, longitude, &opts),
+                crate::address::query_input::text => address.query_by_text(&raw, &opts),
+              };
+              match serde_json::to_string(&result) {
+                Ok(body) => respond_ok_with_etag(request, &body, &etag),
+                Err(_) => respond_json(
+                  request,
+                  StatusCode(500),
+                  r#"{"error":"serialization error"}"#,
+                ),
+              }
             }
           }
         }
@@ -270,6 +274,18 @@ fn handle(
 
 fn cors_origin() -> Header {
   Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap()
+}
+
+fn cors_allowed_headers() -> Header {
+  Header::from_bytes("Access-Control-Allow-Headers", "Content-Type, If-None-Match").unwrap()
+}
+
+fn cors_exposed_headers() -> Header {
+  Header::from_bytes("Access-Control-Expose-Headers", "ETag").unwrap()
+}
+
+fn json_content_type() -> Header {
+  Header::from_bytes("Content-Type", "application/json").unwrap()
 }
 
 fn force_content_length<R: std::io::Read>(response: Response<R>) -> Response<R> {
@@ -361,11 +377,46 @@ fn respond_json(request: tiny_http::Request, status: StatusCode, body: &str) -> 
   let response = force_content_length(
     Response::from_string(body)
       .with_status_code(status)
-      .with_header(Header::from_bytes("Content-Type", "application/json").unwrap())
+      .with_header(json_content_type())
       .with_header(cors_origin()),
   );
   request.respond(response).ok();
   code
+}
+
+fn respond_ok(request: tiny_http::Request, body: &str) -> u16 {
+  let etag = etag::of_body(body);
+  if etag::none_match(&request, &etag) {
+    respond_not_modified(request, &etag)
+  } else {
+    respond_ok_with_etag(request, body, &etag)
+  }
+}
+
+fn respond_ok_with_etag(request: tiny_http::Request, body: &str, etag: &str) -> u16 {
+  let response = force_content_length(
+    Response::from_string(body)
+      .with_status_code(StatusCode(200))
+      .with_header(json_content_type())
+      .with_header(etag::header(etag))
+      .with_header(cors_origin())
+      .with_header(cors_exposed_headers()),
+  );
+  request.respond(response).ok();
+  200
+}
+
+fn respond_not_modified(request: tiny_http::Request, etag: &str) -> u16 {
+  // from_data, not from_string(""): the latter adds a text/plain content type a 304 must not carry
+  let response = force_content_length(
+    Response::from_data(Vec::new())
+      .with_status_code(StatusCode(304))
+      .with_header(etag::header(etag))
+      .with_header(cors_origin())
+      .with_header(cors_exposed_headers()),
+  );
+  request.respond(response).ok();
+  304
 }
 
 fn respond_html(request: tiny_http::Request, status: StatusCode, body: &str) -> u16 {

@@ -302,12 +302,20 @@ impl response {
 }
 
 pub fn request(port: u16, method: &str, path: &str) -> response {
+  request_with(port, method, path, &[])
+}
+
+pub fn request_with(port: u16, method: &str, path: &str, headers: &[(&str, &str)]) -> response {
   let addr: SocketAddr = ([127, 0, 0, 1], port).into();
   let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(5))
     .unwrap_or_else(|e| panic!("failed to connect to 127.0.0.1:{port}: {e}"));
   stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
 
-  let req = format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+  let mut req = format!("{method} {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n");
+  for (name, value) in headers {
+    req.push_str(&format!("{name}: {value}\r\n"));
+  }
+  req.push_str("\r\n");
   stream
     .write_all(req.as_bytes())
     .expect("failed to write the request");
@@ -352,6 +360,10 @@ pub fn request(port: u16, method: &str, path: &str) -> response {
 
 pub fn get(port: u16, path: &str) -> response {
   request(port, "GET", path)
+}
+
+pub fn get_with(port: u16, path: &str, headers: &[(&str, &str)]) -> response {
+  request_with(port, "GET", path, headers)
 }
 
 pub fn encode(value: &str) -> String {

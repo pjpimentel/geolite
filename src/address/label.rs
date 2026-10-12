@@ -1,9 +1,9 @@
 use super::entity::admin_level;
-use crate::admin_level::level;
 
 enum template_segment {
   literal(String),
   placeholder(u8),
+  house_number,
 }
 
 fn parse_template(format: &str) -> Result<Vec<template_segment>, String> {
@@ -19,16 +19,16 @@ fn parse_template(format: &str) -> Result<Vec<template_segment>, String> {
         );
       };
       let inner = &format[i + 1..i + rel_close];
-      let level = if inner == "house_number" {
-        level::house_number.value()
+      let segment = if inner == "house_number" {
+        template_segment::house_number
       } else {
         match inner
           .strip_prefix("admin_level_")
           .and_then(|s| s.strip_suffix("_name"))
         {
-          Some(mid) => mid.parse::<u8>().map_err(|_| {
+          Some(mid) => template_segment::placeholder(mid.parse::<u8>().map_err(|_| {
             format!("friendly_name_format: invalid admin level '{mid}' (expected an integer 0-255)")
-          })?,
+          })?),
           None => {
             return Err(format!(
               "friendly_name_format: unknown field '{inner}' (expected 'admin_level_<N>_name' or 'house_number')"
@@ -39,7 +39,7 @@ fn parse_template(format: &str) -> Result<Vec<template_segment>, String> {
       if !buf.is_empty() {
         segments.push(template_segment::literal(std::mem::take(&mut buf)));
       }
-      segments.push(template_segment::placeholder(level));
+      segments.push(segment);
       i += rel_close + 1;
       continue;
     }
@@ -58,31 +58,37 @@ pub fn validate_friendly_name_format(s: &str) -> Result<String, String> {
   Ok(s.to_string())
 }
 
-pub(super) fn render_friendly_name(format: &str, admin_levels: &[admin_level]) -> String {
+pub(super) fn render_friendly_name(
+  format: &str,
+  admin_levels: &[admin_level],
+  house_number: Option<&str>,
+) -> String {
   let segments = parse_template(format)
     .expect("friendly_name_format must be validated at the parse boundary before render");
   let mut out = String::new();
   let mut skip_next_literal = false;
   for seg in segments {
-    match seg {
+    let value = match seg {
       template_segment::literal(s) => {
         if skip_next_literal {
           skip_next_literal = false;
         } else {
           out.push_str(&s);
         }
+        continue;
       }
-      template_segment::placeholder(level) => {
-        match admin_levels.iter().find(|a| a.level == level) {
-          Some(a) => {
-            out.push_str(&a.name);
-            skip_next_literal = false;
-          }
-          None => {
-            skip_next_literal = true;
-          }
-        }
+      template_segment::placeholder(level) => admin_levels
+        .iter()
+        .find(|a| a.level == level)
+        .map(|a| a.name.as_str()),
+      template_segment::house_number => house_number,
+    };
+    match value {
+      Some(name) => {
+        out.push_str(name);
+        skip_next_literal = false;
       }
+      None => skip_next_literal = true,
     }
   }
   out
@@ -111,4 +117,3 @@ pub(super) fn place_label<'a>(
   }
   label
 }
-

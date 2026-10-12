@@ -55,11 +55,16 @@ pub(crate) struct ApiError {
     ("friendly_name_format" = Option<String>, Query, description = "template for `friendly_name`, e.g. `{admin_level_8_name}` and/or `{house_number}`"),
     ("quality" = Option<f64>, Query, minimum = 0.0, maximum = 1.0, description = "minimum match quality in `[0, 1]`; lower-quality matches are dropped, a value outside the range is a 400"),
     ("bounding_wkt" = Option<String>, Query, description = "WKT POLYGON or MULTIPOLYGON; keeps only matches inside it"),
-    ("last_admin_levels" = Option<String>, Query, description = "comma-separated admin levels (e.g. `8,10`); keeps matches whose last admin level is one of them (OR); a presumed house number does not count as the last level"),
+    ("last_admin_levels" = Option<String>, Query, description = "comma-separated admin levels (e.g. `8,10`); keeps matches whose last admin level is one of them (OR); a house number is not a level, a numbered street ends at `12`"),
     ("include_wkt" = Option<bool>, Query, description = "include admin-level `wkt` geometry in the response (default `true`; set `false` to omit)"),
+    ("If-None-Match" = Option<String>, Header, description = "the `etag` of an answer already held (a list, a weak `W/` tag and `*` count); when it names this answer the response is a 304 with no body"),
   ),
   responses(
-    (status = 200, description = "geocoding result", body = crate::address::query_output),
+    (status = 200, description = "geocoding result", body = crate::address::query_output,
+      headers(
+        ("etag" = String, description = "the etag of the answer, derived from the question and the version of geolite, quoted; sent back in `If-None-Match` it turns an unchanged answer into a 304 before anything is computed"),
+      )),
+    (status = 304, description = "the answer is the one `If-None-Match` names: no body, the same `etag`, nothing computed"),
     (status = 400, description = "missing or invalid query parameter", body = ApiError),
     (status = 503, description = "text_to_address service unavailable (index not loaded)", body = ApiError),
     (status = 500, description = "response serialization error", body = ApiError),
@@ -72,8 +77,13 @@ fn geocode() {}
 #[utoipa::path(
   get,
   path = "/status",
+  params(
+    ("If-None-Match" = Option<String>, Header, description = "the `etag` of a report already held; when it names this one the response is a 304 with no body"),
+  ),
   responses(
-    (status = 200, description = "all services available", body = crate::interfaces::http::status::status_output),
+    (status = 200, description = "all services available", body = crate::interfaces::http::status::status_output,
+      headers(("etag" = String, description = "the md5 of the body, quoted; sent back in `If-None-Match` it turns an unchanged report into a 304"))),
+    (status = 304, description = "the report is the one `If-None-Match` names: no body, the same `etag`"),
     (status = 503, description = "one or more services unavailable", body = crate::interfaces::http::status::status_output),
   ),
 )]

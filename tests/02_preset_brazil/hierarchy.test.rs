@@ -44,7 +44,7 @@ pub(crate) const REGENERATE: &str =
   "the fixture changed; regenerate deliberately and update the constants";
 
 // the packed ids of `admin_level::id`: a way is its osm id shifted left, a relation has the low bit
-fn way(osm_id: u64) -> i64 {
+pub(crate) fn way(osm_id: u64) -> i64 {
   (osm_id << 1) as i64
 }
 

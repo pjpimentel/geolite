@@ -12,7 +12,6 @@ pub enum level {
   neighborhood = 10,
   street = 12,
   address = 14,
-  house_number = 30,
 }
 
 impl level {
@@ -30,7 +29,6 @@ impl level {
       10 => Some(level::neighborhood),
       12 => Some(level::street),
       14 => Some(level::address),
-      30 => Some(level::house_number),
       _ => None,
     }
   }
@@ -61,7 +59,6 @@ impl level {
       level::neighborhood => "neighborhood",
       level::street => "street",
       level::address => "address",
-      level::house_number => "house_number",
     }
   }
 }

@@ -58,19 +58,19 @@ pub(super) fn run(
 
   let envelope = opts.bounding.as_ref().map(|b| b.envelope).unwrap_or(WORLD_BOUNDING_BOX);
   let mut candidates = spatial_index::nearest(conn, input_pt, envelope);
-  // the polygon test runs on the candidates, before the heavy loads: the coordinate service
-  // never moves a match's point, so filtering here equals filtering at the end
+  // the filters run on the candidates, before the heavy loads: the coordinate service never
+  // moves a match's point and the leaf of a street is the street, so filtering here equals
+  // filtering at the end, and the cut at ten is the cheap path
   if let Some(b) = opts.bounding.as_ref() {
     candidates.retain(|c| b.contains(c.closest_point.y(), c.closest_point.x()));
   }
   if let Some(threshold) = opts.min_quality {
     candidates.retain(|c| filter::coordinate_quality(c.distance_in_meters) >= threshold);
   }
-  // the cut before the loads is the cheap path; last_admin_levels reads the leaf after the
-  // house-number step (level 30), so it keeps every candidate until the end
-  if opts.last_admin_levels.is_none() {
-    candidates.truncate(filter::MAX_RESULTS as usize);
+  if let Some(levels) = opts.last_admin_levels.as_deref() {
+    candidates.retain(|c| levels.contains(&c.level));
   }
+  candidates.truncate(filter::MAX_RESULTS as usize);
   crate::debug!("debug: candidates={}", candidates.len());
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
   let mut sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);

@@ -13,6 +13,5 @@ pub mod value;
 pub use entity::house_number_link;
 pub use policy::house_number_policy;
 pub use repository::house_numbers;
-pub use resolution::house_number_resolution;
+pub use resolution::{house_number_origin, house_number_resolution};
 pub use scenario::house_number_scenario;
-pub use value::house_number;

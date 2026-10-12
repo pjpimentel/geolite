@@ -10,18 +10,17 @@ calls into the first two; `src/database/admin_levels.rs`, `src/index/coordinates
 ## the scale — `level`
 
 the scale every named area sits on. osm tags levels 1..11 on boundary relations; geolite extends it
-with 12 for streets, which are mapped as ways rather than boundaries, and 30 for house numbers,
-which are synthesized while answering a query and never stored as an area.
+with 12 for streets, which are mapped as ways rather than boundaries. a house number is not a
+level: a query answers it beside the ladder, in the `house_number` of the match.
 
 | level | name | | level | name |
 |---:|---|---|---:|---|
-| 1 | continent | | 8 | city |
-| 2 | country | | 9 | locality |
-| 3 | region | | 10 | neighborhood |
-| 4 | state | | 12 | street |
-| 5 | district | | 14 | address |
-| 6 | county | | 30 | house_number |
-| 7 | municipality | | | |
+| 1 | continent | | 7 | municipality |
+| 2 | country | | 8 | city |
+| 3 | region | | 9 | locality |
+| 4 | state | | 10 | neighborhood |
+| 5 | district | | 12 | street |
+| 6 | county | | 14 | address |
 
 **the set is closed on the way in.** `new` accepts only the levels above, and everything that
 writes a level goes through it: the entity carries a `level`, the presets list `level`s, and
@@ -72,8 +71,9 @@ blob's MBR header without decoding the geometry, the shortcut the house-number s
 `bounding_box` is the envelope the rtree indexes; it moved here from `query` because the
 persistence imported it, and a repository importing from the query layer is the wrong direction.
 `bounding_geometry` is the region of `--bounding-wkt` and of the http `bounding_wkt`: the polygon
-for the exact test and its `bounding_box` for the rtree. `parse_bounding_wkt` is its one parse,
-the cli `value_parser` and the http check alike, and it takes only a polygon or a multipolygon.
+for the exact test, its `bounding_box` for the rtree and the `wkt` it was parsed from, the text
+the etag of an http answer is derived from. `parse_bounding_wkt` is its one parse, the cli
+`value_parser` and the http check alike, and it takes only a polygon or a multipolygon.
 `mbr_of` reads the box of a blob without decoding it. `nearby_pairs` finds which lines touch or come
 within a reach of each other, and `fold_lines` puts the lines of the members of a piece in one
 multi-line — always a multi-line, each line as its way has it, never stitched and never dropped —

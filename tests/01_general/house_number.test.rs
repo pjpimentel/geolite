@@ -18,6 +18,7 @@ const NUMBERED_STREET_ID: i64 = 256_305_358;
 const INJECTED_STREET: &str = "Rua Januário dos Santos";
 const INJECTED_POINT: (f64, f64) = (-23.98202, -46.31005);
 const FIRST_INJECTED_NODE: i64 = 9_000_000_001;
+pub(crate) const NODE_OF_197: u64 = 2_061_634_141;
 
 fn house_numbers_at(w: &world, dir: &Path, extra: &[&str]) -> output {
   let mut args = vec!["--preset", "brazil", "exec", "extract-osm-house-numbers"];
@@ -405,17 +406,21 @@ fn _01_00_the_hash_prefix_is_a_number_only_under_the_colombia_policy() {
     let result = asked(w, &w.data_path, "colombia", number);
     assert_eq!(
       first(&result)["house_number"],
-      json!({ "number": "197", "kind": "from_osm_data" }),
+      json!({
+        "number": "197",
+        "kind": "from_osm_data",
+        "osm_node_ids": [NODE_OF_197],
+        "meters_per_number": null,
+      }),
       "{number}"
     );
-    assert!(levels_of(first(&result)).contains(&30), "{number}");
+    assert_eq!(levels_of(first(&result)).last(), Some(&12), "{number}");
   }
   let result = asked(w, &w.data_path, "brazil", "#197");
   assert!(
     first(&result).get("house_number").is_none(),
     "brazil reads no number in '#197'"
   );
-  assert!(!levels_of(first(&result)).contains(&30));
 }
 
 // 01.01. a compound number matches its stored value under colombia and is never presumed
@@ -446,7 +451,12 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
   let exact = asked(w, &s.dir, "colombia", "82-52");
   assert_eq!(
     first(&exact)["house_number"],
-    json!({ "number": "82-52", "kind": "from_osm_data" })
+    json!({
+      "number": "82-52",
+      "kind": "from_osm_data",
+      "osm_node_ids": [FIRST_INJECTED_NODE],
+      "meters_per_number": null,
+    })
   );
   let known = asked(w, &s.dir, "colombia", "197");
   assert_eq!(
@@ -458,10 +468,6 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
   assert!(
     first(&unplaced).get("house_number").is_none(),
     "a compound number is never presumed: the street answers bare"
-  );
-  assert!(
-    !levels_of(first(&unplaced)).contains(&30),
-    "a compound number is never presumed: no level 30"
   );
   assert_eq!(
     first(&asked(w, &s.dir, "colombia", "82"))["house_number"]["kind"],
@@ -558,14 +564,23 @@ fn _01_03_a_compound_number_matches_across_its_letter_case_and_separator() {
     index_at(w, &s.dir, index);
   }
 
-  for typed in ["25b-48", "16I56", "16i-56"] {
+  for (typed, node) in [
+    ("25b-48", FIRST_INJECTED_NODE),
+    ("16I56", FIRST_INJECTED_NODE + 1),
+    ("16i-56", FIRST_INJECTED_NODE + 1),
+  ] {
     let result = asked(w, &s.dir, "colombia", typed);
     assert_eq!(
       first(&result)["house_number"],
-      json!({ "number": typed, "kind": "from_osm_data" }),
+      json!({
+        "number": typed,
+        "kind": "from_osm_data",
+        "osm_node_ids": [node],
+        "meters_per_number": null,
+      }),
       "{typed}"
     );
-    assert!(levels_of(first(&result)).contains(&30), "{typed}");
+    assert_eq!(levels_of(first(&result)).last(), Some(&12), "{typed}");
   }
   assert!(
     first(&asked(w, &s.dir, "brazil", "16I56"))

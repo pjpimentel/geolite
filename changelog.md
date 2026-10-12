@@ -1,19 +1,22 @@
 # changelog
 
-## **planned** - 0.0.17
+## **planned** - 0.0.x
 
 1. MODIFIED the storage to a single file, without the split between `database.sqlite3` and `database.tantivy`, so a base is one file to copy, publish and merge.
 1. ADDED a repository of prebuilt data per region and schema version, with a `geolite fetch <region>` that downloads instead of building, so a user queries without the build.
 1. ADDED a study of a geofabrik proxy that mirrors, caches and versions the extracts, so a build is reproducible and survives the origin being down.
 1. ADDED a layer compatible with the google geocoding and places sdk (`/maps/api/geocode/json`, `/maps/api/place/*`), so a client of the sdk changes only the endpoint.
 1. ADDED a feasibility study of vector tiles built from the pbf and served at `/tiles/{z}/{x}/{y}.pbf`, so it is decided whether geolite serves the map besides the geocode.
-
-## **planned** - 0.0.16
-
 1. REMOVED the web ui served at `/` by `http-server`, so the server serves only the api.
 1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
-1. ADDED a query cache to `http-server` and `query`, bounded by a cli option, so a repeated question answers at once.
+1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
+
+## **2026-10-12** - 0.0.16
+
+1. REMOVED the admin level 30 from the scale and from the ladder, the house number of a match carried only by its `house_number` object (not backward compatible).
+1. ADDED the origin of a house number to the `house_number` of a match, the osm nodes it was read from (`osm_node_ids`) and the metres per number a presumed one was counted at (`meters_per_number`), so a number can be traced back to the data it came from.
+1. ADDED an `etag` to every json answer of `http-server`, derived from the question and the version for `/geocode`, and a `304` to a request whose `If-None-Match` carries it, so a client holding an unchanged answer downloads nothing and the server computes nothing.
 
 ## **2026-10-03** - 0.0.15
 
