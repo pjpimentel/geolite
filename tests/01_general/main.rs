@@ -32,3 +32,6 @@ mod street_merge;
 
 #[path = "tui.test.rs"]
 mod tui;
+
+#[path = "etag.test.rs"]
+mod etag;

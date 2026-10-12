@@ -71,8 +71,9 @@ blob's MBR header without decoding the geometry, the shortcut the house-number s
 `bounding_box` is the envelope the rtree indexes; it moved here from `query` because the
 persistence imported it, and a repository importing from the query layer is the wrong direction.
 `bounding_geometry` is the region of `--bounding-wkt` and of the http `bounding_wkt`: the polygon
-for the exact test and its `bounding_box` for the rtree. `parse_bounding_wkt` is its one parse,
-the cli `value_parser` and the http check alike, and it takes only a polygon or a multipolygon.
+for the exact test, its `bounding_box` for the rtree and the `wkt` it was parsed from, the text
+the etag of an http answer is derived from. `parse_bounding_wkt` is its one parse, the cli
+`value_parser` and the http check alike, and it takes only a polygon or a multipolygon.
 `mbr_of` reads the box of a blob without decoding it. `nearby_pairs` finds which lines touch or come
 within a reach of each other, and `fold_lines` puts the lines of the members of a piece in one
 multi-line — always a multi-line, each line as its way has it, never stitched and never dropped —

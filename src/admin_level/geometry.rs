@@ -291,6 +291,7 @@ impl bounding_box {
 
 #[derive(Clone)]
 pub struct bounding_geometry {
+  pub wkt: String,
   pub geometry: Geometry<f64>,
   pub envelope: bounding_box,
 }
@@ -319,6 +320,10 @@ pub fn parse_bounding_wkt(s: &str) -> Result<bounding_geometry, String> {
     min_lon: rect.min().x,
     max_lon: rect.max().x,
   };
-  Ok(bounding_geometry { geometry, envelope })
+  Ok(bounding_geometry {
+    wkt: s.to_string(),
+    geometry,
+    envelope,
+  })
 }
 

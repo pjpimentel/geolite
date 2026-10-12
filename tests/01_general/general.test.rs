@@ -516,7 +516,7 @@ fn _01_14_options_on_a_known_route_returns_no_content_with_cors_preflight_header
   );
   assert_eq!(
     r.header("access-control-allow-headers"),
-    Some("Content-Type")
+    Some("Content-Type, If-None-Match")
   );
   assert_eq!(r.header("content-length"), Some("0"));
   assert!(r.body.is_empty());
