@@ -221,13 +221,14 @@ pub fn load_metadata_by_ids(
 pub struct street_centre_row {
   pub id: i64,
   pub name: String,
+  pub country_iso_code: Option<String>,
   pub cx: f64,
   pub cy: f64,
 }
 
 pub fn streets_with_centroid(conn: &Connection) -> Vec<street_centre_row> {
   const SQL_STREETS_WITH_GEOMETRY: &str = "
-    SELECT id, name, wkb
+    SELECT id, name, country_iso_code, wkb
     FROM admin_levels
     WHERE admin_level = ?1
       AND wkb IS NOT NULL
@@ -242,14 +243,21 @@ pub fn streets_with_centroid(conn: &Connection) -> Vec<street_centre_row> {
       Ok((
         row.get::<_, i64>(0)?,
         row.get::<_, String>(1)?,
-        row.get::<_, Vec<u8>>(2)?,
+        row.get::<_, Option<String>>(2)?,
+        row.get::<_, Vec<u8>>(3)?,
       ))
     })
     .expect("failed to query streets")
     .filter_map(|r| {
-      let (id, name, blob) = r.expect("failed to read street row");
+      let (id, name, country_iso_code, blob) = r.expect("failed to read street row");
       let (cx, cy) = mbr_center(&blob)?;
-      Some(street_centre_row { id, name, cx, cy })
+      Some(street_centre_row {
+        id,
+        name,
+        country_iso_code,
+        cx,
+        cy,
+      })
     })
     .collect()
 }
@@ -318,12 +326,13 @@ pub struct name_row {
   pub id: i64,
   pub name: String,
   pub admin_level: level,
+  pub country_iso_code: Option<String>,
   pub post_code: Option<String>,
 }
 
 pub fn load_all_names(conn: &Connection) -> Vec<name_row> {
   const SQL_LOAD_ALL_NAMES: &str = "
-    SELECT id, name, post_code, admin_level
+    SELECT id, name, post_code, admin_level, country_iso_code
     FROM admin_levels
   ";
 
@@ -335,10 +344,12 @@ pub fn load_all_names(conn: &Connection) -> Vec<name_row> {
       let id: i64 = row.get(0)?;
       let name: String = row.get(1)?;
       let post_code: Option<String> = row.get(2)?;
+      let country_iso_code: Option<String> = row.get(4)?;
       Ok(level_of(id, row.get(3)?).map(|admin_level| name_row {
         id,
         name,
         admin_level,
+        country_iso_code,
         post_code,
       }))
     })

@@ -18,6 +18,7 @@ const REACH_IN_METERS: f64 = 20.0;
 
 pub struct piece {
   name: String,
+  country_iso_code: Option<String>,
   post_code: Option<String>,
   members: Vec<i64>,
   parents: Vec<i64>,
@@ -255,6 +256,10 @@ pub fn find(conn: &Connection, progress: impl Fn(progress_report)) -> Vec<piece>
       {
         pieces.push(piece {
           name: group[0].name.clone(),
+          country_iso_code: grown
+            .members
+            .iter()
+            .find_map(|&member| group[member].country_iso_code.clone()),
           post_code: grown
             .members
             .iter()
@@ -307,7 +312,7 @@ pub fn fold(conn: &Connection, pieces: &[piece], progress: impl Fn(progress_repo
           level: level::street,
           wkb: geometry.into(),
           name: piece.name.clone(),
-          country_iso_code: None,
+          country_iso_code: piece.country_iso_code.clone(),
           post_code: piece.post_code.clone(),
         },
         way_ids,

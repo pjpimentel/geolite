@@ -45,33 +45,17 @@ fn half(w: &world, name: &str, levels: &str) -> PathBuf {
   stage(
     w,
     &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "exec",
-      "extract-osm-admin-levels",
-      "--admin-level",
-      levels,
-    ],
+    &["exec", "extract-osm-admin-levels", "--admin-level", levels],
   );
   if levels.contains("12") {
-    stage(
-      w,
-      &s.dir,
-      &["--preset", "brazil", "exec", "extract-osm-house-numbers"],
-    );
+    stage(w, &s.dir, &["exec", "extract-osm-house-numbers"]);
   }
   s.dir
 }
 
 fn merge(w: &world, base_dir: &Path, sources: &[&Path]) -> output {
   let base = sqlite_of(base_dir).to_string_lossy().into_owned();
-  let mut args = vec![
-    "--preset".to_string(),
-    "brazil".to_string(),
-    "merge".to_string(),
-    base,
-  ];
+  let mut args = vec!["merge".to_string(), base];
   args.extend(
     sources
       .iter()
@@ -115,8 +99,8 @@ fn _00_00_a_merge_of_two_halves_matches_a_single_build() {
   assert_eq!(signature(&base_dir), signature(&combined), "{REGENERATE}");
   for query in [TEXT_QUERY, COORDINATES_QUERY] {
     assert_eq!(
-      query_at(w, &base_dir, "brazil", query),
-      query_at(w, &combined, "brazil", query),
+      query_at(w, &base_dir, query),
+      query_at(w, &combined, query),
       "the merged base must answer {query:?} like the single build"
     );
   }

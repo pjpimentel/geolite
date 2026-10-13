@@ -119,14 +119,14 @@ $ geolite osm-pbf-file download brazil
 $ geolite exec extract-osm-pbf-blob-chunks brazil
 $ geolite exec extract-osm-pbf-header brazil
 $ geolite exec extract-osm-pbf-data brazil
-$ geolite --preset brazil exec extract-osm-admin-levels
-$ geolite --preset brazil exec extract-osm-house-numbers
+$ geolite exec extract-osm-admin-levels
+$ geolite exec extract-osm-house-numbers
 ```
 
 ### index extracted data
 ```bash
 $ geolite exec index-admin-levels-hierarchy
-$ geolite --preset brazil exec index-addresses
+$ geolite exec index-addresses
 $ geolite exec index-coordinates
 ```
 
@@ -159,6 +159,11 @@ $ geolite http-server
 ```
 
 ### merge separately-built databases
+
+every row is extracted, indexed and answered under the preset of the country whose boundary holds
+it, so neither a build nor a merge takes a preset: a base of many countries answers each one under
+its own.
+
 ```bash
 # machine 1
 $ geolite --sqlite-path sudeste.sqlite3 build sudeste
@@ -166,12 +171,12 @@ $ geolite --sqlite-path sudeste.sqlite3 build sudeste
 $ geolite --sqlite-path nordeste.sqlite3 build nordeste
 
 # merge all builds into a new combined database (created fresh)
-$ geolite --preset brazil merge brazil.sqlite3 sudeste.sqlite3 nordeste.sqlite3 ...
+$ geolite merge brazil.sqlite3 sudeste.sqlite3 nordeste.sqlite3 ...
 
 # or with docker 
 $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/sudeste.sqlite3 build sudeste
 $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/nordeste.sqlite3 build nordeste
-$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --preset brazil merge /.geolite/brazil.sqlite3 /.geolite/sudeste.sqlite3 /.geolite/nordeste.sqlite3
+$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest merge /.geolite/brazil.sqlite3 /.geolite/sudeste.sqlite3 /.geolite/nordeste.sqlite3
 $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/brazil.sqlite3 http-server
 ```
 

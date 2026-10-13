@@ -3,7 +3,7 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 
 use super::entity::house_number_link;
-use super::policy::house_number_policy;
+use super::policy;
 use super::value::house_number;
 use crate::admin_level::geometry::admin_geometry;
 use crate::database::table;
@@ -56,7 +56,7 @@ pub struct candidate_row {
   pub lat: f64,
 }
 
-pub fn load_all_candidates(conn: &Connection, policy: &house_number_policy) -> Vec<candidate_row> {
+pub fn load_all_candidates(conn: &Connection) -> Vec<candidate_row> {
   const SQL_LOAD_ALL_CANDIDATES: &str = "
     SELECT
       id,
@@ -68,12 +68,8 @@ pub fn load_all_candidates(conn: &Connection, policy: &house_number_policy) -> V
     WHERE {number_select} IS NOT NULL
   ";
 
-  debug_assert!(
-    !policy.number_tags.is_empty(),
-    "number_tags must not be empty"
-  );
-  let number_select = crate::osm_tag::select::coalesce_of("payload", policy.number_tags);
-  let street_select = crate::osm_tag::select::coalesce_of("payload", policy.street_tags);
+  let number_select = crate::osm_tag::select::coalesce_of("payload", policy::NUMBER_TAGS);
+  let street_select = crate::osm_tag::select::coalesce_of("payload", policy::STREET_TAGS);
   let sql = SQL_LOAD_ALL_CANDIDATES
     .replace("{number_select}", &number_select)
     .replace("{street_select}", &street_select);
@@ -93,7 +89,7 @@ pub fn load_all_candidates(conn: &Connection, policy: &house_number_policy) -> V
     .expect("failed to query candidates")
     .map(|r| r.expect("failed to read candidate row"))
     .filter_map(|(id, raw, addr_street, lon, lat)| {
-      house_number::normalize(&raw, policy).map(|number| candidate_row {
+      house_number::normalize(&raw).map(|number| candidate_row {
         id,
         number,
         addr_street,

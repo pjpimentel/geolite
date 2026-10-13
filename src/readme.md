@@ -17,7 +17,9 @@ admin_level/    a named administrative area — the `admin_levels` table
   geometry          the wkb column codec, its mbr shortcut, the bounding box, the region of `--bounding-wkt` and its parse, the ring assembly, the folding of lines, and the outline of a shape
   repository        the ddl, the index, the reads every consumer of the table goes through, and the upsert
   spatial_index     the rtree of every level's bounding box, the pass that fills it, and the nearest streets to a point
-  rules             which ways each level includes or excludes, and the preset override
+  point_in_polygon  the ring index and the point test the resolver and the country index share
+  country_index     the boundary of every preset as polygons, and the preset whose boundary holds an element
+  rules             which ways each level includes or excludes
   extract           `admin_level::extract(level)`: the stages of a level and the events they emit
   relations         the stage that assembles boundary relations into areas
   place_ways        the stage that reads `place=neighbourhood|suburb` ways at level 10
@@ -33,7 +35,7 @@ admin_level_hierarchy/  which area contains which — the `admin_levels_hierarch
 house_number/   a door number placed on a street — the `house_numbers` table
   entity            the row as it is written: node, street id, number, point, strategy
   value             the number itself: `normalize` (extraction), `recognize` (query), one comparison key
-  policy            per-region rules: tags, non-values, digit cap, written forms, `#` prefix
+  policy            per-country rules: non-values, digit cap, written forms, `#` prefix, metres per number; the tags of the candidates and the policy of the pre-search
   strategy          how the number was attached to its street: by_proximity | by_name, and the stored codes
   scenario          where a number came from: the osm data, or presumed from the street's references, from one, or from the constants — the four values of `house_number.kind`
   axis              the street as one line: the distance along it of a point, and the point at a distance

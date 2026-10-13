@@ -70,7 +70,7 @@ pub enum exec_commands {
     // examples:
     //   --name-priority "name"                  (native osm name)
     //   --name-priority "name:pt,name:en,name"  (prefer pt, fallback en, then default)
-    // when omitted, falls back to the active preset's name_priority.
+    // when omitted, the priority of the country of each element decides.
     #[arg(long, value_name = "TAGS")]
     name_priority: Option<String>,
   },
@@ -113,7 +113,6 @@ pub fn command_handler_exec(
   sqlite_path: &str,
   index_path: &str,
   command: exec_commands,
-  preset: &crate::presets::preset,
 ) {
   match command {
     exec_commands::extract_osm_pbf_blob_chunks { inputs, recreate } => {
@@ -166,39 +165,34 @@ pub fn command_handler_exec(
             std::process::exit(1);
           }
         },
-        None => preset.extract_osm_admin_levels.admin_levels.to_vec(),
+        None => crate::presets::DEFAULT.extract_osm_admin_levels.admin_levels.to_vec(),
       };
-      let names: Vec<&str> = match name_priority.as_deref() {
+      let names: Option<Vec<&str>> = match name_priority.as_deref() {
         Some(raw) => match super::extract::parse_name_priority(raw) {
-          Ok(v) => v,
+          Ok(v) => Some(v),
           Err(e) => {
             eprintln!("\x1b[1;31merror\x1b[0m: invalid --name-priority: {e}");
             std::process::exit(1);
           }
         },
-        None => preset.extract_osm_admin_levels.name_priority.to_vec(),
+        None => None,
       };
       osm_admin_levels::command_handler_extract_osm_admin_levels(
         sqlite_path,
         &levels,
         threads,
         recreate,
-        &names,
-        preset.extract_osm_admin_levels.admin_levels_rules,
+        names.as_deref(),
       );
     }
     exec_commands::extract_osm_house_numbers { recreate } => {
-      osm_house_numbers::command_handler_extract_osm_house_numbers(
-        sqlite_path,
-        recreate,
-        preset.house_numbers,
-      );
+      osm_house_numbers::command_handler_extract_osm_house_numbers(sqlite_path, recreate);
     }
     exec_commands::index_admin_levels_hierarchy => {
       admin_levels_hierarchy::command_handler_index_admin_levels_hierarchy(sqlite_path)
     }
     exec_commands::index_addresses => {
-      addresses::command_handler_index_addresses(sqlite_path, index_path, &preset.index_addresses)
+      addresses::command_handler_index_addresses(sqlite_path, index_path)
     }
     exec_commands::index_coordinates => coordinates::command_handler_index_coordinates(sqlite_path),
     exec_commands::optimize_delete_isolated_admin_levels => with_stale_indexes(

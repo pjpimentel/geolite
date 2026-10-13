@@ -32,7 +32,7 @@ const FAR_COUNTRY: u64 = 6;
 const FAR_STREET: u64 = 12;
 
 pub(crate) fn isolated_deleted_at(w: &world, dir: &Path) -> output {
-  stage(w, dir, &["--preset", "brazil", "exec", STAGE])
+  stage(w, dir, &["exec", STAGE])
 }
 
 fn ledger(dir: &Path) -> rusqlite::Connection {
@@ -242,7 +242,7 @@ fn _00_05_the_tables_stay_consistent_and_the_merge_stage_still_runs() {
   isolated_deleted_at(w, &dir);
 
   assert_the_tables_are_consistent(&ledger(&dir));
-  let merged = stage(w, &dir, &["--preset", "brazil", "exec", MERGE_STAGE]);
+  let merged = stage(w, &dir, &["exec", MERGE_STAGE]);
   assert!(
     plain(&merged.stdout).contains("skipping merge-admin-levels"),
     "{}",
@@ -271,7 +271,7 @@ fn _00_07_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
   assert_the_indexes_are_cleared_and_recreated(w, &s, isolated_deleted_at, TEXT_QUERY);
 
   assert!(!holds(&s.ledger(), way(UPPER_WAY)));
-  let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
+  let result = query_at(w, &s.dir, TEXT_QUERY);
   assert!(
     !matches(&result).is_empty(),
     "the ways of the street that kept their areas still answer"
@@ -406,7 +406,7 @@ fn _01_00_it_refuses_a_database_without_a_hierarchy() {
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
   let before = snapshot(&s.ledger());
 
-  let out = w.geolite_in(&s.dir, &["--preset", "brazil", "exec", STAGE]);
+  let out = w.geolite_in(&s.dir, &["exec", STAGE]);
 
   assert_refused(
     &out,
@@ -446,7 +446,7 @@ fn _01_01_a_base_where_every_row_is_isolated_ends_empty() {
     out.stdout
   );
   assert_eq!(count(&ledger(&dir), "SELECT COUNT(*) FROM admin_levels"), 0);
-  let next = w.geolite_in(&dir, &["--preset", "brazil", "exec", MERGE_STAGE]);
+  let next = w.geolite_in(&dir, &["exec", MERGE_STAGE]);
   assert_refused(
     &next,
     "optimize-merge-admin-levels requires index-admin-levels-hierarchy",

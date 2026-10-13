@@ -38,7 +38,7 @@ pub(crate) fn drop_table(conn: &Connection) {
 
 pub struct way_coord_row {
   pub way_id: u64,
-  pub way_name: String,
+  pub names: Vec<Option<String>>,
   pub post_code: Option<String>,
   pub lon: f64,
   pub lat: f64,
@@ -117,10 +117,14 @@ pub fn remaining_ids_by_tags(conn: &Connection, level: level, filter: &[way_filt
 pub fn way_coords_chunk(
   conn: &Connection,
   ids: &[u64],
-  name_priority: &[&str],
+  name_tags: &[&str],
 ) -> Vec<way_coord_row> {
   let placeholders = crate::database::placeholders_for(ids.len());
-  let name_select = select::coalesce_of(PAYLOAD, name_priority);
+  let name_selects = select::each_of(PAYLOAD, name_tags)
+    .iter()
+    .enumerate()
+    .map(|(at, expr)| format!("{expr} AS name_{at},\n"))
+    .collect::<String>();
   // named after the osm tag: codeql reads a `post_code` local reaching the query as personal data
   // stored in clear (rust/cleartext-storage-database), and this is a column expression
   let postal_code_select = select::normalized_coalesce(PAYLOAD, key::POST_CODE);
@@ -128,7 +132,7 @@ pub fn way_coords_chunk(
     "
     SELECT
       osm_data.osm_ways.id AS way_id,
-      {name_select} AS way_name,
+      {name_selects}
       {postal_code_select} AS post_code,
       CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lon') AS REAL) AS lon,
       CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lat') AS REAL) AS lat
@@ -139,13 +143,16 @@ pub fn way_coords_chunk(
     ORDER BY osm_data.osm_ways.id ASC, node_refs.key ASC
     "
   );
+  let after_names = 1 + name_tags.len();
   crate::database::query_by_ids(conn, &sql, ids.iter().map(|&id| id as i64), |row| {
     Ok(way_coord_row {
       way_id: row.get(0)?,
-      way_name: row.get(1)?,
-      post_code: row.get(2)?,
-      lon: row.get(3)?,
-      lat: row.get(4)?,
+      names: (1..after_names)
+        .map(|at| row.get::<_, Option<String>>(at))
+        .collect::<rusqlite::Result<Vec<_>>>()?,
+      post_code: row.get(after_names)?,
+      lon: row.get(after_names + 1)?,
+      lat: row.get(after_names + 2)?,
     })
   })
 }

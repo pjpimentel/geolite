@@ -57,7 +57,6 @@ pub fn serve(
   sqlite_path: &str,
   index_path: &str,
   threads: u8,
-  preset: &crate::presets::preset,
 ) {
   let addr = bound.addr();
   let server = bound.server;
@@ -65,7 +64,7 @@ pub fn serve(
 
   // degraded boot: a missing index disables text_to_address (reported via /status) instead of
   // refusing to start, so the server keeps serving coordinate queries and the health endpoint.
-  let boosts = preset.index_addresses.boosts;
+  let boosts = crate::presets::DEFAULT.index_addresses.boosts;
   let index: Option<Arc<tantivy_index>> =
     crate::admin_level_hierarchy::search_index::load(Path::new(index_path), boosts).map(Arc::new);
   if index.is_none() {
@@ -97,7 +96,6 @@ pub fn serve(
       let sqlite_path = sqlite_path.clone();
       let index = index.clone();
       let db_file = db_file.clone();
-      let preset = *preset;
       std::thread::spawn(move || {
         let conn = crate::database::open_readonly(&sqlite_path);
         // recv_timeout instead of the blocking incoming_requests() so each worker rechecks the
@@ -105,7 +103,7 @@ pub fn serve(
         while !SHUTDOWN.load(Ordering::Relaxed) {
           match server.recv_timeout(Duration::from_millis(250)) {
             Ok(Some(request)) => {
-              handle(request, &conn, index.as_deref(), &db_file, &preset)
+              handle(request, &conn, index.as_deref(), &db_file)
             }
             Ok(None) => {}
             Err(_) => break,
@@ -126,7 +124,6 @@ fn handle(
   conn: &rusqlite::Connection,
   index: Option<&tantivy_index>,
   db_file: &str,
-  preset: &crate::presets::preset,
 ) {
   let start = Instant::now();
   let url = request.url().to_string();
@@ -245,7 +242,7 @@ fn handle(
             if etag::none_match(&request, &etag) {
               respond_not_modified(request, &etag)
             } else {
-              let address = crate::address::address::open(conn, index, &preset.house_numbers);
+              let address = crate::address::address::open(conn, index);
               let result = match input {
                 crate::address::query_input::coordinates {
                   latitude,

@@ -12,6 +12,13 @@
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
 1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
 
+## **planned** - 0.0.17
+
+1. REMOVED the `--preset` flag and the preset inferred from the source name, a row extracted, indexed and answered under the preset of the country whose boundary holds it (not backward compatible), so a base of many countries answers each one under its own preset.
+1. ADDED the boundary of each country to its preset, a natural earth outline compiled into the binary, so the preset of a row is decided against it and never against what the extract happens to hold.
+1. REMOVED `admin_levels_rules`, `number_tags` and `street_tags` from the presets, the defaults the only rules, so a preset holds only what varies by country.
+1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
+
 ## **2026-10-12** - 0.0.16
 
 1. REMOVED the admin level 30 from the scale and from the ladder, the house number of a match carried only by its `house_number` object (not backward compatible).

@@ -185,15 +185,14 @@ fn _00_07_the_openapi_spec_documents_the_etag() {
   );
 }
 
-// 00.08. etag: the etag of a question is the same on another server, whatever its preset, so a
-// client keeps its answers across a restart; only an upgrade changes it
+// 00.08. etag: the etag of a question is the same on another server, so a client keeps its
+// answers across a restart; only an upgrade changes it
 #[test]
 #[ignore]
-fn _00_08_the_etag_of_a_question_survives_a_restart_and_another_preset() {
+fn _00_08_the_etag_of_a_question_survives_a_restart() {
   let w = world();
   let path = ask(ANY_POINT).http_path();
   let etag_at = |s: server| etag_of(&get(s.port, &path));
   let first = etag_at(w.start_server());
   assert_eq!(etag_at(w.start_server()), first);
-  assert_eq!(etag_at(w.start_server_with_preset("brazil")), first);
 }

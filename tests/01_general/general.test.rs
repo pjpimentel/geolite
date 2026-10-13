@@ -1,6 +1,6 @@
 use crate::common::ask::ask;
 use crate::common::harness::{
-  assert_in_order, encode, get, plain, request, scenario, world, world_cell,
+  assert_in_order, encode, get, plain, relabel_country, request, scenario, world, world_cell,
 };
 use crate::common::query::{first, kind_of, matches, number_of};
 use crate::extract::{REGENERATE, extracted};
@@ -13,7 +13,6 @@ pub static SCENARIO: scenario = scenario {
   region: "01_general",
   fixture_dir: "02_preset_brazil",
   pbf: "santos.osm.pbf",
-  preset: "brazil",
 };
 
 pub(crate) static WORLD: world_cell = world_cell::new();
@@ -141,7 +140,7 @@ fn _00_05_optimize_leaves_every_pbf_outside_data_path_alone() {
 // 00.06. pipeline integrity
 #[test]
 #[ignore]
-fn _00_06_extracted_admin_levels_cover_only_the_preset_levels() {
+fn _00_06_extracted_admin_levels_cover_only_the_levels_of_the_country() {
   let w = world();
   let conn = w.open_sqlite();
   let mut stmt = conn
@@ -160,8 +159,8 @@ fn _00_06_extracted_admin_levels_cover_only_the_preset_levels() {
   assert_eq!(
     levels,
     vec![2, 4, 8, 10, 12],
-    "the preset decides which levels are extracted; the discarded ones are present in the \
-     fixture and must have been filtered out. got {rows:?}"
+    "the country of each element decides which levels are extracted; the discarded ones are \
+     present in the fixture and must have been left out. got {rows:?}"
   );
   for discarded in [3, 5, 6, 7, 9] {
     assert!(
@@ -789,17 +788,20 @@ fn _01_23_the_response_schemas_document_the_post_code() {
   }
 }
 
-// 01.24. contract: the preset the server was started with is the policy its queries read
+// 01.24. contract: the policy a server reads is the one of the country of each row, so a copy of
+// the base relabelled as colombia reads the `#` prefix and the brazilian base does not
 #[test]
 #[ignore]
-fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
+fn _01_24_the_http_server_reads_the_house_number_policy_of_the_country_of_the_row() {
   let w = world();
   let path = format!(
     "/geocode?query={}",
     encode("rua januario dos santos, santos #197")
   );
 
-  let colombia = w.start_server_with_preset("colombia");
+  let relabelled = w.world_copy("http_server_colombia");
+  relabel_country(&relabelled, Some("CO"));
+  let colombia = w.start_server_at(&relabelled);
   let read = get(colombia.port, &path).json();
   assert_eq!(
     first(&read)["house_number"],
@@ -811,7 +813,7 @@ fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
     }),
   );
 
-  let brazil = w.start_server_with_preset("brazil");
+  let brazil = w.start_server();
   let unread = get(brazil.port, &path).json();
   assert!(
     first(&unread).get("house_number").is_none(),

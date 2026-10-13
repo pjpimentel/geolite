@@ -19,15 +19,20 @@ server answers 503 and keeps answering coordinates.
 
 ## the two services — `text` and `coordinates`
 
-`address::open(conn, index, house_numbers)` holds the connection, the optional tantivy index and
-the house-number policy of the preset; `query_opts` carries what the flags carry
+`address::open(conn, index)` holds the connection and the optional tantivy index; the house-number
+policy is the one of the country of each street, read from its row
+(`match_sources::house_number_policy_of`); `query_opts` carries what the flags carry
 (`friendly_name_format`, `min_quality`, `bounding`, `last_admin_levels`, `include_wkt`) in place
 of the five positional arguments the old dispatcher took.
 
 `query_by_text` runs the fts on the whole text — a number can be part of a street name (`25` in
 `rua 25 de marco`), so nothing is stripped before the search; the words that read as a house
 number (`token::house_number_words`) are handed to the index as optional, so a number no document
-holds does not cost the street covering every other word its place. with a region, the ranking is
+holds does not cost the street covering every other word its place. they are read under
+`EVERY_SHAPE`, since no street and so no country is known before the search: a token only one
+country reads as a number, a compound `82-52` or a postcode without a leading zero, is optional in
+the second query of the search, which widens the tail of the ranking and never its top. with a
+region, the ranking is
 restricted inside tantivy to the ids of the region's envelope instead of being filtered after the
 fts cut, so a match of the region ranked below the global cap of fifty is not lost. each hit becomes
 one match: the level ladder from `match_sources`, the point of the number when one was typed and
@@ -43,14 +48,15 @@ distance. there is no distance cap on streets: the region, `min_quality` and `la
 run on the candidates, whose leaf is the street itself, and the cut at ten happens before the
 loads. the match carries the closest point and the distance in metres, and every street answers a
 number: the stored one within 50 m of the point, else the one read at the closest point from the
-street's own numbers or from the preset's metres per number, answered in `house_number` and named
+street's own numbers or from the metres per number of the street's country, answered in
+`house_number` and named
 by `house_number.kind`.
 
 ## the address of a path — `path`
 
 `address::at_path(conn, id, path)` answers the one match of an area under a path already known,
 the areas from the nearest one outward, without a search: it is what the tui opens at the end of
-the folders walked. it holds neither the index nor the policy of the preset, so it is a function
+the folders walked. it holds no index, so it is a function
 and not a method of `address`. the match is the one the text service builds — the same ladder,
 label, attributes and id, and the point of `resting_point` — without a score, a similarity or a
 house number, which belong to a question asked.
@@ -95,7 +101,7 @@ the key is absent everywhere else, and it is read on every query rather than und
 `query_house_number` is the number and where it came from: `kind` the word, `osm_node_ids` the
 osm nodes the number was read from — the one node of a stored number, every reference of a street
 that presumed it from several, the one reference it was presumed from, none from the constants —
-and `meters_per_number` the preset's metres behind a number presumed from one reference or from
+and `meters_per_number` the metres of the street's country behind a number presumed from one reference or from
 the constants, `null` for the other two. every key is always present, so a client reads the
 object by its shape and not by its kind.
 

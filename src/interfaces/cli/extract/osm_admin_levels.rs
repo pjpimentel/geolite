@@ -1,10 +1,9 @@
 use indicatif::ProgressBar;
 use std::time::Instant;
 
+use crate::admin_level::country_index::country_index;
 use crate::admin_level::extract::{source, stage};
-use crate::admin_level::{
-  admin_level, extract_event, extract_opts, extract_step, extraction_rules, level,
-};
+use crate::admin_level::{admin_level, extract_event, extract_opts, extract_step, level};
 use crate::database::table;
 use crate::interfaces::cli::exec::stages::stage as exec_stage;
 use crate::interfaces::cli::progress;
@@ -31,7 +30,7 @@ impl stage_renderer {
         println!("\x1b[1;32mremoving\x1b[0m already processed... done ({pending} remaining)");
       }
       extract_step::progress(report) => self.advance(report),
-      extract_step::finished => self.finish(),
+      extract_step::finished { kept } => self.finish(kept),
     }
   }
 
@@ -69,7 +68,7 @@ impl stage_renderer {
     progress::advance(running.bar.as_ref().unwrap(), &report);
   }
 
-  fn finish(&mut self) {
+  fn finish(&mut self, kept: u64) {
     let Some(running) = self.current.take() else {
       return;
     };
@@ -87,8 +86,8 @@ impl stage_renderer {
       .started_at
       .map_or(0.0, |started_at| started_at.elapsed().as_secs_f64());
     println!(
-      "\x1b[1;32mextracted\x1b[0m {} {} in {elapsed:.1}s",
-      running.total, running.label
+      "\x1b[1;32mextracted\x1b[0m {kept} {} in {elapsed:.1}s",
+      running.label
     );
   }
 }
@@ -114,8 +113,7 @@ pub fn command_handler_extract_osm_admin_levels(
   admin_levels: &[level],
   threads: &u8,
   recreate: bool,
-  name_priority: &[&str],
-  rules: &[extraction_rules],
+  name_priority: Option<&[&str]>,
 ) {
   if recreate {
     crate::database::destroy_data(sqlite_path, false, false, true, true);
@@ -123,12 +121,14 @@ pub fn command_handler_extract_osm_admin_levels(
 
   let conn = crate::database::open_write(sqlite_path);
   exec_stage::extract_osm_admin_levels.require(&conn, None);
-  let opts = extract_opts {
-    threads: (*threads).max(1) as usize,
-    name_priority,
-    rules,
-  };
+  let mut name_tags: Vec<&str> = crate::presets::name_tags();
+  for &tag in name_priority.unwrap_or(&[]) {
+    if !name_tags.contains(&tag) {
+      name_tags.push(tag);
+    }
+  }
   let mut renderer = stage_renderer::default();
+  let countries = country_index::from_presets();
 
   for (i, &level) in admin_levels.iter().enumerate() {
     if i > 0 {
@@ -141,6 +141,12 @@ pub fn command_handler_extract_osm_admin_levels(
       level.name()
     );
 
+    let opts = extract_opts {
+      threads: (*threads).max(1) as usize,
+      name_priority,
+      name_tags: &name_tags,
+      countries: &countries,
+    };
     admin_level::extract(&conn, level, &opts, |event| renderer.on(event));
   }
 

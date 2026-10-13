@@ -14,7 +14,6 @@ pub struct scenario {
   pub region: &'static str,
   pub fixture_dir: &'static str,
   pub pbf: &'static str,
-  pub preset: &'static str,
 }
 
 impl scenario {
@@ -55,10 +54,7 @@ pub struct built {
 
 // the pbf is COPIED in and kept outside data_path: the optimize stage deletes every
 // *.osm.pbf it finds under data_path, and the committed fixture must never be one of them.
-//
-// --preset is explicit: the workspace directory is named after the test target, not the map, so
-// substring inference on the path would pick the wrong preset for a target like 01_general.
-pub fn build(tag: &str, pbf_src: &Path, preset: &str) -> Result<built, String> {
+pub fn build(tag: &str, pbf_src: &Path) -> Result<built, String> {
   if !pbf_src.exists() {
     return Err(format!("pbf not found at {}", pbf_src.display()));
   }
@@ -82,8 +78,6 @@ pub fn build(tag: &str, pbf_src: &Path, preset: &str) -> Result<built, String> {
     .arg(&data_path)
     .arg("--threads")
     .arg("2")
-    .arg("--preset")
-    .arg(preset)
     .arg("build")
     .arg(&pbf)
     .output()
@@ -145,9 +139,9 @@ fn build_world(scenario: &'static scenario) -> Result<world, String> {
 
   let bytes = std::fs::read(&pbf_src).map_err(|e| format!("failed to read the fixture: {e}"))?;
   let digest = format!("{:x}", md5::compute(&bytes));
-  // keyed on preset + city + content, not on the target: 01_general and 02_preset_brazil build the
-  // same santos extract with the same preset, and must share one workspace.
-  let tag = format!("{}-{}-{}", scenario.preset, scenario.city(), &digest[..8]);
+  // keyed on city + content, not on the target: 01_general and 02_preset_brazil build the same
+  // santos extract, and must share one workspace.
+  let tag = format!("{}-{}", scenario.city(), &digest[..8]);
   drop(bytes);
 
   let root = Path::new(env!("CARGO_TARGET_TMPDIR")).join(&tag);
@@ -180,7 +174,7 @@ fn build_world(scenario: &'static scenario) -> Result<world, String> {
     });
   }
 
-  let built = build(&tag, &pbf_src, scenario.preset)?;
+  let built = build(&tag, &pbf_src)?;
 
   eprintln!("{}", built.stdout);
   if !built.stderr.is_empty() {
@@ -424,19 +418,28 @@ impl server {
 
 impl world {
   pub fn start_server(&self) -> server {
-    self.spawn_server(&self.index_path.to_string_lossy(), "healthy", None)
+    self.spawn_server(&self.index_path.to_string_lossy(), "healthy")
   }
 
   pub fn start_degraded_server(&self) -> server {
     let missing = self.root.join("absent.tantivy");
-    self.spawn_server(&missing.to_string_lossy(), "degraded", None)
+    self.spawn_server(&missing.to_string_lossy(), "degraded")
   }
 
-  pub fn start_server_with_preset(&self, preset: &str) -> server {
-    self.spawn_server(&self.index_path.to_string_lossy(), preset, Some(preset))
+  // a server over another base, a copy of the world relabelled to another country for instance
+  pub fn start_server_at(&self, data_path: &Path) -> server {
+    self.spawn_server_at(
+      data_path,
+      &data_path.join("database.tantivy").to_string_lossy(),
+      "copy",
+    )
   }
 
-  fn spawn_server(&self, index_path: &str, tag: &str, preset: Option<&str>) -> server {
+  fn spawn_server(&self, index_path: &str, tag: &str) -> server {
+    self.spawn_server_at(&self.data_path, index_path, tag)
+  }
+
+  fn spawn_server_at(&self, data_path: &Path, index_path: &str, tag: &str) -> server {
     // the os picks the port (`--port 0`) and the child names it on stdout: nothing to probe
     let seq = SPAWN_SEQ.fetch_add(1, Ordering::Relaxed);
     let stdout_path = self.root.join(format!("server-{tag}-{seq}.stdout"));
@@ -446,10 +449,9 @@ impl world {
 
     let child = Command::new(BIN)
       .arg("--data-path")
-      .arg(&self.data_path)
+      .arg(data_path)
       .arg("--index-path")
       .arg(index_path)
-      .args(preset.map_or(vec![], |p| vec!["--preset", p]))
       .arg("http-server")
       .arg("--host")
       .arg("127.0.0.1")
@@ -551,18 +553,57 @@ pub fn assert_in_order(text: &str, lines: &[&str]) {
   }
 }
 
-// a text query under a preset, against the database of a scratch or of the world
-pub fn query_at(w: &world, data_path: &Path, preset: &str, text: &str) -> serde_json::Value {
-  let out = w.geolite_in(
-    data_path,
-    &["--preset", preset, "query", text, "--include-wkt", "false"],
-  );
+// a text query against the database of a scratch or of the world
+pub fn query_at(w: &world, data_path: &Path, text: &str) -> serde_json::Value {
+  let out = w.geolite_in(data_path, &["query", text, "--include-wkt", "false"]);
   assert_eq!(
     out.status, 0,
     "query {text:?} exited {}:\n{}",
     out.status, out.stderr
   );
   serde_json::from_str(&out.stdout).expect("the query must print json")
+}
+
+// the preset of a row is its country's: a base answers under another country, or under the
+// default preset, once every row is relabelled
+pub fn relabel_country(data_path: &Path, iso: Option<&str>) {
+  const SQL_RELABEL_COUNTRY: &str = "
+    UPDATE admin_levels
+    SET country_iso_code = ?1
+  ";
+
+  let conn = rusqlite::Connection::open(data_path.join("database.sqlite3"))
+    .unwrap_or_else(|e| panic!("failed to open {}: {e}", data_path.display()));
+  conn
+    .execute(SQL_RELABEL_COUNTRY, [iso])
+    .expect("failed to relabel the country of every row");
+}
+
+impl world {
+  // a copy of the world's base and index, to be relabelled or reindexed without touching the world
+  pub fn world_copy(&self, name: &str) -> PathBuf {
+    let dir = self.scratch(name);
+    std::fs::copy(&self.sqlite_path, dir.join("database.sqlite3"))
+      .unwrap_or_else(|e| panic!("failed to copy the base: {e}"));
+    copy_dir(&self.index_path, &dir.join("database.tantivy"));
+    dir
+  }
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+  std::fs::create_dir_all(to).unwrap_or_else(|e| panic!("failed to create {}: {e}", to.display()));
+  for entry in
+    std::fs::read_dir(from).unwrap_or_else(|e| panic!("failed to read {}: {e}", from.display()))
+  {
+    let entry = entry.expect("failed to read a directory entry");
+    let target = to.join(entry.file_name());
+    if entry.path().is_dir() {
+      copy_dir(&entry.path(), &target);
+    } else {
+      std::fs::copy(entry.path(), &target)
+        .unwrap_or_else(|e| panic!("failed to copy {}: {e}", entry.path().display()));
+    }
+  }
 }
 
 // the wkb column as it is stored: spatialite's blob layout

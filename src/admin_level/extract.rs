@@ -1,15 +1,62 @@
+use geo::Geometry;
 use rusqlite::Connection;
 
+use super::country_index::country_index;
 use super::entity::admin_level;
-use super::rules::extraction_rules;
 use super::scale::level;
 use super::{place_ways, relations, streets};
 use crate::progress_report;
 
 pub struct extract_opts<'a> {
   pub threads: usize,
-  pub name_priority: &'a [&'a str],
-  pub rules: &'a [extraction_rules],
+  pub name_priority: Option<&'a [&'a str]>,
+  pub name_tags: &'a [&'a str],
+  pub countries: &'a country_index,
+}
+
+pub(super) struct identity {
+  pub(super) name: String,
+  pub(super) country_iso_code: Option<String>,
+}
+
+pub(super) fn identity_of(
+  opts: &extract_opts,
+  level: level,
+  own_iso: Option<&str>,
+  geometry: &Geometry<f64>,
+  names: &[Option<String>],
+) -> Option<identity> {
+  let preset_iso = opts.countries.country_of(geometry);
+  let preset = crate::presets::for_country(preset_iso).extract_osm_admin_levels;
+  // a country without a preset keeps the code its relation carries, so the ladder still names it
+  let iso: Option<String> = preset_iso
+    .or(if level == level::country { own_iso } else { None })
+    .map(str::to_owned);
+  if !preset.admin_levels.contains(&level) {
+    return None;
+  }
+  let priority = opts.name_priority.unwrap_or(preset.name_priority);
+  let name = name_by_priority(names, opts.name_tags, priority)?;
+  Some(identity {
+    name,
+    country_iso_code: iso,
+  })
+}
+
+fn name_by_priority(
+  names: &[Option<String>],
+  name_tags: &[&str],
+  priority: &[&str],
+) -> Option<String> {
+  priority.iter().find_map(|tag| {
+    let at = name_tags.iter().position(|known| known == tag)?;
+    names
+      .get(at)?
+      .as_deref()
+      .map(str::trim)
+      .filter(|name| !name.is_empty())
+      .map(str::to_owned)
+  })
 }
 
 pub(super) const CHUNK_SIZE: usize = 500;
@@ -38,7 +85,7 @@ pub enum extract_step {
   started,
   candidates { found: u64, pending: u64 },
   progress(progress_report),
-  finished,
+  finished { kept: u64 },
 }
 
 impl admin_level {
@@ -69,7 +116,7 @@ impl admin_level {
     for stage in Self::stages_of(level) {
       let mut emit = |step: extract_step| on_event(extract_event { stage, step });
       emit(extract_step::started);
-      match stage.source {
+      let kept = match stage.source {
         source::relations => {
           let found =
             crate::osm_relation::repository::all_ids_by_admin_level(conn, level).len() as u64;
@@ -79,23 +126,16 @@ impl admin_level {
             found,
             pending: pending.len() as u64,
           });
-          relations::run_with_ids(
-            conn,
-            pending,
-            level,
-            opts.threads,
-            opts.name_priority,
-            |report| emit(extract_step::progress(report)),
-          );
+          relations::run_with_ids(conn, pending, level, opts, |report| {
+            emit(extract_step::progress(report))
+          })
         }
-        source::place_ways => place_ways::run(conn, opts.rules, opts.name_priority, |report| {
-          emit(extract_step::progress(report))
-        }),
-        source::streets => streets::run(conn, opts.rules, opts.name_priority, |report| {
-          emit(extract_step::progress(report))
-        }),
-      }
-      emit(extract_step::finished);
+        source::place_ways => {
+          place_ways::run(conn, opts, |report| emit(extract_step::progress(report)))
+        }
+        source::streets => streets::run(conn, opts, |report| emit(extract_step::progress(report))),
+      };
+      emit(extract_step::finished { kept });
     }
   }
 }

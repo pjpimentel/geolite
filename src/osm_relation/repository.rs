@@ -47,7 +47,7 @@ pub(crate) fn drop_table(conn: &Connection) {
 
 pub struct relation_coord_row {
   pub relation_id: u64,
-  pub relation_name: String,
+  pub names: Vec<Option<String>>,
   pub country_iso_code: Option<String>,
   pub post_code: Option<String>,
   pub way_order: u32,
@@ -95,10 +95,17 @@ pub fn remaining_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64>
 pub fn relation_coords_chunk(
   conn: &Connection,
   ids: &[u64],
-  name_priority: &[&str],
+  name_tags: &[&str],
 ) -> Vec<relation_coord_row> {
   let placeholders = crate::database::placeholders_for(ids.len());
-  let name_select = select::coalesce_of(PAYLOAD, name_priority);
+  let name_selects = select::each_of(PAYLOAD, name_tags)
+    .iter()
+    .enumerate()
+    .map(|(at, expr)| format!("{expr} AS name_{at},\n"))
+    .collect::<String>();
+  let name_columns = (0..name_tags.len())
+    .map(|at| format!("way_members.name_{at},\n"))
+    .collect::<String>();
   let country_iso_select = select::normalized_coalesce(PAYLOAD, key::COUNTRY_ISO);
   // named after the osm tag: codeql reads a `post_code` local reaching the query as personal data
   // stored in clear (rust/cleartext-storage-database), and this is a column expression
@@ -110,7 +117,7 @@ pub fn relation_coords_chunk(
         osm_data.osm_relations.id AS relation_id,
         CAST(mem.key AS INTEGER) AS way_order,
         CAST(JSON_EXTRACT(mem.value, '$.id') AS INTEGER) AS way_id,
-        {name_select} AS relation_name,
+        {name_selects}
         {country_iso_select} AS country_iso_code,
         {postal_code_select} AS post_code
       FROM osm_data.osm_relations,
@@ -120,7 +127,7 @@ pub fn relation_coords_chunk(
     )
     SELECT
       way_members.relation_id,
-      way_members.relation_name,
+      {name_columns}
       way_members.country_iso_code,
       way_members.post_code,
       way_members.way_order,
@@ -134,16 +141,19 @@ pub fn relation_coords_chunk(
     ORDER BY way_members.relation_id ASC, way_members.way_order ASC, node_refs.key ASC
     "
   );
+  let after_names = 1 + name_tags.len();
   crate::database::query_by_ids(conn, &sql, ids.iter().map(|&id| id as i64), |row| {
     Ok(relation_coord_row {
       relation_id: row.get(0)?,
-      relation_name: row.get(1)?,
-      country_iso_code: row.get(2)?,
-      post_code: row.get(3)?,
-      way_order: row.get(4)?,
-      way_id: row.get(5)?,
-      lon: row.get(6)?,
-      lat: row.get(7)?,
+      names: (1..after_names)
+        .map(|at| row.get::<_, Option<String>>(at))
+        .collect::<rusqlite::Result<Vec<_>>>()?,
+      country_iso_code: row.get(after_names)?,
+      post_code: row.get(after_names + 1)?,
+      way_order: row.get(after_names + 2)?,
+      way_id: row.get(after_names + 3)?,
+      lon: row.get(after_names + 4)?,
+      lat: row.get(after_names + 5)?,
     })
   })
 }

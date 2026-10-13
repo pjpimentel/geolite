@@ -11,7 +11,6 @@ use crate::interfaces::cli::optimize::command_handler_optimize;
 use crate::interfaces::cli::osm_pbf_file::download::command_handler_osm_pbf_file_download;
 use crate::osm_pbf_file::{input_kind, osm_pbf_file};
 
-#[allow(clippy::too_many_arguments)]
 pub fn command_handler_build(
   data_path: &str,
   threads: &u8,
@@ -20,10 +19,7 @@ pub fn command_handler_build(
   source: &str,
   ls_endpoint: Option<&str>,
   abort_on_any_error: bool,
-  preset: &crate::presets::preset,
 ) {
-  println!("\x1b[2mpreset: {}\x1b[0m", preset.name);
-  println!();
   // filesystem only, on purpose: the database may not exist yet at this point of the build, and a
   // local source must never reach resolve_geofabrik_url, which fetches the geofabrik index with an
   // `expect` that would take the whole pipeline down when the network fails
@@ -93,20 +89,19 @@ pub fn command_handler_build(
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_admin_levels.name());
   command_handler_extract_osm_admin_levels(
     sqlite_path,
-    preset.extract_osm_admin_levels.admin_levels,
+    crate::presets::DEFAULT.extract_osm_admin_levels.admin_levels,
     threads,
     false,
-    preset.extract_osm_admin_levels.name_priority,
-    preset.extract_osm_admin_levels.admin_levels_rules,
+    None,
   );
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_house_numbers.name());
-  command_handler_extract_osm_house_numbers(sqlite_path, false, preset.house_numbers);
+  command_handler_extract_osm_house_numbers(sqlite_path, false);
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::index_admin_levels_hierarchy.name());
-  command_handler_index_and_merge(sqlite_path, index_path, &preset.index_addresses);
+  command_handler_index_and_merge(sqlite_path, index_path);
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::optimize_delete_intermediary_data.name());

@@ -7,16 +7,18 @@ use crate::admin_level::repository::admin_area_row;
 use crate::admin_level::spatial_index::nearest_street;
 use crate::house_number::repository::{numbers_by_street, stored_number};
 use crate::house_number::{
-  house_number_origin, house_number_policy, house_number_resolution, resolution, token,
+  house_number_origin, house_number_policy, house_number_resolution, policy, resolution, token,
 };
 
+// before a street is known there is no country, so the query is read under every shape any
+// country recognizes; each street then reads the number under the policy of its own country
 pub(super) fn from_query(
   conn: &Connection,
   query: &str,
   streets: &[&admin_area_row],
-  policy: &house_number_policy,
+  policy_of: impl Fn(i64) -> house_number_policy,
 ) -> HashMap<i64, house_number_resolution> {
-  if streets.is_empty() || !token::has_house_number(query, policy) {
+  if streets.is_empty() || !token::has_house_number(query, &policy::EVERY_SHAPE) {
     return HashMap::new();
   }
   let street_ids: Vec<i64> = streets.iter().map(|street| street.id).collect();
@@ -26,10 +28,11 @@ pub(super) fn from_query(
   streets
     .iter()
     .filter_map(|street| {
-      let wanted = token::first_house_number(query, &street.name, policy)?;
+      let policy = policy_of(street.id);
+      let wanted = token::first_house_number(query, &street.name, &policy)?;
       let known = by_street.get(&street.id).unwrap_or(&no_numbers);
       let geometry = street.wkb.as_ref()?.geometry();
-      resolution::place(&wanted, known, geometry, policy).map(|placed| (street.id, placed))
+      resolution::place(&wanted, known, geometry, &policy).map(|placed| (street.id, placed))
     })
     .collect()
 }
@@ -38,7 +41,7 @@ pub(super) fn at_point(
   conn: &Connection,
   input_pt: Point<f64>,
   candidates: &[nearest_street],
-  policy: &house_number_policy,
+  policy_of: impl Fn(i64) -> house_number_policy,
 ) -> HashMap<i64, house_number_resolution> {
   let street_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
   let by_street = numbers_by_street(conn, &street_ids);
@@ -47,8 +50,9 @@ pub(super) fn at_point(
   candidates
     .iter()
     .filter_map(|c| {
+      let policy = policy_of(c.id);
       let known = by_street.get(&c.id).unwrap_or(&no_numbers);
-      resolution::number_at(input_pt, c.closest_point, known, &c.geometry, policy)
+      resolution::number_at(input_pt, c.closest_point, known, &c.geometry, &policy)
         .map(|read| (c.id, read))
     })
     .collect()

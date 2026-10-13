@@ -559,10 +559,7 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
   let s = stub::start(INDEX, vec![("alpha.osm.pbf", fixture_bytes(w))]);
   let url = s.url("/alpha.osm.pbf");
 
-  let out = w.geolite_in(
-    &dir,
-    &["--threads", "1", "--preset", "brazil", "build", &url],
-  );
+  let out = w.geolite_in(&dir, &["--threads", "1", "build", &url]);
   assert_eq!(
     out.status, 0,
     "build {url} failed:\n{}\n{}",
@@ -885,17 +882,7 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
   let w = world();
   let dir = w.scratch("build_inside_data_path");
   std::fs::copy(&w.pbf, dir.join("santos.osm.pbf")).expect("failed to copy the fixture");
-  let out = w.geolite_in(
-    &dir,
-    &[
-      "--threads",
-      "2",
-      "--preset",
-      "brazil",
-      "build",
-      "santos.osm.pbf",
-    ],
-  );
+  let out = w.geolite_in(&dir, &["--threads", "2", "build", "santos.osm.pbf"]);
   assert_eq!(
     out.status, 0,
     "build failed:\n{}\n{}",
@@ -940,7 +927,7 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
     "the deleted file resolves to nothing:\n{}",
     unresolved.stderr
   );
-  let result = query_at(w, &dir, "brazil", "rua januario dos santos, santos 197");
+  let result = query_at(w, &dir, "rua januario dos santos, santos 197");
   assert_eq!(
     first(&result)["house_number"]["kind"],
     "from_osm_data",

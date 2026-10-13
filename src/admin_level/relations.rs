@@ -3,14 +3,14 @@ use rusqlite::Connection;
 use std::sync::{Arc, Mutex, mpsc};
 
 use super::entity::admin_level;
-use super::extract::CHUNK_SIZE;
+use super::extract::{CHUNK_SIZE, extract_opts, identity_of};
 use super::geometry::{approx_eq, assemble_rings};
 use super::id::admin_level_id;
 use super::scale::level;
 use crate::progress_report;
 
 struct rel_meta {
-  name: String,
+  names: Vec<Option<String>>,
   country_iso_code: Option<String>,
   post_code: Option<String>,
 }
@@ -25,17 +25,16 @@ pub(super) fn run_with_ids(
   conn: &Connection,
   ids: Vec<u64>,
   level: level,
-  threads: usize,
-  name_priority: &[&str],
+  opts: &extract_opts,
   mut progress: impl FnMut(progress_report),
-) {
+) -> u64 {
   let total = ids.len() as u64;
   progress(progress_report {
     total: Some(total),
     processed: 0,
   });
   if ids.is_empty() {
-    return;
+    return 0;
   }
 
   let (work_tx, work_rx) = mpsc::channel::<rel_work>();
@@ -43,20 +42,22 @@ pub(super) fn run_with_ids(
   let (result_tx, result_rx) = mpsc::channel::<Option<admin_level>>();
 
   std::thread::scope(|s| {
-    for _ in 0..threads {
+    for _ in 0..opts.threads {
       let rx = work_rx.clone();
       let tx = result_tx.clone();
-      s.spawn(move || worker(&rx, &tx, level));
+      s.spawn(move || worker(&rx, &tx, level, opts));
     }
     drop(result_tx);
 
     let mut processed: u64 = 0;
+    let mut kept: u64 = 0;
 
     for chunk in ids.chunks(CHUNK_SIZE) {
-      let dispatched = load_and_send(conn, chunk, name_priority, &work_tx);
+      let dispatched = load_and_send(conn, chunk, opts.name_tags, &work_tx);
       let batch = collect_batch(&result_rx, dispatched);
 
-      processed += super::repository::batch_upsert(conn, &batch) as u64;
+      kept += super::repository::batch_upsert(conn, &batch) as u64;
+      processed += dispatched as u64;
       progress(progress_report {
         total: Some(total),
         processed,
@@ -64,20 +65,22 @@ pub(super) fn run_with_ids(
     }
 
     drop(work_tx);
-  });
+    kept
+  })
 }
 
 fn worker(
   rx: &Mutex<mpsc::Receiver<rel_work>>,
   tx: &mpsc::Sender<Option<admin_level>>,
   level: level,
+  opts: &extract_opts,
 ) {
   loop {
     // the lock must be released before the relation is processed, or the workers serialize
     let item = { rx.lock().unwrap().recv() };
     match item {
       Ok(w) => {
-        tx.send(process_one_relation(w.relation_id, &w.meta, &w.ways, level))
+        tx.send(process_one_relation(w.relation_id, &w.meta, &w.ways, level, opts))
           .ok();
       }
       Err(_) => break,
@@ -98,11 +101,10 @@ fn collect_batch(rx: &mpsc::Receiver<Option<admin_level>>, dispatched: usize) ->
 fn load_and_send(
   conn: &Connection,
   chunk: &[u64],
-  name_priority: &[&str],
+  name_tags: &[&str],
   tx: &mpsc::Sender<rel_work>,
 ) -> usize {
-  let raw_rows =
-    crate::osm_relation::repository::relation_coords_chunk(conn, chunk, name_priority);
+  let raw_rows = crate::osm_relation::repository::relation_coords_chunk(conn, chunk, name_tags);
 
   let mut relation_order: Vec<u64> = Vec::new();
   let mut relation_metas: std::collections::HashMap<u64, rel_meta> =
@@ -116,7 +118,7 @@ fn load_and_send(
     if let std::collections::hash_map::Entry::Vacant(e) = relation_metas.entry(row.relation_id) {
       relation_order.push(row.relation_id);
       e.insert(rel_meta {
-        name: row.relation_name.clone(),
+        names: row.names.clone(),
         country_iso_code: row.country_iso_code.clone(),
         post_code: row.post_code.clone(),
       });
@@ -154,6 +156,7 @@ fn process_one_relation(
   meta: &rel_meta,
   ways: &[LineString<f64>],
   level: level,
+  opts: &extract_opts,
 ) -> Option<admin_level> {
   if ways.iter().all(|ls| ls.0.is_empty()) {
     return None;
@@ -179,11 +182,12 @@ fn process_one_relation(
     Geometry::MultiLineString(MultiLineString(ways.to_vec()))
   };
 
+  let identity = identity_of(opts, level, meta.country_iso_code.as_deref(), &geom, &meta.names)?;
   Some(admin_level {
     id: admin_level_id::from_relation(relation_id),
     level,
-    name: meta.name.clone(),
-    country_iso_code: meta.country_iso_code.clone(),
+    name: identity.name,
+    country_iso_code: identity.country_iso_code,
     post_code: meta.post_code.clone(),
     wkb: geom.into(),
   })

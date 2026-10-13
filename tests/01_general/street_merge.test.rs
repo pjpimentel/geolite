@@ -27,8 +27,8 @@ const EMBARE: i64 = 8_565_765;
 const GONZAGA: i64 = 8_565_769;
 const JOSE_MENINO: i64 = 8_565_771;
 const STREETS: i64 = 12_878;
-const STREETS_AFTER: i64 = 7_195;
-const PIECES: i64 = 1_984;
+const STREETS_AFTER: i64 = 7_216;
+const PIECES: i64 = 1_995;
 pub(crate) const NUMBERS_MOVED: usize = 261;
 pub(crate) const TEXT_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
 const EUCLIDES_GONZAGA_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
@@ -75,10 +75,7 @@ pub(crate) fn assert_refused(out: &output, reason: &str) {
 
 // the merge stage run where it is expected to refuse, so the exit code is the scenario's to assert
 fn merge_refused(w: &world, dir: &Path) -> output {
-  w.geolite_in(
-    dir,
-    &["--preset", "brazil", "exec", "optimize-merge-admin-levels"],
-  )
+  w.geolite_in(dir, &["exec", "optimize-merge-admin-levels"])
 }
 
 pub(crate) fn merged_summary() -> String {
@@ -105,11 +102,7 @@ pub(crate) fn drop_merged_way_ids(dir: &Path) {
 }
 
 fn merged_at(w: &world, dir: &Path) -> output {
-  stage(
-    w,
-    dir,
-    &["--preset", "brazil", "exec", "optimize-merge-admin-levels"],
-  )
+  stage(w, dir, &["exec", "optimize-merge-admin-levels"])
 }
 
 pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
@@ -124,11 +117,7 @@ pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
 pub(crate) fn resolved(w: &world, name: &str) -> scratch {
   let s = extracted(w, name, "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
-  stage(
-    w,
-    &s.dir,
-    &["--preset", "brazil", "exec", "extract-osm-house-numbers"],
-  );
+  stage(w, &s.dir, &["exec", "extract-osm-house-numbers"]);
   index_at(w, &s.dir, "admin-levels-hierarchy");
   s
 }
@@ -255,17 +244,7 @@ pub(crate) fn assert_the_indexes_are_cleared_and_recreated(
   );
   assert!(!s.dir.join("database.tantivy").exists());
   assert_eq!(rtree_rows(s), 0);
-  let asked = w.geolite_in(
-    &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "query",
-      query,
-      "--include-wkt",
-      "false",
-    ],
-  );
+  let asked = w.geolite_in(&s.dir, &["query", query, "--include-wkt", "false"]);
   assert_eq!(asked.status, 1);
   assert!(
     asked.stderr.contains("tantivy index not found"),
@@ -535,7 +514,7 @@ fn _00_06_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
 
   assert_the_indexes_are_cleared_and_recreated(w, &s, merged_at, TEXT_QUERY);
 
-  let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
+  let result = query_at(w, &s.dir, TEXT_QUERY);
   assert_eq!(matches(&result).len(), 1, "the street answers once");
 }
 
@@ -617,7 +596,7 @@ fn _00_10_ways_that_share_a_neighbourhood_fold_into_a_street_that_belongs_to_all
     vec![GONZAGA, JOSE_MENINO],
     "the street belongs to every neighbourhood its ways were in"
   );
-  let result = query_at(w, &s.dir, "brazil", EUCLIDES_GONZAGA_QUERY);
+  let result = query_at(w, &s.dir, EUCLIDES_GONZAGA_QUERY);
   let in_gonzaga = matches(&result)
     .iter()
     .filter(|m| name_at(m, 12).as_deref() == Some("Rua Euclides da Cunha"))
@@ -673,7 +652,7 @@ fn _00_12_each_label_of_a_street_answers_a_point_inside_its_own_neighbourhood() 
     (EUCLIDES_GONZAGA_QUERY, GONZAGA),
     (EUCLIDES_JOSE_MENINO_QUERY, JOSE_MENINO),
   ] {
-    let result = query_at(w, &s.dir, "brazil", query);
+    let result = query_at(w, &s.dir, query);
     let across = matches(&result)
       .iter()
       .find(|m| {
@@ -946,7 +925,7 @@ fn _03_01_query_still_answers_on_a_database_without_merged_way_ids() {
   let s = resolved(w, "street_merge_column_absent");
   indexed_and_merged(w, &s.dir);
   let trace_at = |level: u64| -> Option<serde_json::Value> {
-    let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
+    let result = query_at(w, &s.dir, TEXT_QUERY);
     level_at(&matches(&result)[0], level)
       .unwrap_or_else(|| panic!("the top match has no level {level}; {REGENERATE}"))
       .get("osm_merged_way_ids")

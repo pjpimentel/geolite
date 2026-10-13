@@ -17,7 +17,7 @@ const MARAPE: i64 = 8_565_773;
 const RANGONI_ROAD: i64 = 63_176_392;
 const GUARUJA: i64 = 596_927;
 const MONTE_CABRAO: i64 = 2_446_148_556;
-const STREETS: i64 = 7_195;
+const STREETS: i64 = 7_216;
 const STATES: usize = 27;
 const PLACE_WAYS: usize = 22;
 

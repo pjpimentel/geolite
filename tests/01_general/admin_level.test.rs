@@ -12,21 +12,14 @@ const COUNTRY_STATE_CITY: i64 = 40;
 const EVERY_EDGE: i64 = 13_643;
 
 pub(crate) fn admin_levels_at(w: &world, dir: &Path, levels: &str, extra: &[&str]) -> output {
-  let mut args = vec![
-    "--preset",
-    "brazil",
-    "exec",
-    "extract-osm-admin-levels",
-    "--admin-level",
-    levels,
-  ];
+  let mut args = vec!["exec", "extract-osm-admin-levels", "--admin-level", levels];
   args.extend_from_slice(extra);
   stage(w, dir, &args)
 }
 
 pub(crate) fn index_at(w: &world, dir: &Path, index: &str) -> output {
   let name = format!("index-{index}");
-  stage(w, dir, &["--preset", "brazil", "exec", &name])
+  stage(w, dir, &["exec", &name])
 }
 
 // the three index stages in order, with their stdout joined
@@ -422,7 +415,7 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
   let s = extracted(w, "admin_level_search_source", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
-  let refused = w.geolite_in(&s.dir, &["--preset", "brazil", "exec", "index-addresses"]);
+  let refused = w.geolite_in(&s.dir, &["exec", "index-addresses"]);
   assert_eq!(refused.status, 1, "stderr: {}", refused.stderr);
   assert!(
     refused
@@ -434,7 +427,7 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
 
   index_at(w, &s.dir, "admin-levels-hierarchy");
   index_at(w, &s.dir, "addresses");
-  let found = query_at(w, &s.dir, "brazil", "santos");
+  let found = query_at(w, &s.dir, "santos");
   let top = first(&found);
   assert_eq!(levels_of(top).last(), Some(&8));
   assert_eq!(name_at(top, 8).as_deref(), Some("Santos"));
@@ -470,17 +463,7 @@ fn _03_00_an_unreadable_geometry_warns_and_drops_the_row() {
     ("santos", "Santos", "blob too short"),
     ("sao paulo", "São Paulo", "WKB parse failed"),
   ] {
-    let out = w.geolite_in(
-      &s.dir,
-      &[
-        "--preset",
-        "brazil",
-        "query",
-        query,
-        "--include-wkt",
-        "false",
-      ],
-    );
+    let out = w.geolite_in(&s.dir, &["query", query, "--include-wkt", "false"]);
     assert_eq!(out.status, 0, "the query must answer: {}", out.stderr);
     assert!(
       out.stderr.contains(warning),

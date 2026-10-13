@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::admin_level::admin_levels_at;
 use crate::common::harness::{open_sqlite_at, output, world};
 use crate::general::world;
 use serde_json::{Value, json};
@@ -92,14 +93,7 @@ pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]
 }
 
 fn admin_levels(w: &world, dir: &Path, extra: &[&str]) {
-  let mut args = vec![
-    "--preset",
-    "brazil",
-    "exec",
-    "extract-osm-admin-levels",
-    "--admin-level",
-    "2,4,8",
-  ];
+  let mut args = vec!["exec", "extract-osm-admin-levels", "--admin-level", "2,4,8"];
   args.extend_from_slice(extra);
   stage(w, dir, &args);
 }
@@ -355,11 +349,19 @@ fn _03_a_tag_include_list_keeps_only_the_listed_keys() {
   );
   admin_levels(w, &s.dir, &[]);
   let conn = s.ledger();
-  assert_eq!(boundary(&conn, COUNTRY), (2, "Brasil".to_string(), None));
-  assert_eq!(boundary(&conn, STATE), (4, "São Paulo".to_string(), None));
+  let brazil = Some("BR".to_string());
+  assert_eq!(
+    boundary(&conn, COUNTRY),
+    (2, "Brasil".to_string(), brazil.clone()),
+    "the code comes from the boundary of the preset, which no include list drops"
+  );
+  assert_eq!(
+    boundary(&conn, STATE),
+    (4, "São Paulo".to_string(), brazil.clone())
+  );
   assert_eq!(
     boundary(&conn, MUNICIPALITY),
-    (8, "Santos".to_string(), None)
+    (8, "Santos".to_string(), brazil)
   );
 }
 
@@ -401,11 +403,81 @@ fn _05_name_priority_falls_back_key_by_key() {
     boundary(&conn, COUNTRY),
     (2, "Brazil".to_string(), Some("BR".to_string()))
   );
-  assert_eq!(boundary(&conn, STATE), (4, "São Paulo".to_string(), None));
+  assert_eq!(
+    boundary(&conn, STATE),
+    (4, "São Paulo".to_string(), Some("BR".to_string()))
+  );
   assert_eq!(
     boundary(&conn, MUNICIPALITY),
-    (8, "Santos".to_string(), None),
+    (8, "Santos".to_string(), Some("BR".to_string())),
     "no name:en on the municipality, so the priority falls back to name"
+  );
+}
+
+// 18. every row is written with the country whose boundary holds it, the boundary the preset
+// carries and not the relation of the extract: the states and the cities of the fixture are all
+// brazilian, with no country relation extracted at all, and so is every street but the ways drawn
+// along the venezuelan border, which fall on either side, and a submarine cable out at sea
+#[test]
+#[ignore]
+fn _18_every_row_carries_the_country_whose_boundary_holds_it() {
+  const SQL_ROWS_OUTSIDE_BRAZIL: &str = "
+    SELECT admin_level, COUNT(*)
+    FROM admin_levels
+    WHERE COALESCE(country_iso_code, '') <> 'BR'
+      AND admin_level < 12
+    GROUP BY admin_level
+  ";
+  const SQL_STREETS_OUTSIDE_BRAZIL: &str = "
+    SELECT COUNT(*)
+    FROM admin_levels
+    WHERE COALESCE(country_iso_code, '') <> 'BR'
+      AND admin_level = 12
+  ";
+  const SQL_STREETS: &str = "
+    SELECT COUNT(*)
+    FROM admin_levels
+    WHERE admin_level = 12
+  ";
+  const SQL_ROWS_PER_LEVEL: &str = "
+    SELECT admin_level, COUNT(*)
+    FROM admin_levels
+    GROUP BY admin_level
+  ";
+
+  let w = world();
+  let s = extracted(w, "extract_country_of_every_row", "2", &[]);
+  admin_levels_at(w, &s.dir, "4,8", &[]);
+  admin_levels_at(w, &s.dir, "12", &[]);
+  let conn = s.ledger();
+  let per_level = |sql: &str| -> Vec<(u8, i64)> {
+    conn
+      .prepare(sql)
+      .expect("failed to prepare")
+      .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+      .expect("failed to query")
+      .map(|r| r.expect("failed to read a row"))
+      .collect()
+  };
+  assert_eq!(
+    per_level(SQL_ROWS_PER_LEVEL)
+      .iter()
+      .map(|(level, _)| *level)
+      .collect::<Vec<u8>>(),
+    vec![4, 8, 12],
+    "the three levels, and no country relation"
+  );
+  assert_eq!(
+    per_level(SQL_ROWS_OUTSIDE_BRAZIL),
+    vec![],
+    "every state and city is brazilian; {REGENERATE}"
+  );
+  let streets = count(&conn, SQL_STREETS);
+  let outside = count(&conn, SQL_STREETS_OUTSIDE_BRAZIL);
+  assert!(
+    outside * 100 < streets,
+    "{outside} of {streets} streets are not brazilian: more than the border ways and the cable; \
+     {REGENERATE}"
   );
 }
 
@@ -613,14 +685,7 @@ fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
   let s = extracted(w, "extract_unknown_level", "2", &[]);
   let out = w.geolite_in(
     &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "exec",
-      "extract-osm-admin-levels",
-      "--admin-level",
-      "2,11",
-    ],
+    &["exec", "extract-osm-admin-levels", "--admin-level", "2,11"],
   );
   assert_eq!(
     out.status, 1,
@@ -650,14 +715,7 @@ fn _14_level_10_runs_the_relation_and_the_way_stages() {
   let out = stage(
     w,
     &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "exec",
-      "extract-osm-admin-levels",
-      "--admin-level",
-      "10",
-    ],
+    &["exec", "extract-osm-admin-levels", "--admin-level", "10"],
   );
   for line in [
     "stage 1/2: relations",
@@ -729,14 +787,7 @@ fn _16_a_level_list_is_refused_with_its_reason() {
   ] {
     let out = w.geolite_in(
       &dir,
-      &[
-        "--preset",
-        "brazil",
-        "exec",
-        "extract-osm-admin-levels",
-        "--admin-level",
-        levels,
-      ],
+      &["exec", "extract-osm-admin-levels", "--admin-level", levels],
     );
     assert_eq!(out.status, 1, "{levels:?}: stderr: {}", out.stderr);
     assert!(

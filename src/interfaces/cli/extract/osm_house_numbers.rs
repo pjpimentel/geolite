@@ -1,15 +1,11 @@
 use std::time::Instant;
 
-use crate::house_number::{house_number_link, house_number_policy, house_numbers};
+use crate::house_number::{house_number_link, house_numbers};
 use crate::database::table;
 use crate::interfaces::cli::exec::stages::stage;
 use crate::interfaces::cli::progress;
 
-pub fn command_handler_extract_osm_house_numbers(
-  sqlite_path: &str,
-  recreate: bool,
-  policy: house_number_policy,
-) {
+pub fn command_handler_extract_osm_house_numbers(sqlite_path: &str, recreate: bool) {
   if recreate {
     crate::database::destroy_data(sqlite_path, false, false, false, true);
   }
@@ -21,7 +17,7 @@ pub fn command_handler_extract_osm_house_numbers(
   let start = Instant::now();
   let mut count: u64 = 0;
 
-  house_number_link::extract(&conn, &policy, |p| {
+  house_number_link::extract(&conn, |p| {
     progress::advance(&bar, &p);
     count = p.processed;
   });

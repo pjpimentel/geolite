@@ -80,7 +80,8 @@ the candidates are measured from the most specific outward and an area already a
 qualified is never measured at all, because the reduction would drop it: that is what keeps the
 ring of a country out of the pass. a ring longer than five hundred edges is indexed by latitude
 band when it is loaded, so a point test walks a few dozen edges instead of the whole boundary of a
-state.
+state; the ring index and the point test live in `admin_level::point_in_polygon`, shared with the
+country index the extraction asks which preset's boundary holds an element.
 
 ## the isolated areas — `isolated`
 
@@ -140,8 +141,9 @@ complete, and it refuses otherwise.
 one tantivy document per hierarchy row: the area's own name with its post code in both forms
 (`01310-100` and `01310100`), and the names of every ancestor concatenated, each of the two in
 three field variants — folded (lower case, no diacritics), strict (as written) and lower
-(diacritics kept). a preset's abbreviations are expanded in both directions into the folded text,
-so `rua` finds `r.` and back.
+(diacritics kept). the abbreviations of the country of each row — the one its `country_iso_code`
+names, or the country on its path for a row written before every row carried one — are expanded
+in both directions into the folded text, so `rua` finds `r.` and back.
 
 `search` runs three queries, each one only when the one before is empty. the strict one demands
 every token exactly, in the name or in the ancestry, and wins when it finds anything — phrase order

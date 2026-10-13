@@ -67,9 +67,6 @@ struct cli {
   #[arg(long, default_value_t = false)]
   abort_on_any_error: bool,
 
-  #[arg(long)]
-  preset: Option<String>,
-
   #[command(subcommand)]
   command: commands,
 }
@@ -165,8 +162,6 @@ fn preflight_checks(data_path: &str, sqlite_path: &str) {
 pub fn run() {
   let args = cli::parse();
 
-  let preset = crate::presets::resolve(args.preset.clone());
-
   // TODO: implantar solucao para debug em release.
   if args.debug {
     crate::debug!("debug: on");
@@ -219,7 +214,6 @@ pub fn run() {
       &sqlite_path,
       &index_path,
       command,
-      &preset,
     ),
     commands::query {
       input,
@@ -239,28 +233,22 @@ pub fn run() {
         last_admin_levels,
         include_wkt,
       },
-      &preset,
     ),
     commands::http_server { host, port } => http_server::command_handler_http_server(
       &sqlite_path,
       &index_path,
       crate::interfaces::http::bind(&format!("{host}:{port}")),
       args.threads,
-      &preset,
     ),
-    commands::build { source } => {
-      let preset = crate::presets::resolve(args.preset.or(Some(source.clone())));
-      build::command_handler_build(
-        &args.data_path,
-        &args.threads,
-        &sqlite_path,
-        &index_path,
-        &source,
-        None,
-        args.abort_on_any_error,
-        &preset,
-      )
-    }
+    commands::build { source } => build::command_handler_build(
+      &args.data_path,
+      &args.threads,
+      &sqlite_path,
+      &index_path,
+      &source,
+      None,
+      args.abort_on_any_error,
+    ),
     commands::merge { base, databases } => {
       // the tantivy index belongs to the base (positional), not the global --sqlite-path default.
       let merge_index_path = explicit_index_path
@@ -269,7 +257,7 @@ pub fn run() {
             .map(|p| p.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| format!("{}/database.tantivy", args.data_path));
-      merge::command_handler_merge(&base, &databases, &merge_index_path, &preset)
+      merge::command_handler_merge(&base, &databases, &merge_index_path)
     }
     commands::tui { path } => tui::command_handler_tui(&sqlite_path, path.as_deref()),
   }

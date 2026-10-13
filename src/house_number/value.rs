@@ -22,19 +22,18 @@ impl PartialEq for house_number {
 }
 
 impl house_number {
-  pub fn normalize(raw: &str, policy: &house_number_policy) -> Option<Self> {
+  pub fn normalize(raw: &str) -> Option<Self> {
     let trimmed = raw.trim_matches(' ');
     if trimmed.is_empty() {
       return None;
     }
-    if policy
-      .drop_values
-      .iter()
-      .any(|value| value.eq_ignore_ascii_case(trimmed))
-    {
-      return None;
-    }
     Some(Self::from_text(&canonical_suffix(trimmed)))
+  }
+
+  pub fn is_dropped(&self, drop_values: &[&str]) -> bool {
+    drop_values
+      .iter()
+      .any(|value| value.eq_ignore_ascii_case(&self.stored_form))
   }
 
   pub fn recognize(token: &str, policy: &house_number_policy) -> Option<Self> {

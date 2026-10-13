@@ -1,8 +1,14 @@
 use crate::admin_level::level;
 
 #[derive(Clone, Copy)]
+pub struct country {
+  pub iso_3166_1_alpha_2: &'static str,
+  pub boundary_wkt: &'static str,
+}
+
+#[derive(Clone, Copy)]
 pub struct preset {
-  pub name: &'static str,
+  pub country: Option<country>,
   pub extract_osm_admin_levels: extract_osm_admin_levels_preset,
   pub house_numbers: crate::house_number::house_number_policy,
   pub index_addresses: index_addresses_preset,
@@ -11,7 +17,6 @@ pub struct preset {
 #[derive(Clone, Copy)]
 pub struct extract_osm_admin_levels_preset {
   pub admin_levels: &'static [level],
-  pub admin_levels_rules: &'static [crate::admin_level::extraction_rules],
   pub name_priority: &'static [&'static str],
 }
 
@@ -22,15 +27,12 @@ pub struct index_addresses_preset {
 }
 
 pub const DEFAULT: preset = preset {
-  name: "default",
+  country: None,
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     admin_levels: &[level::country, level::region, level::state, level::district, level::county, level::municipality, level::city, level::locality, level::neighborhood, level::street],
-    admin_levels_rules: &[],
     name_priority: &["name"],
   },
   house_numbers: crate::house_number::house_number_policy {
-    number_tags: &["addr:housenumber"],
-    street_tags: &["addr:street"],
     drop_values: &[],
     max_digits: 5,
     shapes: crate::house_number::policy::SIMPLE_SHAPES,
@@ -55,11 +57,13 @@ pub const DEFAULT: preset = preset {
 };
 
 pub const BRAZIL: preset = preset {
-  name: "brazil",
+  country: Some(country {
+    iso_3166_1_alpha_2: "BR",
+    boundary_wkt: include_str!("boundaries/br.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:pt", "name"],
     admin_levels: &[level::country, level::state, level::city, level::neighborhood, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -82,11 +86,13 @@ pub const BRAZIL: preset = preset {
 };
 
 pub const PORTUGAL: preset = preset {
-  name: "portugal",
+  country: Some(country {
+    iso_3166_1_alpha_2: "PT",
+    boundary_wkt: include_str!("boundaries/pt.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:pt", "name"],
     admin_levels: &[level::country, level::county, level::city, level::neighborhood, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -115,11 +121,13 @@ pub const PORTUGAL: preset = preset {
 };
 
 pub const ARGENTINA: preset = preset {
-  name: "argentina",
+  country: Some(country {
+    iso_3166_1_alpha_2: "AR",
+    boundary_wkt: include_str!("boundaries/ar.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::district, level::city, level::neighborhood, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -143,11 +151,13 @@ pub const ARGENTINA: preset = preset {
 };
 
 pub const BOLIVIA: preset = preset {
-  name: "bolivia",
+  country: Some(country {
+    iso_3166_1_alpha_2: "BO",
+    boundary_wkt: include_str!("boundaries/bo.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::city, level::neighborhood, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -170,11 +180,13 @@ pub const BOLIVIA: preset = preset {
 };
 
 pub const CHILE: preset = preset {
-  name: "chile",
+  country: Some(country {
+    iso_3166_1_alpha_2: "CL",
+    boundary_wkt: include_str!("boundaries/cl.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::city, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -204,11 +216,13 @@ pub const CHILE: preset = preset {
 };
 
 pub const COLOMBIA: preset = preset {
-  name: "colombia",
+  country: Some(country {
+    iso_3166_1_alpha_2: "CO",
+    boundary_wkt: include_str!("boundaries/co.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::county, level::city, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -240,11 +254,13 @@ pub const COLOMBIA: preset = preset {
 };
 
 pub const ECUADOR: preset = preset {
-  name: "ecuador",
+  country: Some(country {
+    iso_3166_1_alpha_2: "EC",
+    boundary_wkt: include_str!("boundaries/ec.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::county, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -272,11 +288,13 @@ pub const ECUADOR: preset = preset {
 };
 
 pub const GUYANA: preset = preset {
-  name: "guyana",
+  country: Some(country {
+    iso_3166_1_alpha_2: "GY",
+    boundary_wkt: include_str!("boundaries/gy.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:en", "name"],
     admin_levels: &[level::country, level::state, level::county, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: DEFAULT.house_numbers,
   index_addresses: index_addresses_preset {
@@ -295,11 +313,13 @@ pub const GUYANA: preset = preset {
 };
 
 pub const PARAGUAY: preset = preset {
-  name: "paraguay",
+  country: Some(country {
+    iso_3166_1_alpha_2: "PY",
+    boundary_wkt: include_str!("boundaries/py.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::city, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -324,11 +344,13 @@ pub const PARAGUAY: preset = preset {
 };
 
 pub const PERU: preset = preset {
-  name: "peru",
+  country: Some(country {
+    iso_3166_1_alpha_2: "PE",
+    boundary_wkt: include_str!("boundaries/pe.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::city, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -356,11 +378,13 @@ pub const PERU: preset = preset {
 };
 
 pub const SURINAME: preset = preset {
-  name: "suriname",
+  country: Some(country {
+    iso_3166_1_alpha_2: "SR",
+    boundary_wkt: include_str!("boundaries/sr.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:nl", "name"],
     admin_levels: &[level::country, level::state, level::county, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: DEFAULT.house_numbers,
   index_addresses: index_addresses_preset {
@@ -379,11 +403,13 @@ pub const SURINAME: preset = preset {
 };
 
 pub const URUGUAY: preset = preset {
-  name: "uruguay",
+  country: Some(country {
+    iso_3166_1_alpha_2: "UY",
+    boundary_wkt: include_str!("boundaries/uy.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::city, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -408,11 +434,13 @@ pub const URUGUAY: preset = preset {
 };
 
 pub const VENEZUELA: preset = preset {
-  name: "venezuela",
+  country: Some(country {
+    iso_3166_1_alpha_2: "VE",
+    boundary_wkt: include_str!("boundaries/ve.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::county, level::city, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: crate::house_number::house_number_policy {
     drop_values: &["s/n", "sn", "s/nº", "s/no", "s/n.", "s n"],
@@ -438,11 +466,13 @@ pub const VENEZUELA: preset = preset {
 };
 
 pub const NETHERLANDS: preset = preset {
-  name: "netherlands",
+  country: Some(country {
+    iso_3166_1_alpha_2: "NL",
+    boundary_wkt: include_str!("boundaries/nl.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:nl", "name"],
     admin_levels: &[level::country, level::state, level::city, level::street],
-    ..DEFAULT.extract_osm_admin_levels
   },
   house_numbers: DEFAULT.house_numbers,
   index_addresses: index_addresses_preset {
@@ -462,7 +492,10 @@ pub const NETHERLANDS: preset = preset {
 };
 
 pub const SWITZERLAND: preset = preset {
-  name: "switzerland",
+  country: Some(country {
+    iso_3166_1_alpha_2: "CH",
+    boundary_wkt: include_str!("boundaries/ch.wkt"),
+  }),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     admin_levels: &[level::country, level::state, level::city, level::street],
     ..DEFAULT.extract_osm_admin_levels
@@ -483,60 +516,42 @@ pub const SWITZERLAND: preset = preset {
   },
 };
 
-const ID_PRESET: &[(&str, &preset)] = &[
-  ("brazil", &BRAZIL),
-  ("centro-oeste", &BRAZIL),
-  ("nordeste", &BRAZIL),
-  ("norte", &BRAZIL),
-  ("sudeste", &BRAZIL),
-  ("sul", &BRAZIL),
-  ("portugal", &PORTUGAL),
-  ("argentina", &ARGENTINA),
-  ("bolivia", &BOLIVIA),
-  ("chile", &CHILE),
-  ("colombia", &COLOMBIA),
-  ("ecuador", &ECUADOR),
-  ("guyana", &GUYANA),
-  ("paraguay", &PARAGUAY),
-  ("peru", &PERU),
-  ("suriname", &SURINAME),
-  ("uruguay", &URUGUAY),
-  ("venezuela", &VENEZUELA),
-  ("netherlands", &NETHERLANDS),
-  ("switzerland", &SWITZERLAND),
+pub const COUNTRIES: &[&preset] = &[
+  &BRAZIL,
+  &PORTUGAL,
+  &ARGENTINA,
+  &BOLIVIA,
+  &CHILE,
+  &COLOMBIA,
+  &ECUADOR,
+  &GUYANA,
+  &PARAGUAY,
+  &PERU,
+  &SURINAME,
+  &URUGUAY,
+  &VENEZUELA,
+  &NETHERLANDS,
+  &SWITZERLAND,
 ];
 
-const INCLUDES_PRESET: &[(&str, &preset)] = &[
-  ("brazil", &BRAZIL),
-  ("portugal", &PORTUGAL),
-  ("argentina", &ARGENTINA),
-  ("bolivia", &BOLIVIA),
-  ("chile", &CHILE),
-  ("colombia", &COLOMBIA),
-  ("ecuador", &ECUADOR),
-  ("guyana", &GUYANA),
-  ("paraguay", &PARAGUAY),
-  ("peru", &PERU),
-  ("suriname", &SURINAME),
-  ("uruguay", &URUGUAY),
-  ("venezuela", &VENEZUELA),
-  ("netherlands", &NETHERLANDS),
-  ("switzerland", &SWITZERLAND),
-];
-
-fn lookup_exact(map: &[(&str, &preset)], key: &str) -> Option<preset> {
-  map.iter().copied().find(|(k, _)| *k == key).map(|(_, target)| *target)
-}
-
-fn lookup_includes(map: &[(&str, &preset)], input: &str) -> Option<preset> {
-  map.iter().copied().find(|(k, _)| input.contains(*k)).map(|(_, target)| *target)
-}
-
-pub fn resolve(input: Option<String>) -> preset {
-  let Some(v) = input.map(|s| s.to_lowercase()) else {
+pub fn for_country(iso: Option<&str>) -> preset {
+  let Some(iso) = iso else {
     return DEFAULT;
   };
-  lookup_exact(ID_PRESET, &v)
-    .or_else(|| lookup_includes(INCLUDES_PRESET, &v))
-    .unwrap_or(DEFAULT)
+  COUNTRIES
+    .iter()
+    .find(|p| p.country.is_some_and(|c| c.iso_3166_1_alpha_2.eq_ignore_ascii_case(iso)))
+    .map_or(DEFAULT, |p| **p)
+}
+
+pub fn name_tags() -> Vec<&'static str> {
+  let mut tags: Vec<&'static str> = Vec::new();
+  for preset in std::iter::once(&DEFAULT).chain(COUNTRIES.iter().copied()) {
+    for &tag in preset.extract_osm_admin_levels.name_priority {
+      if !tags.contains(&tag) {
+        tags.push(tag);
+      }
+    }
+  }
+  tags
 }

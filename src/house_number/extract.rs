@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use super::entity::house_number_link;
 use super::linker::{self, street, tile_data};
-use super::policy::house_number_policy;
 use super::repository::{self, candidate_row};
 use crate::admin_level::repository::street_centre_row;
 use crate::progress_report;
@@ -16,12 +15,8 @@ const CHUNK_SIZE: usize = 500;
 type tile = (i64, i64);
 
 impl house_number_link {
-  pub fn extract(
-    conn: &Connection,
-    policy: &house_number_policy,
-    mut on_progress: impl FnMut(progress_report),
-  ) {
-    let candidates = repository::load_all_candidates(conn, policy);
+  pub fn extract(conn: &Connection, mut on_progress: impl FnMut(progress_report)) {
+    let candidates = repository::load_all_candidates(conn);
     let total = candidates.len() as u64;
     on_progress(progress_report {
       total: Some(total),
@@ -35,7 +30,8 @@ impl house_number_link {
     let by_tile = tiles_of(candidates);
     let streets = load_streets(conn, &meta, &by_tile);
     let mut links = link_in_parallel(tiles_with_streets(by_tile, &meta, &streets));
-  links.sort_unstable_by_key(|link| link.node_id);
+    drop_non_values(&mut links, &meta);
+    links.sort_unstable_by_key(|link| link.node_id);
 
     let mut processed: u64 = 0;
     for chunk in links.chunks(CHUNK_SIZE) {
@@ -46,6 +42,23 @@ impl house_number_link {
       });
     }
   }
+}
+
+// a value that means "no number" is the country's to name (`s/n` in portuguese and spanish), and
+// the country of a node is the one of the street it was linked to
+fn drop_non_values(links: &mut Vec<house_number_link>, meta: &[street_centre_row]) {
+  let country_of: HashMap<i64, Option<&str>> = meta
+    .iter()
+    .map(|m| (m.id, m.country_iso_code.as_deref()))
+    .collect();
+  links.retain(|link| {
+    let iso = country_of
+      .get(&(link.street_id.raw() as i64))
+      .copied()
+      .flatten();
+    let policy = crate::presets::for_country(iso).house_numbers;
+    !link.number.is_dropped(policy.drop_values)
+  });
 }
 
 fn tile_of(lon: f64, lat: f64) -> tile {

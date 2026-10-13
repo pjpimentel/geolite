@@ -13,12 +13,7 @@ fn require_compatible_version(label: &str, path: &str) {
   }
 }
 
-pub fn command_handler_merge(
-  base: &str,
-  databases: &[String],
-  index_path: &str,
-  preset: &crate::presets::preset,
-) {
+pub fn command_handler_merge(base: &str, databases: &[String], index_path: &str) {
   if databases.is_empty() {
     eprintln!(
       "\x1b[1;31merror\x1b[0m: no databases to merge — usage: geolite merge <base> <db1> [db2 ...]"
@@ -70,7 +65,7 @@ pub fn command_handler_merge(
   // step clears and rebuilds from scratch, so no stale rows survive the merge.
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::index_admin_levels_hierarchy.name());
-  command_handler_index_and_merge(base, index_path, &preset.index_addresses);
+  command_handler_index_and_merge(base, index_path);
 
   // compact the resulting file (ANALYZE / PRAGMA optimize / wal_checkpoint / VACUUM).
   println!();
