@@ -12,9 +12,10 @@ struct question<'a> {
   bounding_wkt: Option<&'a str>,
   last_admin_levels: Option<Vec<u8>>,
   include_wkt: bool,
+  country: Option<Vec<String>>,
 }
 
-pub fn of_question(input: &str, opts: &query_opts<'_>) -> String {
+pub fn of_question(input: &str, opts: &query_opts<'_>, country: Option<&[String]>) -> String {
   let query_opts {
     friendly_name_format,
     min_quality,
@@ -32,6 +33,7 @@ pub fn of_question(input: &str, opts: &query_opts<'_>) -> String {
       .as_ref()
       .map(|levels| levels.iter().map(|level| level.value()).collect()),
     include_wkt: *include_wkt,
+    country: country.map(|isos| isos.iter().map(|iso| iso.to_ascii_lowercase()).collect()),
   };
   of_body(&serde_json::to_string(&question).expect("a question serializes"))
 }

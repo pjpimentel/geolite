@@ -1,32 +1,35 @@
 # presets
-> what varies by country: the levels an address names, the name tag, the house-number policy, the abbreviations, and the boundary that says which country a row is in
+> what varies by country: the levels an address names, the name tag, the house-number policy and the abbreviations; and the boundary of every country, which says which country a row is in
 
 ```
-mod.rs            the presets, one const per country and `DEFAULT`, and the lookups `for_country` and `name_tags`
-boundaries/       the boundary of each country, one `<iso>.wkt` compiled into the binary by `include_str!`
+mod.rs            the presets, one const per country that has one and `DEFAULT`, and the lookups `for_country`, `iso_key` and `name_tags`
+boundaries/       the boundary of every country of the geofabrik index, one `<iso>.wkt` compiled into the binary by `include_str!`, and `mod.rs`, the generated list of them
 ```
 
-a preset is a country: its `country` carries the iso 3166-1 alpha-2 code and the wkt of its
-boundary, and `COUNTRIES` lists them. a row is extracted, indexed and answered under the preset of
-the country whose boundary holds it (`admin_level::country_index`), never under a flag and never
-under what the extract happens to hold: a sub-region extract (`sudeste`) carries no closed boundary
-of brazil, and a country relation clipped by the extract never closes into a polygon, so the
-boundary has to come with the binary. `DEFAULT` has no country and answers for what falls in no
-boundary.
+a row is extracted, indexed and answered under the country whose boundary holds it
+(`admin_level::country_index`), never under a flag and never under what the extract happens to
+hold: a sub-region extract (`sudeste`) carries no closed boundary of brazil, and a country relation
+clipped by the extract never closes into a polygon, so the boundary has to come with the binary.
+`boundaries::ALL` lists every country, and `iso_key` answers the code a base is named by. a preset
+is the policy of one of them, named by its `iso_3166_1_alpha_2`, and `COUNTRY_PRESETS` lists the
+countries that have one; `for_country` answers the preset of a country, `DEFAULT` for every other.
 
 ## the boundaries — `boundaries/`
 
-the outlines come from [natural earth](https://www.naturalearthdata.com) 1:10m cultural vectors,
-admin 0 countries, public domain (`ne_10m_admin_0_countries.geojson`, the `master` branch of
-`nvkelso/natural-earth-vector` on 2026-10-12), one feature per `ADM0_A3`. each ring is simplified
-by douglas-peucker at 0.01° (about a kilometre), rings left with fewer than four points are
-dropped, and the result is written as one `MULTIPOLYGON` with four decimals, `lon lat`. the fifteen
-files weigh about 340 kb together. the 1:50m set is a quarter of that, but its coast runs outside
-the santos estuary and leaves six hundred streets of the fixture in the sea; at 1:10m only a
-submarine cable is. an outline still leaves a pier or a harbour outside the polygon, which is why
-the country index reaches 0.05° past the boundary.
+the outline of each country is the one of its [geofabrik](https://download.geofabrik.de) extract:
+the `geometry` of the region of the index (`https://download.geofabrik.de/index-v1.json`) whose
+`iso3166-1:alpha2` names that country alone, written as one `MULTIPOLYGON`, `lon lat`, with the
+coordinates as the index gives them. the 181 files weigh about 730 kb together. the outline is
+the polygon the extract is clipped by, so every row of `brazil-latest.osm.pbf` falls inside
+`br.wkt` by construction; it runs a few kilometres into the sea and into each neighbour, which is
+why a point inside two outlines goes to the one it is deeper inside (`admin_level::country_index`).
 
-to regenerate, run a script over the geojson that filters the fifteen codes, simplifies and writes
-the files; the one used lives outside the repository and takes the geojson, the output directory
-and the tolerance. a newer natural earth release moves coastlines by metres: rebuild the e2e world
-after it.
+two things of the index are corrected on the way: the index gives `VU` to five pacific regions
+besides vanuatu and `MH` to the pitcairn islands besides the marshall islands, and only the
+country's own region is kept; and a region of several countries (`gcc-states`, `haiti-and-domrep`,
+`israel-and-palestine`, `senegal-and-gambia`) cannot be split, so those eleven countries have no
+boundary and a row of theirs goes to the nearest country that has one.
+
+to regenerate, download the index and run a script that picks one region per code, writes the
+files and `mod.rs`; the one used lives outside the repository and takes the index and the output
+directory. geofabrik redraws an outline now and then: rebuild the e2e world after it.

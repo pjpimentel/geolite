@@ -93,12 +93,33 @@ pub(crate) fn resolved_at(w: &world, name: &str, rows: &[row]) -> PathBuf {
     )
   ";
 
+  // the base and its schema come from the extraction of the cheapest level, emptied afterwards
   let dir = w.scratch(name);
   let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
+  stage(w, &dir, &["exec", "extract-osm-pbf-header", &pbf]);
+  stage(
+    w,
+    &dir,
+    &["--threads", "2", "exec", "extract-osm-pbf-data", &pbf],
+  );
+  stage(
+    w,
+    &dir,
+    &[
+      "exec",
+      "extract-osm-admin-levels",
+      &pbf,
+      "--admin-level",
+      "8",
+    ],
+  );
   {
-    let conn = rusqlite::Connection::open(dir.join("database.sqlite3"))
+    let conn = rusqlite::Connection::open(dir.join("br.sqlite3"))
       .expect("failed to open the scratch database for writing");
+    conn
+      .execute_batch("DELETE FROM admin_levels")
+      .expect("failed to empty the base");
     for row in rows {
       conn
         .execute(
@@ -120,7 +141,7 @@ pub(crate) fn resolved_at(w: &world, name: &str, rows: &[row]) -> PathBuf {
 }
 
 fn resolved(w: &world, name: &str, rows: &[row]) -> rusqlite::Connection {
-  open_sqlite_at(&resolved_at(w, name, rows).join("database.sqlite3"))
+  open_sqlite_at(&resolved_at(w, name, rows).join("br.sqlite3"))
 }
 
 // 00.00. half of the samples nests an area under a peer of its level: 32 of 65 stay beside it,

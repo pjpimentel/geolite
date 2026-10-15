@@ -200,7 +200,7 @@ fn abbreviations_of(iso: Option<&str>) -> abbreviations {
 
 pub fn build(conn: &Connection, index_path: &Path) -> tantivy_index {
   let boosts = crate::presets::DEFAULT.index_addresses.boosts;
-  let _ = std::fs::remove_dir_all(index_path);
+  destroy(index_path);
   std::fs::create_dir_all(index_path).expect("failed to create tantivy index dir");
 
   let (

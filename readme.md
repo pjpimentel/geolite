@@ -119,12 +119,13 @@ $ geolite osm-pbf-file download brazil
 $ geolite exec extract-osm-pbf-blob-chunks brazil
 $ geolite exec extract-osm-pbf-header brazil
 $ geolite exec extract-osm-pbf-data brazil
-$ geolite exec extract-osm-admin-levels
-$ geolite exec extract-osm-house-numbers
+$ geolite exec extract-osm-admin-levels brazil
+$ geolite exec extract-osm-house-numbers brazil
 ```
 
 ### index extracted data
 ```bash
+# every base of the data path, or the ones named: `geolite exec index-addresses br`
 $ geolite exec index-admin-levels-hierarchy
 $ geolite exec index-addresses
 $ geolite exec index-coordinates
@@ -137,20 +138,23 @@ $ geolite exec index-coordinates
 # which have to be built again after them
 $ geolite exec optimize-delete-isolated-admin-levels
 $ geolite exec optimize-merge-admin-levels
-$ geolite exec optimize-delete-intermediary-data
+$ geolite exec optimize-delete-intermediary-data brazil
 $ geolite exec optimize-sqlite-file
 ```
 
 `geolite exec` runs one stage per call and refuses a stage whose requirements did not run, naming
-the one to run first; `geolite exec --help` lists the stages in the order the pipeline runs.
-`geolite build` and `geolite merge` run `optimize-delete-isolated-admin-levels` and
-`optimize-merge-admin-levels` right after `index-admin-levels-hierarchy`, so the two other indexes
-are built once, over the rows that stay. no index stage deletes or folds on its own.
+the one to run first; `geolite exec --help` lists the stages in the order the pipeline runs. a stage
+that reads a source names it (`extract-osm-admin-levels brazil`); a stage that works on the bases
+runs over every base of the data path, or over the countries named (`index-addresses br ar`).
+`geolite build` runs `optimize-delete-isolated-admin-levels`, which removes a base it leaves empty,
+and `optimize-merge-admin-levels` right after `index-admin-levels-hierarchy`, so the two other
+indexes are built once, over the rows that stay. no index stage deletes or folds on its own.
 
 ### query
 ```bash
 $ geolite query "-23.970949,-46.318730"
 $ geolite query "rua castro alves, embare, santos, sao paulo"
+$ geolite query "rua castro alves, embare, santos, sao paulo" --country br   # one base of the data path
 ```
 
 ### explore
@@ -158,27 +162,31 @@ $ geolite query "rua castro alves, embare, santos, sao paulo"
 $ geolite http-server
 ```
 
-### merge separately-built databases
+### build incrementally, one base per country
 
-every row is extracted, indexed and answered under the preset of the country whose boundary holds
-it, so neither a build nor a merge takes a preset: a base of many countries answers each one under
-its own.
+the data path holds one base per country, `br.sqlite3` and `br.tantivy`, beside `catalog.sqlite3`,
+the ledger of the sources. every row goes to the base of the country whose boundary holds it, under
+that country's preset: a country is built in one go, a continent too, one base per country. a
+finished build seals every base it wrote, read-only at the os level, and a base built once is
+final: a later source leaves it as it is and says so (`sealed br.sqlite3 — takes no row`), and a
+stage named on it is refused; to build a country again, remove its base and its index first.
 
 ```bash
-# machine 1
-$ geolite --sqlite-path sudeste.sqlite3 build sudeste
-# machine 2
-$ geolite --sqlite-path nordeste.sqlite3 build nordeste
+$ geolite build brazil         # br.sqlite3 and br.tantivy, sealed
+$ geolite build argentina      # ar.sqlite3 beside it, br.sqlite3 untouched
+$ geolite build south-america  # one base per country not built yet
+$ geolite http-server          # answers over every base of the data path
 
-# merge all builds into a new combined database (created fresh)
-$ geolite merge brazil.sqlite3 sudeste.sqlite3 nordeste.sqlite3 ...
-
-# or with docker 
-$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/sudeste.sqlite3 build sudeste
-$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/nordeste.sqlite3 build nordeste
-$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest merge /.geolite/brazil.sqlite3 /.geolite/sudeste.sqlite3 /.geolite/nordeste.sqlite3
-$ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/brazil.sqlite3 http-server
+# or with docker
+$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest build brazil
+$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest build argentina
+$ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:latest http-server
 ```
+
+`query` and `http-server` answer over every base of the data path: a coordinate is answered by
+distance across them, a text by the coverage of its tokens, and `country` (`--country br,ar` on
+the cli, `country=br,ar` on `/geocode`) narrows a question to the countries named. `--sqlite-path
+br.sqlite3` serves one base alone.
 
 ### run the end-to-end suite
 ```bash

@@ -17,7 +17,7 @@ const MARAPE: i64 = 8_565_773;
 const RANGONI_ROAD: i64 = 63_176_392;
 const GUARUJA: i64 = 596_927;
 const MONTE_CABRAO: i64 = 2_446_148_556;
-const STREETS: i64 = 7_216;
+const STREETS: i64 = 7_149;
 const STATES: usize = 27;
 const PLACE_WAYS: usize = 22;
 
@@ -583,7 +583,7 @@ fn _03_04_the_tui_lists_the_roots_and_the_folders_of_a_path_when_stdout_is_not_a
     rows.first(),
     Some(&(
       "city".to_string(),
-      "2327".to_string(),
+      "2326".to_string(),
       "no city".to_string()
     )),
     "the places lacking a city come first, in a folder of their own; {REGENERATE}"

@@ -2,8 +2,7 @@ use rusqlite::Connection;
 
 use super::entity::osm_way_row;
 use super::filter::way_filter;
-use crate::admin_level::level;
-use crate::osm_tag::value::{highway_value, leisure_value, place_value};
+use crate::osm_tag::value::{highway_value, leisure_value, location_value, place_value};
 use crate::osm_tag::{key, osm_tag, select};
 use crate::database::table;
 
@@ -81,10 +80,14 @@ fn filter_sql(filter: way_filter) -> String {
     }
     way_filter::exclude_building => select::is_null(PAYLOAD, osm_tag::building),
     way_filter::exclude_waterway => select::is_null(PAYLOAD, osm_tag::waterway),
+    way_filter::exclude_boundary => select::is_null(PAYLOAD, osm_tag::boundary),
+    way_filter::exclude_location_underwater => {
+      select::not_in(PAYLOAD, osm_tag::location, &[location_value::underwater.value()])
+    }
   }
 }
 
-pub fn remaining_ids_by_tags(conn: &Connection, level: level, filter: &[way_filter]) -> Vec<u64> {
+pub fn candidate_ids_by_tags(conn: &Connection, filter: &[way_filter]) -> Vec<u64> {
   let filter_clauses: Vec<String> = filter.iter().map(|&f| filter_sql(f)).collect();
   let filter_part = if filter_clauses.is_empty() {
     String::new()
@@ -96,13 +99,9 @@ pub fn remaining_ids_by_tags(conn: &Connection, level: level, filter: &[way_filt
     "
     SELECT osm_data.osm_ways.id
     FROM osm_data.osm_ways
-    LEFT JOIN main.admin_levels AS already_indexed
-      ON already_indexed.way_id = osm_data.osm_ways.id
-      AND already_indexed.admin_level = {}
-    WHERE {has_name}
-      AND already_indexed.way_id IS NULL{filter_part}
-    ",
-    level.value()
+    WHERE {has_name}{filter_part}
+    ORDER BY osm_data.osm_ways.id
+    "
   );
   let mut stmt = conn
     .prepare(&sql)

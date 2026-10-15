@@ -19,6 +19,8 @@ fn default_exclude(level: level) -> &'static [way_filter] {
       way_filter::exclude_leisure_park,
       way_filter::exclude_building,
       way_filter::exclude_waterway,
+      way_filter::exclude_boundary,
+      way_filter::exclude_location_underwater,
     ],
     _ => &[],
   }

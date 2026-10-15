@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+
+use crate::database::store::{self, base_files};
 use crate::interfaces::cli::extract::{
   osm_admin_levels::command_handler_extract_osm_admin_levels,
   osm_house_numbers::command_handler_extract_osm_house_numbers,
@@ -6,7 +9,7 @@ use crate::interfaces::cli::extract::{
   osm_pbf_header::command_handler_extract_osm_pbf_header,
 };
 use crate::interfaces::cli::exec::stages::stage;
-use crate::interfaces::cli::index::command_handler_index_and_merge;
+use crate::interfaces::cli::index::index_bases;
 use crate::interfaces::cli::optimize::command_handler_optimize;
 use crate::interfaces::cli::osm_pbf_file::download::command_handler_osm_pbf_file_download;
 use crate::osm_pbf_file::{input_kind, osm_pbf_file};
@@ -14,15 +17,13 @@ use crate::osm_pbf_file::{input_kind, osm_pbf_file};
 pub fn command_handler_build(
   data_path: &str,
   threads: &u8,
-  sqlite_path: &str,
-  index_path: &str,
   source: &str,
   ls_endpoint: Option<&str>,
   abort_on_any_error: bool,
 ) {
-  // filesystem only, on purpose: the database may not exist yet at this point of the build, and a
-  // local source must never reach resolve_geofabrik_url, which fetches the geofabrik index with an
-  // `expect` that would take the whole pipeline down when the network fails
+  // filesystem only, on purpose: the catalogue may not exist yet at this point of the build, and
+  // a local source must never reach resolve_geofabrik_url, which fetches the geofabrik index with
+  // an `expect` that would take the whole pipeline down when the network fails
   let is_local = osm_pbf_file::open(None, data_path)
     .local_file(source)
     .is_some();
@@ -40,7 +41,6 @@ pub fn command_handler_build(
     command_handler_osm_pbf_file_download(
       data_path,
       threads,
-      sqlite_path,
       &inputs,
       ls_endpoint,
       abort_on_any_error,
@@ -48,7 +48,7 @@ pub fn command_handler_build(
   }
 
   let resolved = is_local || {
-    let conn = crate::database::open_readonly(sqlite_path);
+    let conn = store::open_catalog(data_path);
     osm_pbf_file::open(Some(&conn), data_path)
       .resolve(source)
       .is_some()
@@ -62,17 +62,16 @@ pub fn command_handler_build(
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_pbf_blob_chunks.name());
-  command_handler_extract_osm_pbf_blob_chunks(data_path, sqlite_path, &inputs, false);
+  command_handler_extract_osm_pbf_blob_chunks(data_path, &inputs, false);
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_pbf_header.name());
-  command_handler_extract_osm_pbf_header(data_path, sqlite_path, &inputs);
+  command_handler_extract_osm_pbf_header(data_path, &inputs);
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_pbf_data.name());
   command_handler_extract_osm_pbf_data(
     data_path,
-    sqlite_path,
     threads,
     &inputs,
     true,
@@ -87,8 +86,9 @@ pub fn command_handler_build(
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_admin_levels.name());
-  command_handler_extract_osm_admin_levels(
-    sqlite_path,
+  let touched = command_handler_extract_osm_admin_levels(
+    data_path,
+    source,
     crate::presets::DEFAULT.extract_osm_admin_levels.admin_levels,
     threads,
     false,
@@ -97,13 +97,26 @@ pub fn command_handler_build(
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_house_numbers.name());
-  command_handler_extract_osm_house_numbers(sqlite_path, false);
+  let numbered = command_handler_extract_osm_house_numbers(data_path, source, false);
+
+  let isos: HashSet<String> = touched
+    .iter()
+    .map(|iso| iso.to_ascii_lowercase())
+    .chain(numbered.iter().map(|iso| iso.to_ascii_lowercase()))
+    .collect();
+  let bases: Vec<base_files> = store::bases(data_path)
+    .into_iter()
+    .filter(|base| isos.contains(&base.iso))
+    .collect();
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::index_admin_levels_hierarchy.name());
-  command_handler_index_and_merge(sqlite_path, index_path);
+  let bases = index_bases(&bases);
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::optimize_delete_intermediary_data.name());
-  command_handler_optimize(data_path, sqlite_path, index_path);
+  command_handler_optimize(data_path, source, &bases);
+
+  println!();
+  store::seal_bases(&bases);
 }

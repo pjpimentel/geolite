@@ -116,6 +116,29 @@ impl<'a> osm_pbf_file<'a> {
     output
   }
 
+  // the ledger counts what every base holds of a file: one base attached at a time, the counts
+  // summed, the sum stamped
+  pub fn stamp_admin_levels_count(&self, file_id: u32, bases: &[String]) {
+    let total = self.summed(bases, |conn| repository::count_admin_levels_of_file(conn, file_id));
+    repository::set_admin_levels_count(self.database(), file_id, total);
+  }
+
+  pub fn stamp_house_numbers_count(&self, file_id: u32, bases: &[String]) {
+    let total = self.summed(bases, |conn| repository::count_house_numbers_of_file(conn, file_id));
+    repository::set_house_numbers_count(self.database(), file_id, total);
+  }
+
+  fn summed(&self, bases: &[String], count: impl Fn(&rusqlite::Connection) -> i64) -> i64 {
+    let conn = self.database();
+    let mut total = 0i64;
+    for base in bases {
+      crate::database::store::attach_base(conn, base);
+      total += count(conn);
+      crate::database::store::detach_base(conn);
+    }
+    total
+  }
+
   pub fn delete(&self, path: &str) -> u64 {
     let conn = self.database();
     if let Some(file_id) = repository::get_id_by_path(conn, path) {

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::admin_level::admin_levels_at;
-use crate::common::harness::{open_sqlite_at, output, world};
+use crate::common::harness::{open_scratch, open_sqlite_at, output, world};
 use crate::general::world;
 use serde_json::{Value, json};
 
@@ -28,11 +28,11 @@ pub(crate) struct scratch {
 
 impl scratch {
   pub(crate) fn ledger(&self) -> rusqlite::Connection {
-    open_sqlite_at(&self.dir.join("database.sqlite3"))
+    open_scratch(&self.dir)
   }
 
   pub(crate) fn osm_data(&self) -> rusqlite::Connection {
-    open_sqlite_at(&self.dir.join("database.osm_data.sqlite3"))
+    open_sqlite_at(&self.dir.join("santos.osm_data.sqlite3"))
   }
 
   fn pbf(&self) -> String {
@@ -42,6 +42,14 @@ impl scratch {
       .to_string_lossy()
       .into_owned()
   }
+}
+
+// the rows a scratch holds: none before its first base is written
+pub(crate) fn admin_levels_rows(s: &scratch) -> i64 {
+  if !s.dir.join("br.sqlite3").exists() {
+    return 0;
+  }
+  count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels")
 }
 
 struct ledger_row {
@@ -93,7 +101,13 @@ pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]
 }
 
 fn admin_levels(w: &world, dir: &Path, extra: &[&str]) {
-  let mut args = vec!["exec", "extract-osm-admin-levels", "--admin-level", "2,4,8"];
+  let mut args = vec![
+    "exec",
+    "extract-osm-admin-levels",
+    "santos.osm.pbf",
+    "--admin-level",
+    "2,4,8",
+  ];
   args.extend_from_slice(extra);
   stage(w, dir, &args);
 }
@@ -385,7 +399,7 @@ fn _04_a_tag_ignore_list_dropping_name_starves_the_admin_level_stage() {
   );
   admin_levels(w, &s.dir, &[]);
   assert_eq!(
-    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels"),
+    admin_levels_rows(&s),
     0,
     "without names there is no candidate at any level"
   );
@@ -415,9 +429,8 @@ fn _05_name_priority_falls_back_key_by_key() {
 }
 
 // 18. every row is written with the country whose boundary holds it, the boundary the preset
-// carries and not the relation of the extract: the states and the cities of the fixture are all
-// brazilian, with no country relation extracted at all, and so is every street but the ways drawn
-// along the venezuelan border, which fall on either side, and a submarine cable out at sea
+// carries and not the relation of the extract: the states, the cities and the streets of the
+// fixture are all brazilian, with no country relation extracted at all
 #[test]
 #[ignore]
 fn _18_every_row_carries_the_country_whose_boundary_holds_it() {
@@ -425,19 +438,7 @@ fn _18_every_row_carries_the_country_whose_boundary_holds_it() {
     SELECT admin_level, COUNT(*)
     FROM admin_levels
     WHERE COALESCE(country_iso_code, '') <> 'BR'
-      AND admin_level < 12
     GROUP BY admin_level
-  ";
-  const SQL_STREETS_OUTSIDE_BRAZIL: &str = "
-    SELECT COUNT(*)
-    FROM admin_levels
-    WHERE COALESCE(country_iso_code, '') <> 'BR'
-      AND admin_level = 12
-  ";
-  const SQL_STREETS: &str = "
-    SELECT COUNT(*)
-    FROM admin_levels
-    WHERE admin_level = 12
   ";
   const SQL_ROWS_PER_LEVEL: &str = "
     SELECT admin_level, COUNT(*)
@@ -470,15 +471,40 @@ fn _18_every_row_carries_the_country_whose_boundary_holds_it() {
   assert_eq!(
     per_level(SQL_ROWS_OUTSIDE_BRAZIL),
     vec![],
-    "every state and city is brazilian; {REGENERATE}"
+    "every state, city and street is brazilian; {REGENERATE}"
   );
-  let streets = count(&conn, SQL_STREETS);
-  let outside = count(&conn, SQL_STREETS_OUTSIDE_BRAZIL);
   assert!(
-    outside * 100 < streets,
-    "{outside} of {streets} streets are not brazilian: more than the border ways and the cable; \
-     {REGENERATE}"
+    !s.dir.join("ve.sqlite3").exists(),
+    "no row fell on the venezuelan side of the border, so no base of venezuela was written"
   );
+}
+
+// 19. a way tagged `boundary` is a border drawn on the map, never a street: the fixture carries
+// the ways of the brazilian border, named in portuguese and spanish, and none of them is a row
+#[test]
+#[ignore]
+fn _19_a_way_tagged_boundary_is_not_a_street() {
+  const SQL_NAMED_BOUNDARY_WAYS: &str = "
+    SELECT COUNT(*)
+    FROM osm_ways
+    WHERE JSON_EXTRACT(payload, '$.tags.boundary') IS NOT NULL
+      AND JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
+  ";
+  const SQL_BORDER_STREETS: &str = "
+    SELECT COUNT(*)
+    FROM admin_levels
+    WHERE admin_level = 12
+      AND (name LIKE 'Frontera %' OR name LIKE 'Fronteira %' OR name LIKE 'Border %')
+  ";
+
+  let w = world();
+  let s = extracted(w, "extract_boundary_ways", "2", &[]);
+  admin_levels_at(w, &s.dir, "12", &[]);
+  assert!(
+    count(&s.osm_data(), SQL_NAMED_BOUNDARY_WAYS) > 0,
+    "{REGENERATE}"
+  );
+  assert_eq!(count(&s.ledger(), SQL_BORDER_STREETS), 0);
 }
 
 // 06. the stage refuses to run before the chunk index and leaves the ledger untouched
@@ -500,7 +526,7 @@ fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
     "stderr: {}",
     out.stderr
   );
-  let rows = ledger(&open_sqlite_at(&dir.join("database.sqlite3")));
+  let rows = ledger(&open_scratch(&dir));
   assert_eq!(rows.len(), 1, "resolving the input records the file");
   assert_eq!(rows[0].origin, 0);
   assert_eq!(
@@ -509,7 +535,7 @@ fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
     "nothing decoded, nothing stamped"
   );
   assert_eq!(
-    table_counts(&open_sqlite_at(&dir.join("database.osm_data.sqlite3"))),
+    table_counts(&open_sqlite_at(&dir.join("santos.osm_data.sqlite3"))),
     (0, 0, 0)
   );
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
@@ -567,16 +593,16 @@ fn _09_two_inputs_in_one_run_get_their_own_ledger_rows_and_chunks() {
     &["exec", "extract-osm-pbf-blob-chunks", &santos, &alpha],
   );
   osm_data(w, &dir, "2", &[], &[&santos, &alpha]);
-  let rows = ledger(&open_sqlite_at(&dir.join("database.sqlite3")));
+  let rows = ledger(&open_scratch(&dir));
   assert_eq!(rows.len(), 2, "one ledger row per input");
-  let data = open_sqlite_at(&dir.join("database.osm_data.sqlite3"));
-  for row in &rows {
+  for (row, stem) in rows.iter().zip(["santos", "alpha"]) {
     assert_eq!(
       row.counts(),
       (Some(NODES), Some(WAYS), Some(RELATIONS)),
       "each file decodes the whole fixture"
     );
     assert!(row.extracted_at.is_some());
+    let data = open_sqlite_at(&dir.join(format!("{stem}.osm_data.sqlite3")));
     assert_eq!(
       count(
         &data,
@@ -585,26 +611,27 @@ fn _09_two_inputs_in_one_run_get_their_own_ledger_rows_and_chunks() {
           row.id
         )
       ),
-      CHUNKS
+      CHUNKS,
+      "each file has its own osm_data"
+    );
+    assert_eq!(
+      table_counts(&data),
+      (NODES, WAYS, RELATIONS),
+      "each osm_data holds the whole fixture of its file"
+    );
+    assert_eq!(
+      count(
+        &data,
+        &format!(
+          "SELECT COUNT(*) FROM osm_nodes n JOIN osm_pbf_blob_chunks c ON c.id = n.osm_pbf_chunk_id \
+           WHERE c.file_id != {}",
+          row.id
+        )
+      ),
+      0,
+      "every row belongs to the chunks of its own file"
     );
   }
-  assert_eq!(
-    table_counts(&data),
-    (NODES, WAYS, RELATIONS),
-    "the second file's ids are already there and are ignored"
-  );
-  assert_eq!(
-    count(
-      &data,
-      &format!(
-        "SELECT COUNT(*) FROM osm_nodes n JOIN osm_pbf_blob_chunks c ON c.id = n.osm_pbf_chunk_id \
-         WHERE c.file_id != {}",
-        rows[0].id
-      )
-    ),
-    0,
-    "every row belongs to the chunks of the first file"
-  );
 }
 
 // 10. the stage is idempotent and the stamp is a clock
@@ -669,7 +696,7 @@ fn _12_recreate_rebuilds_the_element_tables_without_touching_the_chunk_index() {
     "the chunk index must survive --recreate:\n{}",
     out.stdout
   );
-  assert!(s.dir.join("database.osm_data.sqlite3").exists());
+  assert!(s.dir.join("santos.osm_data.sqlite3").exists());
   assert_eq!(
     count(&s.osm_data(), "SELECT COUNT(*) FROM osm_pbf_blob_chunks"),
     CHUNKS
@@ -685,7 +712,13 @@ fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
   let s = extracted(w, "extract_unknown_level", "2", &[]);
   let out = w.geolite_in(
     &s.dir,
-    &["exec", "extract-osm-admin-levels", "--admin-level", "2,11"],
+    &[
+      "exec",
+      "extract-osm-admin-levels",
+      "santos.osm.pbf",
+      "--admin-level",
+      "2,11",
+    ],
   );
   assert_eq!(
     out.status, 1,
@@ -700,7 +733,7 @@ fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
     out.stderr
   );
   assert_eq!(
-    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels"),
+    admin_levels_rows(&s),
     0,
     "nothing is extracted when the list is refused"
   );
@@ -715,7 +748,13 @@ fn _14_level_10_runs_the_relation_and_the_way_stages() {
   let out = stage(
     w,
     &s.dir,
-    &["exec", "extract-osm-admin-levels", "--admin-level", "10"],
+    &[
+      "exec",
+      "extract-osm-admin-levels",
+      "santos.osm.pbf",
+      "--admin-level",
+      "10",
+    ],
   );
   for line in [
     "stage 1/2: relations",
@@ -787,7 +826,13 @@ fn _16_a_level_list_is_refused_with_its_reason() {
   ] {
     let out = w.geolite_in(
       &dir,
-      &["exec", "extract-osm-admin-levels", "--admin-level", levels],
+      &[
+        "exec",
+        "extract-osm-admin-levels",
+        "santos.osm.pbf",
+        "--admin-level",
+        levels,
+      ],
     );
     assert_eq!(out.status, 1, "{levels:?}: stderr: {}", out.stderr);
     assert!(

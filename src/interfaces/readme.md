@@ -11,7 +11,7 @@ an interface owns no rule. what a query means, how a region is parsed or how a l
 lives in the concept folders, so the cli and the http server answer the same question the same
 way, and an interface added later reuses the domain instead of repeating it.
 
-the cli is the entry point: `main` calls `cli::run`, which resolves the paths once and dispatches;
+the cli is the entry point: `main` calls `cli::run`, which resolves the data path once and dispatches;
 `http-server` is a subcommand that binds the port and hands over to `http::serve`. any other
 interface is launched the same way, as a subcommand of the cli: `tui` opens the tree in the
 terminal through [`tui`](tui/readme.md). no interface carries a preset: the preset of a row is the
@@ -20,7 +20,12 @@ the query, so a base of many countries answers each one under its own.
 
 `exec <group>-<stage>` runs one stage of the pipeline by its name, after asserting that the stages
 it requires ran: [`cli/exec`](cli/exec/readme.md) holds the stages, what each one requires and the
-evidence it reads. `build` and `merge` chain the same handlers.
+evidence it reads. `build` chains the same handlers, and a second build into the same data path adds
+to the bases it touches.
+
+`query`, `http-server` and `tui` answer over every base of the data path (`served_bases`), or over
+the one `--sqlite-path` names; `--country` and the `country` parameter narrow a question to the
+countries named (`select_bases`).
 
 every long pass of the domain reports a `progress_report`, and `cli/progress` draws all
 of them with one bar: `bar(prefix, label)` and `advance`.

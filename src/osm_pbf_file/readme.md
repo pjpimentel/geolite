@@ -1,7 +1,7 @@
 # osm_pbf_file
 
-where every build starts: one row per `.osm.pbf` file, from the moment it is found in the geofabrik
-catalogue to the counts left behind after extraction.
+where every build starts: one row per `.osm.pbf` file in `catalog.sqlite3`, from the moment it is
+found in the geofabrik catalogue to the counts left behind after extraction.
 
 ## the folder without an entity
 
@@ -13,7 +13,7 @@ the row is a **ledger written in column groups**, each by a different moment of 
 | `path`, `size_bytes`, `md5`, `downloaded_at` | `download` |
 | `osm_header_*` | `header` |
 | `node_count`, `way_count`, `relation_count`, `osm_data_extracted_at` | `osm_data` |
-| `admin_levels_count`, `house_numbers_count` | the admin-level and house-number stages |
+| `admin_levels_count`, `house_numbers_count` | the admin-level and house-number stages, summed over every base of the source (`stamp_counts`, one base attached at a time) |
 
 and it is read back only by `path`, `url`, `origin_id` and `id`. **nothing ever reads the row
 whole** — the struct that could, and the query behind it, sat unused behind `#[allow(dead_code)]`

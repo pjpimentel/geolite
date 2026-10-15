@@ -1,3 +1,5 @@
+pub mod boundaries;
+
 use crate::admin_level::level;
 
 #[derive(Clone, Copy)]
@@ -8,7 +10,7 @@ pub struct country {
 
 #[derive(Clone, Copy)]
 pub struct preset {
-  pub country: Option<country>,
+  pub iso_3166_1_alpha_2: Option<&'static str>,
   pub extract_osm_admin_levels: extract_osm_admin_levels_preset,
   pub house_numbers: crate::house_number::house_number_policy,
   pub index_addresses: index_addresses_preset,
@@ -27,7 +29,7 @@ pub struct index_addresses_preset {
 }
 
 pub const DEFAULT: preset = preset {
-  country: None,
+  iso_3166_1_alpha_2: None,
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     admin_levels: &[level::country, level::region, level::state, level::district, level::county, level::municipality, level::city, level::locality, level::neighborhood, level::street],
     name_priority: &["name"],
@@ -57,10 +59,7 @@ pub const DEFAULT: preset = preset {
 };
 
 pub const BRAZIL: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "BR",
-    boundary_wkt: include_str!("boundaries/br.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("BR"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:pt", "name"],
     admin_levels: &[level::country, level::state, level::city, level::neighborhood, level::street],
@@ -86,10 +85,7 @@ pub const BRAZIL: preset = preset {
 };
 
 pub const PORTUGAL: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "PT",
-    boundary_wkt: include_str!("boundaries/pt.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("PT"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:pt", "name"],
     admin_levels: &[level::country, level::county, level::city, level::neighborhood, level::street],
@@ -121,10 +117,7 @@ pub const PORTUGAL: preset = preset {
 };
 
 pub const ARGENTINA: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "AR",
-    boundary_wkt: include_str!("boundaries/ar.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("AR"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::district, level::city, level::neighborhood, level::street],
@@ -151,10 +144,7 @@ pub const ARGENTINA: preset = preset {
 };
 
 pub const BOLIVIA: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "BO",
-    boundary_wkt: include_str!("boundaries/bo.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("BO"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::city, level::neighborhood, level::street],
@@ -180,10 +170,7 @@ pub const BOLIVIA: preset = preset {
 };
 
 pub const CHILE: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "CL",
-    boundary_wkt: include_str!("boundaries/cl.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("CL"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::city, level::street],
@@ -216,10 +203,7 @@ pub const CHILE: preset = preset {
 };
 
 pub const COLOMBIA: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "CO",
-    boundary_wkt: include_str!("boundaries/co.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("CO"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::county, level::city, level::street],
@@ -254,10 +238,7 @@ pub const COLOMBIA: preset = preset {
 };
 
 pub const ECUADOR: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "EC",
-    boundary_wkt: include_str!("boundaries/ec.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("EC"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::county, level::street],
@@ -288,10 +269,7 @@ pub const ECUADOR: preset = preset {
 };
 
 pub const GUYANA: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "GY",
-    boundary_wkt: include_str!("boundaries/gy.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("GY"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:en", "name"],
     admin_levels: &[level::country, level::state, level::county, level::street],
@@ -313,10 +291,7 @@ pub const GUYANA: preset = preset {
 };
 
 pub const PARAGUAY: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "PY",
-    boundary_wkt: include_str!("boundaries/py.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("PY"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::city, level::street],
@@ -344,10 +319,7 @@ pub const PARAGUAY: preset = preset {
 };
 
 pub const PERU: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "PE",
-    boundary_wkt: include_str!("boundaries/pe.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("PE"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::city, level::street],
@@ -378,10 +350,7 @@ pub const PERU: preset = preset {
 };
 
 pub const SURINAME: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "SR",
-    boundary_wkt: include_str!("boundaries/sr.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("SR"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:nl", "name"],
     admin_levels: &[level::country, level::state, level::county, level::street],
@@ -403,10 +372,7 @@ pub const SURINAME: preset = preset {
 };
 
 pub const URUGUAY: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "UY",
-    boundary_wkt: include_str!("boundaries/uy.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("UY"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::city, level::street],
@@ -434,10 +400,7 @@ pub const URUGUAY: preset = preset {
 };
 
 pub const VENEZUELA: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "VE",
-    boundary_wkt: include_str!("boundaries/ve.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("VE"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:es", "name"],
     admin_levels: &[level::country, level::state, level::county, level::city, level::street],
@@ -466,10 +429,7 @@ pub const VENEZUELA: preset = preset {
 };
 
 pub const NETHERLANDS: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "NL",
-    boundary_wkt: include_str!("boundaries/nl.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("NL"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     name_priority: &["name:nl", "name"],
     admin_levels: &[level::country, level::state, level::city, level::street],
@@ -492,10 +452,7 @@ pub const NETHERLANDS: preset = preset {
 };
 
 pub const SWITZERLAND: preset = preset {
-  country: Some(country {
-    iso_3166_1_alpha_2: "CH",
-    boundary_wkt: include_str!("boundaries/ch.wkt"),
-  }),
+  iso_3166_1_alpha_2: Some("CH"),
   extract_osm_admin_levels: extract_osm_admin_levels_preset {
     admin_levels: &[level::country, level::state, level::city, level::street],
     ..DEFAULT.extract_osm_admin_levels
@@ -516,7 +473,7 @@ pub const SWITZERLAND: preset = preset {
   },
 };
 
-pub const COUNTRIES: &[&preset] = &[
+pub const COUNTRY_PRESETS: &[&preset] = &[
   &BRAZIL,
   &PORTUGAL,
   &ARGENTINA,
@@ -538,15 +495,22 @@ pub fn for_country(iso: Option<&str>) -> preset {
   let Some(iso) = iso else {
     return DEFAULT;
   };
-  COUNTRIES
+  COUNTRY_PRESETS
     .iter()
-    .find(|p| p.country.is_some_and(|c| c.iso_3166_1_alpha_2.eq_ignore_ascii_case(iso)))
+    .find(|p| p.iso_3166_1_alpha_2.is_some_and(|code| code.eq_ignore_ascii_case(iso)))
     .map_or(DEFAULT, |p| **p)
+}
+
+pub fn iso_key(iso: &str) -> Option<&'static str> {
+  boundaries::ALL
+    .iter()
+    .map(|c| c.iso_3166_1_alpha_2)
+    .find(|code| code.eq_ignore_ascii_case(iso))
 }
 
 pub fn name_tags() -> Vec<&'static str> {
   let mut tags: Vec<&'static str> = Vec::new();
-  for preset in std::iter::once(&DEFAULT).chain(COUNTRIES.iter().copied()) {
+  for preset in std::iter::once(&DEFAULT).chain(COUNTRY_PRESETS.iter().copied()) {
     for &tag in preset.extract_osm_admin_levels.name_priority {
       if !tags.contains(&tag) {
         tags.push(tag);

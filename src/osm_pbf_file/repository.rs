@@ -52,17 +52,6 @@ impl table for osm_pbf_files {
   const INDEXES: &str = SQL_CREATE_INDEXES;
 }
 
-pub(crate) fn add_origin_wkt(conn: &Connection) {
-  const SQL_ADD_ORIGIN_WKT: &str = "ALTER TABLE osm_pbf_files ADD COLUMN origin_wkt BLOB";
-
-  if crate::database::has_column(conn, "main", "osm_pbf_files", "origin_wkt") {
-    return;
-  }
-  conn
-    .execute_batch(SQL_ADD_ORIGIN_WKT)
-    .expect("failed to add origin_wkt to osm_pbf_files");
-}
-
 pub enum origin {
   local_path(String),
   geofabrik { id: String, url: String },
@@ -414,8 +403,9 @@ pub fn update_downloaded(
   }
 }
 
-pub fn update_admin_levels_count(conn: &Connection) {
-  const SQL_UPDATE_ADMIN_LEVELS_COUNT: &str = "
+// the rows of a file in the base attached as `base`, traced through the chunks of its osm_data
+pub fn count_admin_levels_of_file(conn: &Connection, file_id: u32) -> i64 {
+  const SQL_COUNT_ADMIN_LEVELS_OF_FILE: &str = "
     WITH way_to_file AS (
       SELECT
         osm_data.osm_ways.id AS osm_id,
@@ -431,39 +421,22 @@ pub fn update_admin_levels_count(conn: &Connection) {
       FROM osm_data.osm_relations
       JOIN osm_data.osm_pbf_blob_chunks
         ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_relations.osm_pbf_chunk_id
-    ),
-    admin_to_file AS (
-      SELECT
-        admin_levels.id AS admin_id,
-        COALESCE(way_to_file.file_id, relation_to_file.file_id) AS file_id
-      FROM admin_levels
-      LEFT JOIN way_to_file ON way_to_file.osm_id = admin_levels.way_id
-      LEFT JOIN relation_to_file ON relation_to_file.osm_id = admin_levels.relation_id
-      WHERE admin_levels.wkb IS NOT NULL
-    ),
-    counts_per_file AS (
-      SELECT
-        file_id,
-        COUNT(*) AS total
-      FROM admin_to_file
-      WHERE file_id IS NOT NULL
-      GROUP BY file_id
     )
-    UPDATE osm_pbf_files SET
-      admin_levels_count = COALESCE(
-        (SELECT total FROM counts_per_file WHERE counts_per_file.file_id = osm_pbf_files.id),
-        0
-      )
-    WHERE path IS NOT NULL
+    SELECT COUNT(*)
+    FROM base.admin_levels
+    LEFT JOIN way_to_file ON way_to_file.osm_id = base.admin_levels.way_id
+    LEFT JOIN relation_to_file ON relation_to_file.osm_id = base.admin_levels.relation_id
+    WHERE base.admin_levels.wkb IS NOT NULL
+      AND COALESCE(way_to_file.file_id, relation_to_file.file_id) = ?1
   ";
 
   conn
-    .execute(SQL_UPDATE_ADMIN_LEVELS_COUNT, [])
-    .expect("failed to update osm_pbf_files admin_levels_count");
+    .query_row(SQL_COUNT_ADMIN_LEVELS_OF_FILE, [file_id], |row| row.get(0))
+    .expect("failed to count the admin levels of a file")
 }
 
-pub fn update_house_numbers_count(conn: &Connection) {
-  const SQL_UPDATE_HOUSE_NUMBERS_COUNT: &str = "
+pub fn count_house_numbers_of_file(conn: &Connection, file_id: u32) -> i64 {
+  const SQL_COUNT_HOUSE_NUMBERS_OF_FILE: &str = "
     WITH way_to_file AS (
       SELECT
         osm_data.osm_ways.id AS osm_id,
@@ -482,32 +455,57 @@ pub fn update_house_numbers_count(conn: &Connection) {
     ),
     admin_to_file AS (
       SELECT
-        admin_levels.id AS admin_id,
+        base.admin_levels.id AS admin_id,
         COALESCE(way_to_file.file_id, relation_to_file.file_id) AS file_id
-      FROM admin_levels
-      LEFT JOIN way_to_file ON way_to_file.osm_id = admin_levels.way_id
-      LEFT JOIN relation_to_file ON relation_to_file.osm_id = admin_levels.relation_id
-    ),
-    counts_per_file AS (
-      SELECT
-        admin_to_file.file_id AS file_id,
-        COUNT(*) AS total
-      FROM house_numbers
-      JOIN admin_to_file ON admin_to_file.admin_id = house_numbers.admin_level_id
-      WHERE admin_to_file.file_id IS NOT NULL
-      GROUP BY admin_to_file.file_id
+      FROM base.admin_levels
+      LEFT JOIN way_to_file ON way_to_file.osm_id = base.admin_levels.way_id
+      LEFT JOIN relation_to_file ON relation_to_file.osm_id = base.admin_levels.relation_id
     )
-    UPDATE osm_pbf_files SET
-      house_numbers_count = COALESCE(
-        (SELECT total FROM counts_per_file WHERE counts_per_file.file_id = osm_pbf_files.id),
-        0
-      )
-    WHERE path IS NOT NULL
+    SELECT COUNT(*)
+    FROM base.house_numbers
+    JOIN admin_to_file ON admin_to_file.admin_id = base.house_numbers.admin_level_id
+    WHERE admin_to_file.file_id = ?1
   ";
 
   conn
-    .execute(SQL_UPDATE_HOUSE_NUMBERS_COUNT, [])
-    .expect("failed to update osm_pbf_files house_numbers_count");
+    .query_row(SQL_COUNT_HOUSE_NUMBERS_OF_FILE, [file_id], |row| row.get(0))
+    .expect("failed to count the house numbers of a file")
+}
+
+pub fn set_admin_levels_count(conn: &Connection, file_id: u32, total: i64) {
+  const SQL_SET_ADMIN_LEVELS_COUNT: &str = "
+    UPDATE osm_pbf_files SET
+      admin_levels_count = ?1
+    WHERE id = ?2
+  ";
+
+  conn
+    .execute(SQL_SET_ADMIN_LEVELS_COUNT, rusqlite::params![total, file_id])
+    .expect("failed to set the admin levels count of a file");
+}
+
+pub fn set_house_numbers_count(conn: &Connection, file_id: u32, total: i64) {
+  const SQL_SET_HOUSE_NUMBERS_COUNT: &str = "
+    UPDATE osm_pbf_files SET
+      house_numbers_count = ?1
+    WHERE id = ?2
+  ";
+
+  conn
+    .execute(SQL_SET_HOUSE_NUMBERS_COUNT, rusqlite::params![total, file_id])
+    .expect("failed to set the house numbers count of a file");
+}
+
+pub fn osm_data_extracted(conn: &Connection, file_id: u32) -> bool {
+  const SQL_OSM_DATA_EXTRACTED: &str = "
+    SELECT osm_data_extracted_at IS NOT NULL
+    FROM osm_pbf_files
+    WHERE id = ?1
+  ";
+
+  conn
+    .query_row(SQL_OSM_DATA_EXTRACTED, [file_id], |row| row.get::<_, bool>(0))
+    .unwrap_or(false)
 }
 
 pub fn any_osm_data_extracted(conn: &Connection) -> bool {

@@ -125,24 +125,31 @@ the countries of the base.
 
 every row is written under the preset of the country whose boundary holds it
 (`presets::for_country`), and carries that country in `country_iso_code`, so the index and the
-query read the preset back from the row. the boundary is the preset's own, compiled into the
-binary ([`presets/boundaries`](../presets/readme.md)), never the level 2 relation of the extract:
+query read the preset back from the row, the default one for a country without a preset of its
+own. the boundary is the country's, compiled into the binary, one per country of the geofabrik
+index ([`presets/boundaries`](../presets/readme.md)), never the level 2 relation of the extract:
 a sub-region extract carries no closed boundary of its country, and a clipped relation never closes
 into a polygon, so a base built from either would have gone under the default preset. `country_index`
-is built from the presets once per run and asks, for every element of every level, which boundary
+is built from the boundaries once per run and asks, for every element of every level, which boundary
 holds its centroid; then its first vertex, when the centroid falls in no country, a concave shape
-or one drawn along a border; then the nearest boundary within 0.05° (`COAST_REACH_DEG`), because
-an outline at 1:10m leaves a pier, a harbour or a street over the water outside the polygon, and
-the reach is small so that a town of a country without a preset only falls to its neighbour that
-close to the border. the point test is the one of the hierarchy resolver, in `point_in_polygon`.
+or one drawn along a border; then the nearest boundary, whatever the distance, because an island
+or a street over the water can still fall outside every outline, and each of them belongs to the
+country closest to it. so every row has a country. the outlines are the ones of the geofabrik
+extracts, each drawn a few kilometres into its neighbours, so a point near a border is inside two
+of them: it goes to the country whose outline is farthest from it, the one it is deeper inside,
+which is the true border when both outlines run the same distance past it. the point test is the
+one of the hierarchy resolver, in `point_in_polygon`.
 
 the country decides two things before the row is written (`extract::identity_of`): whether the
 level is one the country keeps at all (`admin_levels`, the reason a brazilian `region` or
 `municipality` is never a row), and which name tag names the row (`name_priority`, `name:pt`
 before `name` in brazil); the loaders select every tag any country asks for (`presets::name_tags`)
-and the choice is made in rust, per element. an element in no boundary goes under the default
-preset with a `NULL` code, except a country relation, which keeps the `ISO3166-1` it carries so
-that the ladder still names a country without a preset.
+and the choice is made in rust, per element. the row then goes to the base of its country
+(`database::store::base_pool`, one `<iso>.sqlite3` per country in the data path), whatever the
+source: a country, a continent, a local file and a url write every base they touch, but one a
+build sealed, which takes no row: its rows are dropped and counted (`dropped N street — the base of
+their country is sealed`). a resume subtracts from the candidates what the bases already hold at
+the level.
 
 what the cli keeps is the run, not the level: the `--recreate` wipe before the loop, and after the
 last level the index and the count on the ledger — the index is created once at the end because
@@ -171,6 +178,8 @@ elements without a `name`, because a nameless area cannot produce useful data.
 | 10 | ways tagged `place=suburb` | in some regions suburbs are the de-facto neighbourhood unit when `place=neighbourhood` is not mapped | | |
 | 12 | every way | the simplest selection | ways tagged `place=neighbourhood` or `place=suburb` | already captured at level 10 |
 | 12 | | | ways tagged `leisure=park`, `building` or `waterway` | noise in street-level data |
+| 12 | | | ways tagged `boundary` | a border drawn on the map, named in the languages of both sides, never a street |
+| 12 | | | ways tagged `location=underwater` | a submarine cable or pipeline runs under the sea from one country to another, never a street |
 
 the filter vocabulary is `osm_way::way_filter`: `rules` selects with it, and only the way's
 repository knows what each variant means in sql. this table is the reference for those defaults:

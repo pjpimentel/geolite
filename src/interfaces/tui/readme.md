@@ -9,9 +9,15 @@ name. entering a folder replaces the listing with its own, and going up brings t
 back, the folder just left selected. the deepest level holds nothing to list, so it is never
 entered: it is opened.
 
+## the root
+
+a data path of one base is listed from its roots; one of several bases is listed from a folder per
+base, named after the country in upper case (`BR`, `AR`), each listing the roots of its base, so a
+path starts with the base (`AR/Brasil/São Paulo`). the listing shows `base` where the level goes.
+
 ## the ladder
 
-the levels the database holds make a ladder, `country / state / city / neighborhood / street`
+the levels a base holds make a ladder, `country / state / city / neighborhood / street`
 in a brazilian base. under a folder the ladder expects the next level: the places deeper than
 that lack a level, so a state lists its cities, and its neighbourhoods and streets outside any
 city go first into a folder of their own, `no city`; inside it the rule applies again, and the

@@ -57,6 +57,7 @@ pub(crate) struct ApiError {
     ("bounding_wkt" = Option<String>, Query, description = "WKT POLYGON or MULTIPOLYGON; keeps only matches inside it"),
     ("last_admin_levels" = Option<String>, Query, description = "comma-separated admin levels (e.g. `8,10`); keeps matches whose last admin level is one of them (OR); a house number is not a level, a numbered street ends at `12`"),
     ("include_wkt" = Option<bool>, Query, description = "include admin-level `wkt` geometry in the response (default `true`; set `false` to omit)"),
+    ("country" = Option<String>, Query, description = "comma-separated iso 3166-1 alpha-2 codes (e.g. `br,ar`); asks only the bases of those countries, a code without a base is a 400; absent, every base of the data path answers"),
     ("If-None-Match" = Option<String>, Header, description = "the `etag` of an answer already held (a list, a weak `W/` tag and `*` count); when it names this answer the response is a 304 with no body"),
   ),
   responses(

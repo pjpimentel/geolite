@@ -48,7 +48,6 @@ pub(crate) fn drop_table(conn: &Connection) {
 pub struct relation_coord_row {
   pub relation_id: u64,
   pub names: Vec<Option<String>>,
-  pub country_iso_code: Option<String>,
   pub post_code: Option<String>,
   pub way_order: u32,
   pub way_id: u64,
@@ -68,30 +67,6 @@ pub fn all_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
     .collect()
 }
 
-pub fn remaining_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
-  let sql = format!(
-    "
-    WITH candidates AS ({SQL_CANDIDATES_BY_ADMIN_LEVEL})
-    SELECT candidates.id
-    FROM candidates
-    LEFT JOIN main.admin_levels ON main.admin_levels.relation_id = candidates.id
-      AND main.admin_levels.admin_level = ?2
-    WHERE main.admin_levels.relation_id IS NULL
-    "
-  );
-  let level_tag = level.value().to_string();
-  let mut stmt = conn
-    .prepare(&sql)
-    .expect("failed to prepare remaining relation ids");
-  stmt
-    .query_map(rusqlite::params![level_tag, level.value()], |row| {
-      row.get::<_, u64>(0)
-    })
-    .expect("failed to query remaining relation ids")
-    .map(|r| r.expect("failed to read relation id"))
-    .collect()
-}
-
 pub fn relation_coords_chunk(
   conn: &Connection,
   ids: &[u64],
@@ -106,7 +81,6 @@ pub fn relation_coords_chunk(
   let name_columns = (0..name_tags.len())
     .map(|at| format!("way_members.name_{at},\n"))
     .collect::<String>();
-  let country_iso_select = select::normalized_coalesce(PAYLOAD, key::COUNTRY_ISO);
   // named after the osm tag: codeql reads a `post_code` local reaching the query as personal data
   // stored in clear (rust/cleartext-storage-database), and this is a column expression
   let postal_code_select = select::normalized_coalesce(PAYLOAD, key::POST_CODE);
@@ -118,7 +92,6 @@ pub fn relation_coords_chunk(
         CAST(mem.key AS INTEGER) AS way_order,
         CAST(JSON_EXTRACT(mem.value, '$.id') AS INTEGER) AS way_id,
         {name_selects}
-        {country_iso_select} AS country_iso_code,
         {postal_code_select} AS post_code
       FROM osm_data.osm_relations,
         JSON_EACH(JSON_EXTRACT(osm_data.osm_relations.payload, '$.members')) AS mem
@@ -128,7 +101,6 @@ pub fn relation_coords_chunk(
     SELECT
       way_members.relation_id,
       {name_columns}
-      way_members.country_iso_code,
       way_members.post_code,
       way_members.way_order,
       way_members.way_id,
@@ -148,12 +120,11 @@ pub fn relation_coords_chunk(
       names: (1..after_names)
         .map(|at| row.get::<_, Option<String>>(at))
         .collect::<rusqlite::Result<Vec<_>>>()?,
-      country_iso_code: row.get(after_names)?,
-      post_code: row.get(after_names + 1)?,
-      way_order: row.get(after_names + 2)?,
-      way_id: row.get(after_names + 3)?,
-      lon: row.get(after_names + 4)?,
-      lat: row.get(after_names + 5)?,
+      post_code: row.get(after_names)?,
+      way_order: row.get(after_names + 1)?,
+      way_id: row.get(after_names + 2)?,
+      lon: row.get(after_names + 3)?,
+      lat: row.get(after_names + 4)?,
     })
   })
 }

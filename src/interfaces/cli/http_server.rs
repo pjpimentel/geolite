@@ -1,9 +1,11 @@
+use crate::database::store::base_files;
+
 pub fn command_handler_http_server(
-  sqlite_path: &str,
-  index_path: &str,
+  data_path: &str,
+  single: Option<&base_files>,
   server: crate::interfaces::http::bound_server,
   threads: u8,
 ) {
-  crate::interfaces::cli::require_sqlite(sqlite_path);
-  crate::interfaces::http::serve(server, sqlite_path, index_path, threads);
+  let bases = crate::interfaces::cli::served_bases(data_path, single);
+  crate::interfaces::http::serve(server, bases, threads);
 }

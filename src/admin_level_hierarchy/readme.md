@@ -81,15 +81,17 @@ qualified is never measured at all, because the reduction would drop it: that is
 ring of a country out of the pass. a ring longer than five hundred edges is indexed by latitude
 band when it is loaded, so a point test walks a few dozen edges instead of the whole boundary of a
 state; the ring index and the point test live in `admin_level::point_in_polygon`, shared with the
-country index the extraction asks which preset's boundary holds an element.
+country index the extraction asks which country's boundary holds an element.
 
 ## the isolated areas — `isolated`
 
 an extract brings rows no address ever names: the neighbouring country whose boundary came with the
 file and holds nothing, and the street the resolver found inside no area. `isolated` deletes both
 after the resolver and before the street merge, so the fold and the two indexes work over the rows
-that stay: it is `geolite exec optimize-delete-isolated-admin-levels`, which `build` and
-`geolite merge` run between `index-admin-levels-hierarchy` and `optimize-merge-admin-levels`.
+that stay: it is `geolite exec optimize-delete-isolated-admin-levels`, which `build` runs between
+`index-admin-levels-hierarchy` and `optimize-merge-admin-levels`. a base it leaves without a row,
+the one a way reaching another country opened, it removes with its index, so no stage after it
+meets an empty base.
 
 the rule names two levels and reads the edges as they are. a **country without children** is a row
 of level 2 that is the `parent_id` of no edge; a **street without parents** is a row of level 12
@@ -110,7 +112,7 @@ a street mapped in several ways answers several times under one label, and its n
 whichever way they were linked to. `street_merge` folds the ways of one street into one row after
 the resolver has said which areas each way is in and before the search index is built, because the
 rule needs the areas and the index needs the rows: it is `geolite exec optimize-merge-admin-levels`,
-which `build` and `geolite merge` run between `optimize-delete-isolated-admin-levels` and
+which `build` runs between `optimize-delete-isolated-admin-levels` and
 `index-addresses`. no index stage folds on its own.
 
 two ways of the same name are one street when they **share an area**, their post codes agree (a

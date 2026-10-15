@@ -3,14 +3,13 @@ use crate::osm_pbf_file::{listing, osm_pbf_file};
 
 pub fn command_handler_osm_pbf_file_ls(
   data_path: &str,
-  sqlite_path: &str,
   from: &osm_pbf_file_ls_source,
   ls_endpoint: Option<&str>,
   recreate_cache: &bool,
 ) {
   let found = match from {
     osm_pbf_file_ls_source::geofabrik => {
-      let conn = crate::database::open_write(sqlite_path);
+      let conn = crate::database::store::open_catalog(data_path);
       osm_pbf_file::open(Some(&conn), data_path).list((*from).into(), ls_endpoint, *recreate_cache)
     }
     osm_pbf_file_ls_source::local => {

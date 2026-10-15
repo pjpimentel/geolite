@@ -31,10 +31,6 @@ const SQL_CREATE_INDEXES: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS admin_levels;";
 
-const SQL_DROP_INDEXES: &str = "
-  DROP INDEX IF EXISTS admin_levels_search_by_level;
-";
-
 pub struct admin_levels;
 
 impl table for admin_levels {
@@ -65,12 +61,6 @@ pub(crate) fn drop_table(conn: &Connection) {
   conn
     .execute_batch(SQL_DROP)
     .expect("failed to drop admin_levels");
-}
-
-pub fn drop_indexes(conn: &Connection) {
-  conn
-    .execute_batch(SQL_DROP_INDEXES)
-    .expect("failed to drop admin_levels indexes");
 }
 
 pub struct admin_level_geom_row {
@@ -358,6 +348,40 @@ pub fn load_all_names(conn: &Connection) -> Vec<name_row> {
     .collect()
 }
 
+pub fn relation_ids_at_level(conn: &Connection, level: level) -> Vec<u64> {
+  const SQL_RELATION_IDS_AT_LEVEL: &str = "
+    SELECT relation_id
+    FROM admin_levels
+    WHERE admin_level = ?1
+      AND relation_id IS NOT NULL
+  ";
+
+  conn
+    .prepare(SQL_RELATION_IDS_AT_LEVEL)
+    .expect("failed to prepare the relation ids of a level")
+    .query_map([level.value()], |row| row.get::<_, u64>(0))
+    .expect("failed to query the relation ids of a level")
+    .map(|r| r.expect("failed to read a relation id"))
+    .collect()
+}
+
+pub fn way_ids_at_level(conn: &Connection, level: level) -> Vec<u64> {
+  const SQL_WAY_IDS_AT_LEVEL: &str = "
+    SELECT way_id
+    FROM admin_levels
+    WHERE admin_level = ?1
+      AND way_id IS NOT NULL
+  ";
+
+  conn
+    .prepare(SQL_WAY_IDS_AT_LEVEL)
+    .expect("failed to prepare the way ids of a level")
+    .query_map([level.value()], |row| row.get::<_, u64>(0))
+    .expect("failed to query the way ids of a level")
+    .map(|r| r.expect("failed to read a way id"))
+    .collect()
+}
+
 pub fn levels_present(conn: &Connection) -> Vec<level> {
   const SQL_LEVELS_PRESENT: &str = "
     SELECT DISTINCT admin_level
@@ -372,6 +396,17 @@ pub fn levels_present(conn: &Connection) -> Vec<level> {
     .expect("failed to query the levels present")
     .filter_map(|raw| level::new(raw.expect("failed to read a level")))
     .collect()
+}
+
+pub fn count(conn: &Connection) -> i64 {
+  const SQL_COUNT: &str = "
+    SELECT COUNT(*)
+    FROM admin_levels
+  ";
+
+  conn
+    .query_row(SQL_COUNT, [], |row| row.get::<_, i64>(0))
+    .expect("failed to count admin_levels")
 }
 
 pub fn count_with_geometry(conn: &Connection) -> i64 {

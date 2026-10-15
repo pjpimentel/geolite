@@ -261,7 +261,7 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
         "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
         "latitude": -23.9694,
         "longitude": -46.3175,
-        "score": 108.755,
+        "score": 108.577,
         "similarity": 1.0,
       },
     ]),

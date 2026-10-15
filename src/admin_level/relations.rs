@@ -3,15 +3,15 @@ use rusqlite::Connection;
 use std::sync::{Arc, Mutex, mpsc};
 
 use super::entity::admin_level;
-use super::extract::{CHUNK_SIZE, extract_opts, identity_of};
+use super::extract::{CHUNK_SIZE, extract_opts, identity_of, write_batch, written};
 use super::geometry::{approx_eq, assemble_rings};
 use super::id::admin_level_id;
 use super::scale::level;
+use crate::database::store::base_pool;
 use crate::progress_report;
 
 struct rel_meta {
   names: Vec<Option<String>>,
-  country_iso_code: Option<String>,
   post_code: Option<String>,
 }
 
@@ -26,15 +26,20 @@ pub(super) fn run_with_ids(
   ids: Vec<u64>,
   level: level,
   opts: &extract_opts,
+  pool: &mut base_pool,
   mut progress: impl FnMut(progress_report),
-) -> u64 {
+) -> written {
   let total = ids.len() as u64;
   progress(progress_report {
     total: Some(total),
     processed: 0,
   });
+  let mut written = written {
+    kept: 0,
+    dropped: 0,
+  };
   if ids.is_empty() {
-    return 0;
+    return written;
   }
 
   let (work_tx, work_rx) = mpsc::channel::<rel_work>();
@@ -50,13 +55,14 @@ pub(super) fn run_with_ids(
     drop(result_tx);
 
     let mut processed: u64 = 0;
-    let mut kept: u64 = 0;
 
     for chunk in ids.chunks(CHUNK_SIZE) {
       let dispatched = load_and_send(conn, chunk, opts.name_tags, &work_tx);
       let batch = collect_batch(&result_rx, dispatched);
 
-      kept += super::repository::batch_upsert(conn, &batch) as u64;
+      let wrote = write_batch(pool, batch);
+      written.kept += wrote.kept;
+      written.dropped += wrote.dropped;
       processed += dispatched as u64;
       progress(progress_report {
         total: Some(total),
@@ -65,8 +71,8 @@ pub(super) fn run_with_ids(
     }
 
     drop(work_tx);
-    kept
-  })
+  });
+  written
 }
 
 fn worker(
@@ -119,7 +125,6 @@ fn load_and_send(
       relation_order.push(row.relation_id);
       e.insert(rel_meta {
         names: row.names.clone(),
-        country_iso_code: row.country_iso_code.clone(),
         post_code: row.post_code.clone(),
       });
       way_builders.insert(row.relation_id, std::collections::BTreeMap::new());
@@ -182,12 +187,12 @@ fn process_one_relation(
     Geometry::MultiLineString(MultiLineString(ways.to_vec()))
   };
 
-  let identity = identity_of(opts, level, meta.country_iso_code.as_deref(), &geom, &meta.names)?;
+  let identity = identity_of(opts, level, &geom, &meta.names)?;
   Some(admin_level {
     id: admin_level_id::from_relation(relation_id),
     level,
     name: identity.name,
-    country_iso_code: identity.country_iso_code,
+    country_iso_code: Some(identity.iso.to_string()),
     post_code: meta.post_code.clone(),
     wkb: geom.into(),
   })

@@ -22,28 +22,22 @@ pub(crate) struct database_status {
   pub(crate) coordinates_to_address: bool,
 }
 
-pub(crate) fn build(
-  file: &str,
-  conn: &rusqlite::Connection,
-  index: Option<&tantivy_index>,
+// one entry per base; is_ok is every service of every base available
+pub(crate) fn build<'a>(
+  bases: impl Iterator<Item = (String, &'a rusqlite::Connection, Option<&'a tantivy_index>)>,
 ) -> status_output {
-  // text_to_address needs the tantivy index loaded; coordinates_to_address needs the rtree path.
-  assemble(file, index.is_some(), probe_coordinates(conn))
-}
-
-fn assemble(file: &str, text_to_address: bool, coordinates_to_address: bool) -> status_output {
-  let database = database_status {
-    file: file.to_string(),
-    text_to_address,
-    coordinates_to_address,
-  };
-  // is_ok = every service of every database available; with one database this is just its two flags
-  // (it generalizes to an AND over all entries once the attach multi-database feature lands).
-  let is_ok = database.text_to_address && database.coordinates_to_address;
-  status_output {
-    is_ok,
-    databases: vec![database],
-  }
+  let databases: Vec<database_status> = bases
+    .map(|(file, conn, index)| database_status {
+      file,
+      text_to_address: index.is_some(),
+      coordinates_to_address: probe_coordinates(conn),
+    })
+    .collect();
+  let is_ok = !databases.is_empty()
+    && databases
+      .iter()
+      .all(|database| database.text_to_address && database.coordinates_to_address);
+  status_output { is_ok, databases }
 }
 
 // structural probe: `prepare` compiles the table reference, so this is Ok iff admin_levels_rtree

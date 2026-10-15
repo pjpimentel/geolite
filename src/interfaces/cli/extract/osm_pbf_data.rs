@@ -1,4 +1,4 @@
-use crate::interfaces::cli::exec::stages::stage;
+use crate::interfaces::cli::exec::stages::{stage, stage_context};
 use crate::osm_pbf_file::data_opts;
 use crate::osm_tag::tag_policy;
 use crate::database::table;
@@ -52,7 +52,6 @@ fn fmt_bytes(n: usize) -> String {
 #[allow(clippy::too_many_arguments)]
 pub fn command_handler_extract_osm_pbf_data(
   data_path: &str,
-  sqlite_path: &str,
   threads: &u8,
   inputs: &[String],
   include_relations: bool,
@@ -65,18 +64,22 @@ pub fn command_handler_extract_osm_pbf_data(
   buffer_limit_in_mb: Option<u64>,
 ) {
   let buffer_bytes = resolve_buffer_bytes(buffer_limit_in_mb);
-  if recreate {
-    crate::database::destroy_data(sqlite_path, false, true, true, true);
-  }
-
-  let conn = crate::database::open_write(sqlite_path);
-  let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
+  let catalog = crate::database::store::open_catalog(data_path);
 
   for (i, input) in inputs.iter().enumerate() {
-    let Some(resolved) = super::resolve_input(&conn, data_path, i, input) else {
+    let Some(resolved) = super::resolve_input(&catalog, data_path, i, input) else {
       continue;
     };
-    stage::extract_osm_pbf_data.require(&conn, Some(&resolved));
+    if recreate {
+      crate::database::store::destroy_source(data_path, &resolved.stem, false);
+    }
+    let conn = crate::database::store::open_source(data_path, &resolved.stem);
+    let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
+    stage::extract_osm_pbf_data.require(&stage_context {
+      catalog: Some(&conn),
+      file: Some(&resolved),
+      bases: vec![],
+    });
     let osm_pbf_file_path = &resolved.path;
     let fname = &resolved.name;
     println!("\x1b[1;32mfile\x1b[0m {osm_pbf_file_path}");
@@ -123,7 +126,7 @@ pub fn command_handler_extract_osm_pbf_data(
 
     let decoder_bar_cb = decoder_bar.clone();
     let writer_bar_cb = writer_bar.clone();
-    let write_conn = crate::database::open_write(sqlite_path);
+    let write_conn = crate::database::store::open_source(data_path, &resolved.stem);
     let counts = file
       .extract_osm_data(
         osm_pbf_file_path,
@@ -182,8 +185,11 @@ pub fn command_handler_extract_osm_pbf_data(
       fmt_count(counts.ways),
       fmt_count(counts.relations),
     );
+    index_elements(&conn);
   }
+}
 
+fn index_elements(conn: &rusqlite::Connection) {
   let bar = ProgressBar::new_spinner();
   bar.set_draw_target(crate::interfaces::cli::progress_draw_target());
   bar.set_style(ProgressStyle::with_template("{prefix:.bold.green} {msg} {spinner}").unwrap());
@@ -192,7 +198,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_nodes");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::osm_node::osm_nodes::create_indexes(&conn);
+  crate::osm_node::osm_nodes::create_indexes(conn);
   bar.disable_steady_tick();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_nodes in {:.1}s",
@@ -202,7 +208,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_ways");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::osm_way::osm_ways::create_indexes(&conn);
+  crate::osm_way::osm_ways::create_indexes(conn);
   bar.disable_steady_tick();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_ways in {:.1}s",
@@ -212,7 +218,7 @@ pub fn command_handler_extract_osm_pbf_data(
   bar.set_message("osm_relations");
   bar.enable_steady_tick(std::time::Duration::from_millis(100));
   let start = Instant::now();
-  crate::osm_relation::osm_relations::create_indexes(&conn);
+  crate::osm_relation::osm_relations::create_indexes(conn);
   bar.finish_and_clear();
   println!(
     "\x1b[1;32mindexed\x1b[0m osm_relations in {:.1}s",

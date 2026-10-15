@@ -67,7 +67,7 @@ pub fn build(tag: &str, pbf_src: &Path) -> Result<built, String> {
   let data_path = root.join("geolite-store");
   let pbf = root.join("pbf").join(&name);
 
-  let _ = std::fs::remove_dir_all(&root);
+  remove_sealed_dir(&root);
   std::fs::create_dir_all(&data_path).map_err(|e| format!("failed to create data dir: {e}"))?;
   std::fs::create_dir_all(pbf.parent().unwrap())
     .map_err(|e| format!("failed to create pbf dir: {e}"))?;
@@ -84,8 +84,8 @@ pub fn build(tag: &str, pbf_src: &Path) -> Result<built, String> {
     .map_err(|e| format!("failed to spawn {BIN}: {e}"))?;
 
   Ok(built {
-    sqlite_path: data_path.join("database.sqlite3"),
-    index_path: data_path.join("database.tantivy"),
+    sqlite_path: data_path.join("br.sqlite3"),
+    index_path: data_path.join("br.tantivy"),
     stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
     stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
     status: out.status.code().unwrap_or(-1),
@@ -161,8 +161,8 @@ fn build_world(scenario: &'static scenario) -> Result<world, String> {
     return Ok(world {
       scenario,
       pbf: root.join("pbf").join(scenario.pbf),
-      sqlite_path: data_path.join("database.sqlite3"),
-      index_path: data_path.join("database.tantivy"),
+      sqlite_path: data_path.join("br.sqlite3"),
+      index_path: data_path.join("br.tantivy"),
       build_stdout: read_or_empty(&root.join("build.stdout")),
       build_stderr: read_or_empty(&root.join("build.stderr")),
       build_status: read_or_empty(&root.join("build.status"))
@@ -218,7 +218,7 @@ impl world {
 
   pub fn scratch(&self, name: &str) -> PathBuf {
     let dir = self.root.join("scratch").join(name);
-    let _ = std::fs::remove_dir_all(&dir);
+    remove_sealed_dir(&dir);
     std::fs::create_dir_all(&dir)
       .unwrap_or_else(|e| panic!("failed to create {}: {e}", dir.display()));
     dir
@@ -257,8 +257,9 @@ impl world {
       .unwrap_or_else(|e| panic!("query {args:?} printed invalid json: {e}\n{}", out.stdout))
   }
 
+  // the world read as one database: its base with the catalogue attached
   pub fn open_sqlite(&self) -> rusqlite::Connection {
-    open_sqlite_at(&self.sqlite_path)
+    open_scratch(&self.data_path)
   }
 }
 
@@ -418,28 +419,26 @@ impl server {
 
 impl world {
   pub fn start_server(&self) -> server {
-    self.spawn_server(&self.index_path.to_string_lossy(), "healthy")
+    self.spawn_server_at(&self.data_path, None, "healthy")
   }
 
+  // the one base of the world, named, with an index path that holds nothing
   pub fn start_degraded_server(&self) -> server {
     let missing = self.root.join("absent.tantivy");
-    self.spawn_server(&missing.to_string_lossy(), "degraded")
-  }
-
-  // a server over another base, a copy of the world relabelled to another country for instance
-  pub fn start_server_at(&self, data_path: &Path) -> server {
     self.spawn_server_at(
-      data_path,
-      &data_path.join("database.tantivy").to_string_lossy(),
-      "copy",
+      &self.data_path,
+      Some((&self.sqlite_path, &missing)),
+      "degraded",
     )
   }
 
-  fn spawn_server(&self, index_path: &str, tag: &str) -> server {
-    self.spawn_server_at(&self.data_path, index_path, tag)
+  // a server over another data path, a copy of the world relabelled to another country or a
+  // second base beside the first for instance
+  pub fn start_server_at(&self, data_path: &Path) -> server {
+    self.spawn_server_at(data_path, None, "copy")
   }
 
-  fn spawn_server_at(&self, data_path: &Path, index_path: &str, tag: &str) -> server {
+  fn spawn_server_at(&self, data_path: &Path, single: Option<(&Path, &Path)>, tag: &str) -> server {
     // the os picks the port (`--port 0`) and the child names it on stdout: nothing to probe
     let seq = SPAWN_SEQ.fetch_add(1, Ordering::Relaxed);
     let stdout_path = self.root.join(format!("server-{tag}-{seq}.stdout"));
@@ -447,11 +446,16 @@ impl world {
     let stdout_file = std::fs::File::create(&stdout_path).expect("failed to create the stdout log");
     let stderr_file = std::fs::File::create(&stderr_path).expect("failed to create the stderr log");
 
-    let child = Command::new(BIN)
-      .arg("--data-path")
-      .arg(data_path)
-      .arg("--index-path")
-      .arg(index_path)
+    let mut command = Command::new(BIN);
+    command.arg("--data-path").arg(data_path);
+    if let Some((sqlite_path, index_path)) = single {
+      command
+        .arg("--sqlite-path")
+        .arg(sqlite_path)
+        .arg("--index-path")
+        .arg(index_path);
+    }
+    let child = command
       .arg("http-server")
       .arg("--host")
       .arg("127.0.0.1")
@@ -566,27 +570,70 @@ pub fn query_at(w: &world, data_path: &Path, text: &str) -> serde_json::Value {
 
 // the preset of a row is its country's: a base answers under another country, or under the
 // default preset, once every row is relabelled
-pub fn relabel_country(data_path: &Path, iso: Option<&str>) {
+pub fn relabel_base(sqlite_path: &Path, iso: Option<&str>) {
   const SQL_RELABEL_COUNTRY: &str = "
     UPDATE admin_levels
     SET country_iso_code = ?1
   ";
 
-  let conn = rusqlite::Connection::open(data_path.join("database.sqlite3"))
-    .unwrap_or_else(|e| panic!("failed to open {}: {e}", data_path.display()));
+  let conn = rusqlite::Connection::open(sqlite_path)
+    .unwrap_or_else(|e| panic!("failed to open {}: {e}", sqlite_path.display()));
   conn
     .execute(SQL_RELABEL_COUNTRY, [iso])
     .expect("failed to relabel the country of every row");
+}
+
+pub fn relabel_country(data_path: &Path, iso: Option<&str>) {
+  relabel_base(&data_path.join("br.sqlite3"), iso);
+}
+
+// a scratch read as one database: its brazilian base, or the catalogue when no base was written
+// yet, with the catalogue attached and its ledger reachable as `osm_pbf_files`
+pub fn open_scratch(dir: &Path) -> rusqlite::Connection {
+  const SQL_LEDGER_VIEW: &str = "
+    CREATE TEMP VIEW osm_pbf_files AS
+    SELECT *
+    FROM catalog.osm_pbf_files
+  ";
+
+  let base = dir.join("br.sqlite3");
+  let catalog = dir.join("catalog.sqlite3");
+  let main = if base.exists() { &base } else { &catalog };
+  let conn = rusqlite::Connection::open(main)
+    .unwrap_or_else(|e| panic!("failed to open {}: {e}", main.display()));
+  if base.exists() && catalog.exists() {
+    conn
+      .execute(
+        "ATTACH DATABASE ?1 AS catalog",
+        [catalog.to_string_lossy().as_ref()],
+      )
+      .expect("failed to attach the catalogue");
+    conn
+      .execute_batch(SQL_LEDGER_VIEW)
+      .expect("failed to view the ledger");
+  }
+  conn
 }
 
 impl world {
   // a copy of the world's base and index, to be relabelled or reindexed without touching the world
   pub fn world_copy(&self, name: &str) -> PathBuf {
     let dir = self.scratch(name);
-    std::fs::copy(&self.sqlite_path, dir.join("database.sqlite3"))
-      .unwrap_or_else(|e| panic!("failed to copy the base: {e}"));
-    copy_dir(&self.index_path, &dir.join("database.tantivy"));
+    self.copy_base_into(&dir, "br");
     dir
+  }
+
+  // the world's base copied beside a scratch's bases under another country, every row relabelled:
+  // the way a data path holds two countries
+  pub fn copy_base_into(&self, dir: &Path, iso: &str) {
+    let sqlite = dir.join(format!("{iso}.sqlite3"));
+    std::fs::copy(&self.sqlite_path, &sqlite)
+      .unwrap_or_else(|e| panic!("failed to copy the base: {e}"));
+    make_writable(&sqlite);
+    copy_dir(&self.index_path, &dir.join(format!("{iso}.tantivy")));
+    if iso != "br" {
+      relabel_base(&sqlite, Some(&iso.to_ascii_uppercase()));
+    }
   }
 }
 
@@ -602,8 +649,39 @@ fn copy_dir(from: &Path, to: &Path) {
     } else {
       std::fs::copy(entry.path(), &target)
         .unwrap_or_else(|e| panic!("failed to copy {}: {e}", entry.path().display()));
+      make_writable(&target);
     }
   }
+}
+
+// a build seals what it leaves behind, and a sealed directory cannot be emptied: the write bits
+// come back before a workspace is removed
+pub fn remove_sealed_dir(path: &Path) {
+  use std::os::unix::fs::PermissionsExt;
+
+  fn lift(path: &Path) {
+    let Ok(metadata) = std::fs::metadata(path) else {
+      return;
+    };
+    let mode = if metadata.is_dir() { 0o755 } else { 0o644 };
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode));
+    if metadata.is_dir() {
+      for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
+        lift(&entry.path());
+      }
+    }
+  }
+
+  lift(path);
+  let _ = std::fs::remove_dir_all(path);
+}
+
+// a copy of a file the build sealed is the test's to change
+pub fn make_writable(path: &Path) {
+  use std::os::unix::fs::PermissionsExt;
+
+  std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o644))
+    .unwrap_or_else(|e| panic!("failed to make {} writable: {e}", path.display()));
 }
 
 // the wkb column as it is stored: spatialite's blob layout

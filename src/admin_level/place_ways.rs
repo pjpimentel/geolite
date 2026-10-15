@@ -2,11 +2,12 @@ use geo::{Coord, Geometry, LineString, MultiPolygon, Polygon, Winding};
 use rusqlite::Connection;
 
 use super::entity::admin_level;
-use super::extract::{CHUNK_SIZE, extract_opts, identity_of};
+use super::extract::{CHUNK_SIZE, extract_opts, identity_of, known_way_ids, write_batch, written};
 use super::geometry::approx_eq;
 use super::id::admin_level_id;
 use super::rules::rules_of;
 use super::scale::level;
+use crate::database::store::base_pool;
 use crate::progress_report;
 
 struct way_meta {
@@ -24,17 +25,15 @@ struct way_work {
 pub(super) fn run(
   conn: &Connection,
   opts: &extract_opts,
+  pool: &mut base_pool,
   mut progress: impl FnMut(progress_report),
-) -> u64 {
+) -> written {
   let (include, _) = rules_of(level::neighborhood);
+  let known = known_way_ids(pool, level::neighborhood);
   let mut candidate_ids: Vec<u64> = Vec::new();
   for filter in include {
-    let ids = crate::osm_way::repository::remaining_ids_by_tags(
-      conn,
-      level::neighborhood,
-      std::slice::from_ref(filter),
-    );
-    candidate_ids.extend(ids);
+    let ids = crate::osm_way::repository::candidate_ids_by_tags(conn, std::slice::from_ref(filter));
+    candidate_ids.extend(ids.into_iter().filter(|id| !known.contains(id)));
   }
   candidate_ids.sort_unstable();
   candidate_ids.dedup();
@@ -44,8 +43,12 @@ pub(super) fn run(
     total: Some(total),
     processed: 0,
   });
+  let mut written = written {
+    kept: 0,
+    dropped: 0,
+  };
   if candidate_ids.is_empty() {
-    return 0;
+    return written;
   }
 
   // the per-item geometry work (ring winding) is far
@@ -53,7 +56,6 @@ pub(super) fn run(
   // so processing sequentially is as fast as a worker pool without the channel
   // overhead
   let mut processed: u64 = 0;
-  let mut kept: u64 = 0;
   for chunk in candidate_ids.chunks(CHUNK_SIZE) {
     let works = load_chunk(conn, chunk, level::neighborhood, opts.name_tags);
     processed += works.len() as u64;
@@ -63,13 +65,15 @@ pub(super) fn run(
         batch.push(row);
       }
     }
-    kept += super::repository::batch_upsert(conn, &batch) as u64;
+    let wrote = write_batch(pool, batch);
+    written.kept += wrote.kept;
+    written.dropped += wrote.dropped;
     progress(progress_report {
       total: Some(total),
       processed,
     });
   }
-  kept
+  written
 }
 
 fn load_chunk(
@@ -130,12 +134,12 @@ fn process_one_way(w: way_work, opts: &extract_opts) -> Option<admin_level> {
       Geometry::LineString(ls)
     };
 
-  let identity = identity_of(opts, w.level, None, &geom, &w.meta.names)?;
+  let identity = identity_of(opts, w.level, &geom, &w.meta.names)?;
   Some(admin_level {
     id: admin_level_id::from_way(w.way_id),
     level: w.level,
     name: identity.name,
-    country_iso_code: identity.country_iso_code,
+    country_iso_code: Some(identity.iso.to_string()),
     post_code: w.meta.post_code,
     wkb: geom.into(),
   })

@@ -25,10 +25,6 @@ const SQL_CREATE_INDEXES: &str = "
 
 const SQL_DROP: &str = "DROP TABLE IF EXISTS house_numbers;";
 
-const SQL_DROP_INDEXES: &str = "
-  DROP INDEX IF EXISTS house_numbers_search_by_admin_level_id;
-";
-
 pub struct house_numbers;
 
 impl table for house_numbers {
@@ -40,12 +36,6 @@ pub(crate) fn drop_table(conn: &Connection) {
   conn
     .execute_batch(SQL_DROP)
     .expect("failed to drop house_numbers");
-}
-
-pub fn drop_indexes(conn: &Connection) {
-  conn
-    .execute_batch(SQL_DROP_INDEXES)
-    .expect("failed to drop house_numbers indexes");
 }
 
 pub struct candidate_row {

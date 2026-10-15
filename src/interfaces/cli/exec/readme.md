@@ -2,11 +2,17 @@
 > `geolite exec <group>-<stage>`: one stage of the pipeline per call, refused before the stages it requires
 
 `stage` names the twelve stages, in the order `build` runs them. it is the value a handler asserts
-with: `stage::x.require(&conn, file)` walks `x.requires()` and, for the first one that did not run,
-exits 1 with `x requires y — run \`geolite exec y\` first`. a per-file stage asserts right after
-resolving each input, so the ledger still records the file; a global stage asserts right after
-the connection opens. `build` and `geolite merge` call the same handlers, so they carry the same
-asserts and always pass them.
+with: `stage::x.require(&stage_context { catalog, file, bases })` walks `x.requires()` and, for
+the first one that did not run, exits 1 with `x requires y — run \`geolite exec y\` first`. the
+context is what the stage works on: the catalogue with the osm_data of its source attached, when it
+has a source, and the bases it reads or writes. a stage with a source asserts right after resolving
+it, so the ledger still records the file; a stage over bases asserts after each base opens. `build`
+calls the same handlers, so it carries the same asserts and always passes them.
+
+the three pbf stages and the two extraction stages take a source (`extract-osm-admin-levels
+brazil`); the index and optimize stages take the countries whose bases they run over, every base of
+the data path when none is named; `optimize-delete-intermediary-data` takes the source whose pbf
+and osm_data it deletes.
 
 `exec_commands` is the clap surface: one variant per stage, named by `stage::name()`, carrying the
 arguments of the stage. two enums because clap needs the arguments on the variant and the assert
@@ -27,7 +33,7 @@ needs a value without them.
 | `optimize-delete-intermediary-data` | osm-house-numbers, admin-levels-hierarchy | — |
 | `optimize-sqlite-file` | — | — |
 
-the evidence is read from the rows a stage leaves, never from a ledger of runs: `geolite merge`
-does not copy `osm_pbf_files`, so a merged base answers the same asserts through its rows. the
-house numbers are the one stage whose legitimate outcome may be no row, so the ledger count stamped
-by the stage is the fallback.
+the evidence is read from the rows a stage leaves, never from a ledger of runs. the house numbers
+are the one stage whose legitimate outcome may be no row, so the ledger count stamped by the stage
+is the fallback. the ledger counts what a source brought: the two extraction stages stamp it, and
+the stages that delete or fold afterwards leave it where it was.

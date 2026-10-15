@@ -2,14 +2,14 @@ use std::path::{Path, PathBuf};
 
 use crate::admin_level::admin_levels_at;
 use crate::admin_level_hierarchy::{area, relation, resolved_at, street};
-use crate::common::harness::{assert_in_order, open_sqlite_at, output, plain, query_at, world};
+use crate::common::harness::{assert_in_order, open_scratch, output, plain, query_at, world};
 use crate::common::query::matches;
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
 use crate::general::world;
 use crate::street_merge::{
   TEXT_QUERY, UPPER_WAY, assert_a_run_with_nothing_to_do_keeps_the_indexes, assert_refused,
-  assert_the_indexes_are_cleared_and_recreated, assert_the_ledger_follows_the_tables,
-  assert_the_tables_are_consistent, parents_of, resolved, snapshot, way, writable,
+  assert_the_indexes_are_cleared_and_recreated, assert_the_tables_are_consistent, ledger_counts,
+  parents_of, resolved, snapshot, way, writable,
 };
 
 const STAGE: &str = "optimize-delete-isolated-admin-levels";
@@ -19,7 +19,7 @@ pub(crate) const ONE_OF_EACH_DELETED: &str =
   "deleted 1 countries without children and 1 streets without parents in";
 
 const CLEARING: &str = "clearing addresses and coordinates... done";
-const NEXT_RUN: &str = "next run `geolite exec index-addresses`";
+const NEXT_RUN: &str = "next run `geolite exec index-addresses br`";
 
 const COUNTRY: u64 = 1;
 const NEIGHBOUR: u64 = 2;
@@ -36,7 +36,7 @@ pub(crate) fn isolated_deleted_at(w: &world, dir: &Path) -> output {
 }
 
 fn ledger(dir: &Path) -> rusqlite::Connection {
-  open_sqlite_at(&dir.join("database.sqlite3"))
+  open_scratch(dir)
 }
 
 fn holds(conn: &rusqlite::Connection, id: i64) -> bool {
@@ -44,10 +44,6 @@ fn holds(conn: &rusqlite::Connection, id: i64) -> bool {
     conn,
     &format!("SELECT COUNT(*) FROM admin_levels WHERE id = {id}"),
   ) == 1
-}
-
-pub(crate) fn holds_what_was_isolated(conn: &rusqlite::Connection) -> bool {
-  holds(conn, relation(NEIGHBOUR)) || holds(conn, way(OUTSIDE_STREET))
 }
 
 // a country that holds a city and a street, beside a country that holds nothing and a street that
@@ -278,17 +274,19 @@ fn _00_07_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
   );
 }
 
-// 00.08. the ledger counts what the tables hold after the delete
+// 00.08. the ledger counts what the source brought: the delete shrinks the table and leaves the
+// count where the extraction stamped it
 #[test]
 #[ignore]
-fn _00_08_the_ledger_follows_the_table_after_the_delete() {
+fn _00_08_the_ledger_keeps_what_the_source_brought_through_the_delete() {
   let w = world();
   let s = parentless(w, "isolated_ledger");
+  let before = ledger_counts(&s.ledger());
 
   isolated_deleted_at(w, &s.dir);
 
   assert!(!holds(&s.ledger(), way(UPPER_WAY)));
-  assert_the_ledger_follows_the_tables(&s.ledger());
+  assert_eq!(ledger_counts(&s.ledger()), before);
 }
 
 // 00.09. the fixture is one country with every street inside it: the build deletes nothing
@@ -419,11 +417,11 @@ fn _01_00_it_refuses_a_database_without_a_hierarchy() {
   );
 }
 
-// 01.01. the rule has no floor: where every row is isolated the base ends empty, and the stage
-// after it asks for the hierarchy that went with the rows
+// 01.01. the rule has no floor: where every row is isolated the base goes with its rows, and the
+// stage after it finds no base to run over
 #[test]
 #[ignore]
-fn _01_01_a_base_where_every_row_is_isolated_ends_empty() {
+fn _01_01_a_base_where_every_row_is_isolated_goes_with_its_rows() {
   let w = world();
   let dir = resolved_at(
     w,
@@ -445,10 +443,15 @@ fn _01_01_a_base_where_every_row_is_isolated_ends_empty() {
     "{}",
     out.stdout
   );
-  assert_eq!(count(&ledger(&dir), "SELECT COUNT(*) FROM admin_levels"), 0);
-  let next = w.geolite_in(&dir, &["exec", MERGE_STAGE]);
-  assert_refused(
-    &next,
-    "optimize-merge-admin-levels requires index-admin-levels-hierarchy",
+  assert!(
+    plain(&out.stdout).contains("deleted br.sqlite3 — no area left in it"),
+    "{}",
+    out.stdout
   );
+  assert!(
+    !dir.join("br.sqlite3").exists(),
+    "the base went with its rows"
+  );
+  let next = w.geolite_in(&dir, &["exec", MERGE_STAGE]);
+  assert_refused(&next, "no base in");
 }
