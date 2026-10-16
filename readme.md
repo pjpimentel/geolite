@@ -119,8 +119,9 @@ $ geolite osm-pbf-file download brazil
 $ geolite exec extract-osm-pbf-blob-chunks brazil
 $ geolite exec extract-osm-pbf-header brazil
 $ geolite exec extract-osm-pbf-data brazil
-$ geolite exec extract-osm-admin-levels brazil
-$ geolite exec extract-osm-house-numbers brazil
+# the two extraction stages read everything the osm data holds, every pbf decoded so far
+$ geolite exec extract-osm-admin-levels
+$ geolite exec extract-osm-house-numbers
 ```
 
 ### index extracted data
@@ -138,14 +139,15 @@ $ geolite exec index-coordinates
 # which have to be built again after them
 $ geolite exec optimize-delete-isolated-admin-levels
 $ geolite exec optimize-merge-admin-levels
-$ geolite exec optimize-delete-intermediary-data brazil
+$ geolite exec optimize-delete-intermediary-data
 $ geolite exec optimize-sqlite-file
 ```
 
 `geolite exec` runs one stage per call and refuses a stage whose requirements did not run, naming
 the one to run first; `geolite exec --help` lists the stages in the order the pipeline runs. a stage
-that reads a source names it (`extract-osm-admin-levels brazil`); a stage that works on the bases
-runs over every base of the data path, or over the countries named (`index-addresses br ar`).
+that reads a pbf names it (`extract-osm-pbf-data brazil`); the two extraction stages read everything
+the osm data holds; a stage that works on the bases runs over every base of the data path, or over
+the countries named (`index-addresses br ar`).
 `geolite build` runs `optimize-delete-isolated-admin-levels`, which removes a base it leaves empty,
 and `optimize-merge-admin-levels` right after `index-admin-levels-hierarchy`, so the two other
 indexes are built once, over the rows that stay. no index stage deletes or folds on its own.
@@ -166,13 +168,16 @@ $ geolite http-server
 
 the data path holds one base per country, `br.sqlite3` and `br.tantivy`, beside `catalog.sqlite3`,
 the ledger of the sources. every row goes to the base of the country whose boundary holds it, under
-that country's preset: a country is built in one go, a continent too, one base per country. a
-finished build seals every base it wrote, read-only at the os level, and a base built once is
+that country's preset: a country is built in one go, a continent too, one base per country. the
+osm data of every source goes through one `osm_data.sqlite3`, so several extracts are downloaded
+and decoded before one extraction writes the bases (`build sudeste nordeste`), and one process at a
+time writes it. a finished build seals every base it wrote, read-only at the os level, and a base built once is
 final: a later source leaves it as it is and says so (`sealed br.sqlite3 — takes no row`), and a
 stage named on it is refused; to build a country again, remove its base and its index first.
 
 ```bash
 $ geolite build brazil         # br.sqlite3 and br.tantivy, sealed
+$ geolite build sudeste nordeste  # the same, from two extracts decoded before one extraction
 $ geolite build argentina      # ar.sqlite3 beside it, br.sqlite3 untouched
 $ geolite build south-america  # one base per country not built yet
 $ geolite http-server          # answers over every base of the data path

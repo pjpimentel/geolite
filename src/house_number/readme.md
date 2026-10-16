@@ -184,7 +184,7 @@ candidate scan of `osm_data.osm_nodes` (`load_all_candidates`, where `normalize`
 numbers of a set of streets (`numbers_by_street`, one `stored_number` per row — the osm node, the
 number and its point — in node id order, the order the first-match rules of the resolution see,
 whatever the insertion order, where `from_stored` runs) and the insert. the candidates come from
-the osm_data of the source and the streets from every base of the data path, through
+the shared osm_data and the streets from every base of the data path, through
 `admin_level::repository` — `streets_with_centroid` for the tiles, `geometry_by_ids` for the
 linker — so only the owner writes sql over `admin_levels`; each link lands in the base of its
 street. `osm_pbf_file::repository::count_house_numbers_of_file` reads the table the other way

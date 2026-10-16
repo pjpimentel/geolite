@@ -4,22 +4,20 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
 pub fn command_handler_extract_osm_pbf_blob_chunks(data_path: &str, inputs: &[String], recreate: bool) {
-  let catalog = crate::database::store::open_catalog(data_path);
+  let conn = crate::database::store::open_osm_data_write(data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved_input {
       path: osm_pbf_file_path,
       name: fname,
-      stem,
-      ..
-    }) = super::resolve_input(&catalog, data_path, i, input)
+      id,
+    }) = super::resolve_input(&conn, data_path, i, input)
     else {
       continue;
     };
     if recreate {
-      crate::database::store::destroy_source(data_path, &stem, true);
+      crate::database::store::destroy_source(&conn, id, true);
     }
-    let conn = crate::database::store::open_source(data_path, &stem);
     let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
     let bar = ProgressBar::new_spinner();

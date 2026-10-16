@@ -117,17 +117,12 @@ fn label_of(stage: stage) -> String {
 
 pub fn command_handler_extract_osm_admin_levels(
   data_path: &str,
-  source: &str,
   admin_levels: &[level],
   threads: &u8,
   recreate: bool,
   name_priority: Option<&[&str]>,
 ) -> Vec<&'static str> {
-  let catalog = store::open_catalog(data_path);
-  let Some(resolved) = super::resolve_input(&catalog, data_path, 0, source) else {
-    std::process::exit(1);
-  };
-  let conn = store::open_source(data_path, &resolved.stem);
+  let conn = store::open_osm_data(data_path);
   let mut pool = base_pool::new(data_path);
   for base in pool.on_disk() {
     if base.is_sealed() {
@@ -141,7 +136,7 @@ pub fn command_handler_extract_osm_admin_levels(
   }
   exec_stage::extract_osm_admin_levels.require(&stage_context {
     catalog: Some(&conn),
-    file: Some(&resolved),
+    file: None,
     bases: vec![],
   });
   let mut name_tags: Vec<&str> = crate::presets::name_tags();
@@ -179,8 +174,7 @@ pub fn command_handler_extract_osm_admin_levels(
   let touched: Vec<&'static str> = pool.touched().to_vec();
   let bases: Vec<String> = pool.on_disk().into_iter().map(|base| base.sqlite).collect();
   drop(pool);
-  crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path)
-    .stamp_admin_levels_count(resolved.id, &bases);
+  crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path).stamp_admin_levels_count(&bases);
   println!();
   println!("\x1b[1;32mbases\x1b[0m {}", bases_label(&touched));
   touched

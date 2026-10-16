@@ -18,7 +18,7 @@ pub enum stage {
   optimize_sqlite_file,
 }
 
-// what a stage asserts against: the catalogue with the osm_data of the source attached, when the
+// what a stage asserts against: the catalogue with the shared osm_data attached, the file when the
 // stage has a source, and the bases it reads or writes
 pub(in crate::interfaces::cli) struct stage_context<'a> {
   pub catalog: Option<&'a Connection>,

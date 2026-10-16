@@ -58,11 +58,10 @@ fn files_size(path: &str) -> u64 {
   file_size(path) + file_size(&format!("{path}-wal")) + file_size(&format!("{path}-shm"))
 }
 
-// what the data path weighs: the catalogue, the osm_data of the source at hand, and every base
-// with its index
-pub(super) fn print_sizes(label: &str, data_path: &str, stem: Option<&str>) {
+// what the data path weighs: the catalogue, the osm_data, and every base with its index
+pub(super) fn print_sizes(label: &str, data_path: &str) {
   let catalog = files_size(&store::catalog_path(data_path));
-  let osm_data = stem.map_or(0, |stem| files_size(&store::osm_data_path(data_path, stem)));
+  let osm_data = files_size(&store::osm_data_path(data_path));
   let (mut bases, mut indexes) = (0u64, 0u64);
   for base in store::bases(data_path) {
     bases += files_size(&base.sqlite);
@@ -78,19 +77,18 @@ pub(super) fn print_sizes(label: &str, data_path: &str, stem: Option<&str>) {
   );
 }
 
-pub(super) fn with_sizes(data_path: &str, stem: Option<&str>, stage: impl FnOnce()) {
-  print_sizes("before", data_path, stem);
+pub(super) fn with_sizes(data_path: &str, stage: impl FnOnce()) {
+  print_sizes("before", data_path);
   println!();
   stage();
   println!();
-  print_sizes("after ", data_path, stem);
+  print_sizes("after ", data_path);
 }
 
-pub fn command_handler_optimize(data_path: &str, source: &str, bases: &[base_files]) {
-  let stem = store::stem_of(source);
-  print_sizes("before", data_path, Some(&stem));
+pub fn command_handler_optimize(data_path: &str, bases: &[base_files]) {
+  print_sizes("before", data_path);
   println!();
-  if !delete_intermediary_data::command_handler_optimize_delete_intermediary_data(data_path, source) {
+  if !delete_intermediary_data::command_handler_optimize_delete_intermediary_data(data_path) {
     return;
   }
   for base in bases {
@@ -99,5 +97,5 @@ pub fn command_handler_optimize(data_path: &str, source: &str, bases: &[base_fil
     sqlite_file::command_handler_optimize_sqlite_file(&base.sqlite);
   }
   println!();
-  print_sizes("after ", data_path, Some(&stem));
+  print_sizes("after ", data_path);
 }

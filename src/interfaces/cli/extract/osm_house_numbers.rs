@@ -8,16 +8,8 @@ use crate::house_number::{house_number_link, house_numbers};
 use crate::interfaces::cli::exec::stages::{stage, stage_context};
 use crate::interfaces::cli::progress;
 
-pub fn command_handler_extract_osm_house_numbers(
-  data_path: &str,
-  source: &str,
-  recreate: bool,
-) -> Vec<String> {
-  let catalog = store::open_catalog(data_path);
-  let Some(resolved) = super::resolve_input(&catalog, data_path, 0, source) else {
-    std::process::exit(1);
-  };
-  let conn = store::open_source(data_path, &resolved.stem);
+pub fn command_handler_extract_osm_house_numbers(data_path: &str, recreate: bool) -> Vec<String> {
+  let conn = store::open_osm_data(data_path);
   let pool = store::base_pool::new(data_path);
   let on_disk = pool.writable_on_disk();
   if recreate {
@@ -32,7 +24,7 @@ pub fn command_handler_extract_osm_house_numbers(
   let bases: Vec<&Connection> = opened.iter().collect();
   stage::extract_osm_house_numbers.require(&stage_context {
     catalog: Some(&conn),
-    file: Some(&resolved),
+    file: None,
     bases: bases.clone(),
   });
 
@@ -52,7 +44,6 @@ pub fn command_handler_extract_osm_house_numbers(
 
   drop(opened);
   let paths: Vec<String> = on_disk.iter().map(|base| base.sqlite.clone()).collect();
-  crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path)
-    .stamp_house_numbers_count(resolved.id, &paths);
+  crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path).stamp_house_numbers_count(&paths);
   on_disk.into_iter().map(|base| base.iso).collect()
 }

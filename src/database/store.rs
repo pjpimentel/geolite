@@ -6,6 +6,7 @@ use rusqlite::Connection;
 use super::table;
 
 pub const CATALOG_FILE: &str = "catalog.sqlite3";
+pub const OSM_DATA_FILE: &str = "osm_data.sqlite3";
 
 pub fn catalog_path(data_path: &str) -> String {
   Path::new(data_path)
@@ -14,21 +15,9 @@ pub fn catalog_path(data_path: &str) -> String {
     .into_owned()
 }
 
-pub fn stem_of(pbf_path: &str) -> String {
-  let name = Path::new(pbf_path)
-    .file_name()
-    .and_then(|name| name.to_str())
-    .unwrap_or(pbf_path);
-  name
-    .strip_suffix(".osm.pbf")
-    .or_else(|| name.strip_suffix(".pbf"))
-    .unwrap_or(name)
-    .to_string()
-}
-
-pub fn osm_data_path(data_path: &str, stem: &str) -> String {
+pub fn osm_data_path(data_path: &str) -> String {
   Path::new(data_path)
-    .join(format!("{stem}.osm_data.sqlite3"))
+    .join(OSM_DATA_FILE)
     .to_string_lossy()
     .into_owned()
 }
@@ -113,9 +102,9 @@ pub fn open_catalog(data_path: &str) -> Connection {
   conn
 }
 
-pub fn open_source(data_path: &str, stem: &str) -> Connection {
+pub fn open_osm_data(data_path: &str) -> Connection {
   let conn = open_catalog(data_path);
-  let osm_data = osm_data_path(data_path, stem);
+  let osm_data = osm_data_path(data_path);
   conn
     .execute("ATTACH DATABASE ?1 AS osm_data", [&osm_data])
     .expect("failed to attach osm_data");
@@ -130,6 +119,31 @@ pub fn open_source(data_path: &str, stem: &str) -> Connection {
   crate::osm_node::osm_nodes::create_table(&conn);
   crate::osm_way::osm_ways::create_table(&conn);
   crate::osm_relation::osm_relations::create_table(&conn);
+  conn
+}
+
+// one process at a time writes the osm data of a data path: a second writer meets the lock of the
+// first on a probe connection and is told so, instead of a `database is locked` deep in a stage
+pub fn open_osm_data_write(data_path: &str) -> Connection {
+  let conn = open_osm_data(data_path);
+  let probe = Connection::open(osm_data_path(data_path)).expect("failed to open osm_data");
+  match probe.execute_batch("BEGIN IMMEDIATE") {
+    Ok(()) => probe
+      .execute_batch("ROLLBACK")
+      .expect("failed to release the osm_data probe"),
+    Err(rusqlite::Error::SqliteFailure(error, _))
+      if matches!(
+        error.code,
+        rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+      ) =>
+    {
+      eprintln!(
+        "\x1b[1;31merror\x1b[0m: {OSM_DATA_FILE} is being written by another geolite process — one process at a time writes the osm data of a data path"
+      );
+      std::process::exit(1);
+    }
+    Err(error) => panic!("failed to probe osm_data for a writer: {error}"),
+  }
   conn
 }
 
@@ -183,7 +197,7 @@ pub fn seal_bases(bases: &[base_files]) {
   println!("\x1b[1;32msealed\x1b[0m {} — read-only", sealed.join(", "));
 }
 
-fn file_name_of(path: &str) -> String {
+pub fn file_name_of(path: &str) -> String {
   Path::new(path)
     .file_name()
     .and_then(|name| name.to_str())
@@ -203,8 +217,8 @@ pub fn remove_base(base: &base_files) {
   }
 }
 
-pub fn remove_osm_data_files(data_path: &str, stem: &str) -> u64 {
-  let sibling = osm_data_path(data_path, stem);
+pub fn remove_osm_data_files(data_path: &str) -> u64 {
+  let sibling = osm_data_path(data_path);
   let mut bytes = 0u64;
   for suffix in ["", "-wal", "-shm"] {
     let p = format!("{sibling}{suffix}");
@@ -216,18 +230,20 @@ pub fn remove_osm_data_files(data_path: &str, stem: &str) -> u64 {
   bytes
 }
 
-pub fn destroy_source(data_path: &str, stem: &str, osm_pbf_blob_chunks: bool) {
+// the rows of one file leave the shared osm_data: the elements through the chunks they point at,
+// the chunks themselves when the chunk index goes too. no vacuum: the pages are reused by the
+// extraction that follows, and a vacuum would rewrite every other source
+pub fn destroy_source(conn: &Connection, file_id: u32, osm_pbf_blob_chunks: bool) {
+  let tx = conn
+    .unchecked_transaction()
+    .expect("failed to begin transaction");
+  crate::osm_node::repository::delete_by_file_id(&tx, file_id);
+  crate::osm_way::repository::delete_by_file_id(&tx, file_id);
+  crate::osm_relation::repository::delete_by_file_id(&tx, file_id);
   if osm_pbf_blob_chunks {
-    remove_osm_data_files(data_path, stem);
-    return;
+    crate::osm_pbf_file::blob_index::delete_by_file_id(&tx, file_id);
   }
-  let conn = open_source(data_path, stem);
-  crate::osm_node::repository::drop_table(&conn);
-  crate::osm_way::repository::drop_table(&conn);
-  crate::osm_relation::repository::drop_table(&conn);
-  conn
-    .execute_batch("VACUUM osm_data;")
-    .expect("failed to vacuum osm_data");
+  tx.commit().expect("failed to commit");
 }
 
 pub fn destroy_base(path: &str, admin_levels: bool, house_numbers: bool) {

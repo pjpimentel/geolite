@@ -5,17 +5,19 @@ the layout of a data path and the connection lifecycle: `store` names every file
 ```
 <data-path>/
   catalog.sqlite3            layer 1: osm_pbf_files, the ledger of the sources and the cache of the geofabrik index
-  <stem>.osm.pbf             a source, downloaded or copied in; deleted at the end of its build
-  <stem>.osm_data.sqlite3    layers 2–3 of that source, attached as `osm_data` while its stages run; deleted at the end
+  <name>.osm.pbf             a source, downloaded or copied in; deleted at the end of the build
+  osm_data.sqlite3           layers 2–3 of every source, one file per data path, attached as `osm_data` while the stages run; deleted at the end of the build
   br.sqlite3  br.tantivy     layers 4–5 of one country, and its search index; one pair per country
 ```
 
-`<stem>` is the file name without `.osm.pbf` (`brazil-latest`, `santos`); a base is named by the
-iso 3166-1 alpha-2 code of its country in lower case, the name of its boundary file. `store`
-knows the paths (`catalog_path`, `osm_data_path`, `base_path`, `index_path_of`, `bases`, which
-lists the `??.sqlite3` of a data path) and the three openings: `open_catalog`, `open_source`, the
-catalogue with the osm_data of one source attached, and `open_base_write` / `open_base_readonly`
-/ `open_base_immutable`. `open_base_readonly` is the pipeline's read of a base another connection
+a base is named by the iso 3166-1 alpha-2 code of its country in lower case, the name of its
+boundary file. `store` knows the paths (`catalog_path`, `osm_data_path`, `base_path`,
+`index_path_of`, `bases`, which lists the `??.sqlite3` of a data path) and the openings:
+`open_catalog`; `open_osm_data`, the catalogue with the shared osm_data attached, and
+`open_osm_data_write`, the same after a probe connection took and released the write lock of the
+osm_data, so a second process writing it is refused aloud instead of meeting `database is locked`
+deep in a stage (one process at a time writes the osm data of a data path; a reader is not
+detected); and `open_base_write` / `open_base_readonly` / `open_base_immutable`. `open_base_readonly` is the pipeline's read of a base another connection
 of the run is writing, a resume subtracting what the base holds for instance: it follows the wal.
 `open_base_immutable`, behind `query`, `http-server` and the tui, opens the file as
 `file:<path>?mode=ro&immutable=1`: no lock and no wal-index, so no `-wal` or `-shm` ever appears
@@ -43,9 +45,9 @@ layer 1  ·  osm_pbf_files              one row per .osm.pbf — origin (local_p
 
 `admin_levels` and its rtree are owned by [`admin_level`](../admin_level/readme.md), `admin_levels_hierarchy` by [`admin_level_hierarchy`](../admin_level_hierarchy/readme.md) `house_numbers` by [`house_number`](../house_number/readme.md) and the three element tables by [`osm_node`, `osm_way` and `osm_relation`](../osm_node/readme.md); this folder keeps the connection lifecycle that creates them, the `table` trait every repository implements, the shared helpers behind their sql (`placeholders_for`, `query_by_ids`, `insert_in_chunks`) and the generic jsonb codec.
 
-layers are built roughly bottom-up (back-references: `house_numbers → admin_levels`, and the `*_count` columns on `osm_pbf_files`). `destroy_source` drops the upper layers of a source — the whole `osm_data` file when layer 2 goes, the three element tables alone when layer 3 goes, so the chunk index survives a `--recreate` of the osm-data stage — and `destroy_base` the layers of a base, then both vacuum; the catalogue is kept.
+layers are built roughly bottom-up (back-references: `house_numbers → admin_levels`, and the `*_count` columns on `osm_pbf_files`). `destroy_source` drops the upper layers of one file out of the shared `osm_data` — its element rows, found through the chunks they point at, and its chunks too when layer 2 goes, so the chunk index survives a `--recreate` of the osm-data stage — without a vacuum, which would rewrite every other source; `destroy_base` drops the layers of a base and vacuums; the catalogue is kept.
 
-`compact` is the end of a build: `ANALYZE`, `PRAGMA optimize`, `wal_checkpoint(TRUNCATE)` and `VACUUM` on a base, answering with the bytes before and after; `remove_osm_data_files` deletes the `osm_data` of a source with its `-wal` and `-shm` and answers with the bytes freed.
+`compact` is the end of a build: `ANALYZE`, `PRAGMA optimize`, `wal_checkpoint(TRUNCATE)` and `VACUUM` on a base, answering with the bytes before and after; `remove_osm_data_files` deletes the `osm_data` with its `-wal` and `-shm` and answers with the bytes freed.
 
 `seal_bases` is the last line of a build: the bases it wrote and their indexes lose their write bits (`seal_path`, a file or a directory with everything in it, but tantivy's lock files, which it takes to read), and nothing ever lifts them: a base built once is final. `is_sealed` is the one test, and every writer asks it first — `base_pool` takes no row for a sealed country (dropped and counted), the house-number stage and `--recreate` leave a sealed base out, a write stage of `geolite exec` leaves a sealed base as it is and refuses one named — so `open_writable` meeting a sealed file is a programming error and panics. the catalogue is never sealed: it is the ledger of every build.
 

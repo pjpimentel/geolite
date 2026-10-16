@@ -106,13 +106,7 @@ pub(crate) fn resolved_at(w: &world, name: &str, rows: &[row]) -> PathBuf {
   stage(
     w,
     &dir,
-    &[
-      "exec",
-      "extract-osm-admin-levels",
-      &pbf,
-      "--admin-level",
-      "8",
-    ],
+    &["exec", "extract-osm-admin-levels", "--admin-level", "8"],
   );
   {
     let conn = rusqlite::Connection::open(dir.join("br.sqlite3"))

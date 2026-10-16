@@ -131,6 +131,6 @@ take their persistence out of `src/database`, which owns no table any more.
 
 what stays outside the concept folders is what belongs to no concept in particular: the layout of
 the data path and the connection lifecycle with the `table` trait ([`database`](database/readme.md):
-`store` names the catalogue, the osm_data of a source and the base of a country, and opens each),
+`store` names the catalogue, the shared osm_data and the base of a country, and opens each),
 the presets, the `progress_report` every long pass emits — four lines in the crate root, beside the
 `debug!` macro — and the interfaces, the cli and the http server, grouped in `interfaces/`.

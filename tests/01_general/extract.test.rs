@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::admin_level::admin_levels_at;
-use crate::common::harness::{open_scratch, open_sqlite_at, output, world};
+use crate::common::harness::{open_scratch, open_sqlite_at, output, plain, world};
 use crate::general::world;
 use serde_json::{Value, json};
 
@@ -32,7 +32,7 @@ impl scratch {
   }
 
   pub(crate) fn osm_data(&self) -> rusqlite::Connection {
-    open_sqlite_at(&self.dir.join("santos.osm_data.sqlite3"))
+    open_sqlite_at(&self.dir.join("osm_data.sqlite3"))
   }
 
   fn pbf(&self) -> String {
@@ -101,13 +101,7 @@ pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]
 }
 
 fn admin_levels(w: &world, dir: &Path, extra: &[&str]) {
-  let mut args = vec![
-    "exec",
-    "extract-osm-admin-levels",
-    "santos.osm.pbf",
-    "--admin-level",
-    "2,4,8",
-  ];
+  let mut args = vec!["exec", "extract-osm-admin-levels", "--admin-level", "2,4,8"];
   args.extend_from_slice(extra);
   stage(w, dir, &args);
 }
@@ -535,7 +529,7 @@ fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
     "nothing decoded, nothing stamped"
   );
   assert_eq!(
-    table_counts(&open_sqlite_at(&dir.join("santos.osm_data.sqlite3"))),
+    table_counts(&open_sqlite_at(&dir.join("osm_data.sqlite3"))),
     (0, 0, 0)
   );
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
@@ -579,10 +573,11 @@ fn _08_a_one_megabyte_buffer_gives_the_same_result() {
   );
 }
 
-// 09. one invocation, two files
+// 09. two inputs in one run get their own ledger rows and their own chunks, and share the
+// elements: the osm ids they repeat are stored once, pointing at a chunk of the first file
 #[test]
 #[ignore]
-fn _09_two_inputs_in_one_run_get_their_own_ledger_rows_and_chunks() {
+fn _09_two_inputs_in_one_run_get_their_own_chunks_and_share_the_elements() {
   let w = world();
   let dir = w.scratch("extract_two_inputs");
   let santos = copy_fixture(w, &dir, "santos.osm.pbf");
@@ -595,14 +590,14 @@ fn _09_two_inputs_in_one_run_get_their_own_ledger_rows_and_chunks() {
   osm_data(w, &dir, "2", &[], &[&santos, &alpha]);
   let rows = ledger(&open_scratch(&dir));
   assert_eq!(rows.len(), 2, "one ledger row per input");
-  for (row, stem) in rows.iter().zip(["santos", "alpha"]) {
+  let data = open_sqlite_at(&dir.join("osm_data.sqlite3"));
+  for row in &rows {
     assert_eq!(
       row.counts(),
       (Some(NODES), Some(WAYS), Some(RELATIONS)),
       "each file decodes the whole fixture"
     );
     assert!(row.extracted_at.is_some());
-    let data = open_sqlite_at(&dir.join(format!("{stem}.osm_data.sqlite3")));
     assert_eq!(
       count(
         &data,
@@ -612,24 +607,26 @@ fn _09_two_inputs_in_one_run_get_their_own_ledger_rows_and_chunks() {
         )
       ),
       CHUNKS,
-      "each file has its own osm_data"
+      "each file has its own chunks"
     );
-    assert_eq!(
-      table_counts(&data),
-      (NODES, WAYS, RELATIONS),
-      "each osm_data holds the whole fixture of its file"
-    );
+  }
+  assert_eq!(
+    table_counts(&data),
+    (NODES, WAYS, RELATIONS),
+    "the fixture is stored once"
+  );
+  for table in ["osm_nodes", "osm_ways", "osm_relations"] {
     assert_eq!(
       count(
         &data,
         &format!(
-          "SELECT COUNT(*) FROM osm_nodes n JOIN osm_pbf_blob_chunks c ON c.id = n.osm_pbf_chunk_id \
+          "SELECT COUNT(*) FROM {table} e JOIN osm_pbf_blob_chunks c ON c.id = e.osm_pbf_chunk_id \
            WHERE c.file_id != {}",
-          row.id
+          rows[0].id
         )
       ),
       0,
-      "every row belongs to the chunks of its own file"
+      "every {table} row points at a chunk of the first file"
     );
   }
 }
@@ -696,7 +693,7 @@ fn _12_recreate_rebuilds_the_element_tables_without_touching_the_chunk_index() {
     "the chunk index must survive --recreate:\n{}",
     out.stdout
   );
-  assert!(s.dir.join("santos.osm_data.sqlite3").exists());
+  assert!(s.dir.join("osm_data.sqlite3").exists());
   assert_eq!(
     count(&s.osm_data(), "SELECT COUNT(*) FROM osm_pbf_blob_chunks"),
     CHUNKS
@@ -712,13 +709,7 @@ fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
   let s = extracted(w, "extract_unknown_level", "2", &[]);
   let out = w.geolite_in(
     &s.dir,
-    &[
-      "exec",
-      "extract-osm-admin-levels",
-      "santos.osm.pbf",
-      "--admin-level",
-      "2,11",
-    ],
+    &["exec", "extract-osm-admin-levels", "--admin-level", "2,11"],
   );
   assert_eq!(
     out.status, 1,
@@ -748,13 +739,7 @@ fn _14_level_10_runs_the_relation_and_the_way_stages() {
   let out = stage(
     w,
     &s.dir,
-    &[
-      "exec",
-      "extract-osm-admin-levels",
-      "santos.osm.pbf",
-      "--admin-level",
-      "10",
-    ],
+    &["exec", "extract-osm-admin-levels", "--admin-level", "10"],
   );
   for line in [
     "stage 1/2: relations",
@@ -826,13 +811,7 @@ fn _16_a_level_list_is_refused_with_its_reason() {
   ] {
     let out = w.geolite_in(
       &dir,
-      &[
-        "exec",
-        "extract-osm-admin-levels",
-        "santos.osm.pbf",
-        "--admin-level",
-        levels,
-      ],
+      &["exec", "extract-osm-admin-levels", "--admin-level", levels],
     );
     assert_eq!(out.status, 1, "{levels:?}: stderr: {}", out.stderr);
     assert!(
@@ -901,4 +880,34 @@ fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
     "stderr: {}",
     out.stderr
   );
+}
+
+// 20. one process at a time writes the osm_data: a second writer is refused aloud, and runs once
+// the first is done
+#[test]
+#[ignore]
+fn _20_a_second_writer_of_the_osm_data_is_refused_aloud() {
+  let w = world();
+  let s = extracted(w, "extract_second_writer", "2", &[]);
+  let holder = rusqlite::Connection::open(s.dir.join("osm_data.sqlite3"))
+    .expect("failed to open the osm_data");
+  holder
+    .execute_batch("BEGIN IMMEDIATE")
+    .expect("failed to take the write lock");
+  let refused = w.geolite_in(
+    &s.dir,
+    &["--threads", "2", "exec", "extract-osm-pbf-data", &s.pbf()],
+  );
+  assert_eq!(refused.status, 1, "stderr: {}", refused.stderr);
+  assert!(
+    plain(&refused.stderr).contains("osm_data.sqlite3 is being written by another geolite process"),
+    "{}",
+    refused.stderr
+  );
+  holder
+    .execute_batch("ROLLBACK")
+    .expect("failed to release the write lock");
+  drop(holder);
+  let stdout = osm_data(w, &s.dir, "2", &[], &[&s.pbf()]).stdout;
+  assert_full_fixture(&scratch { dir: s.dir, stdout });
 }

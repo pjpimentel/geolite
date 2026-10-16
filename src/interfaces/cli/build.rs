@@ -17,47 +17,57 @@ use crate::osm_pbf_file::{input_kind, osm_pbf_file};
 pub fn command_handler_build(
   data_path: &str,
   threads: &u8,
-  source: &str,
+  sources: &[String],
   ls_endpoint: Option<&str>,
   abort_on_any_error: bool,
 ) {
   // filesystem only, on purpose: the catalogue may not exist yet at this point of the build, and
   // a local source must never reach resolve_geofabrik_url, which fetches the geofabrik index with
   // an `expect` that would take the whole pipeline down when the network fails
-  let is_local = osm_pbf_file::open(None, data_path)
-    .local_file(source)
-    .is_some();
-  if input_kind::of(source) == input_kind::local_path && !is_local {
-    eprintln!("\x1b[1;31merror\x1b[0m: source file not found: {source}");
-    std::process::exit(1);
+  let files = osm_pbf_file::open(None, data_path);
+  let local: Vec<bool> = sources
+    .iter()
+    .map(|source| files.local_file(source).is_some())
+    .collect();
+  for (source, &is_local) in sources.iter().zip(&local) {
+    if input_kind::of(source) == input_kind::local_path && !is_local {
+      eprintln!("\x1b[1;31merror\x1b[0m: source file not found: {source}");
+      std::process::exit(1);
+    }
   }
 
-  let inputs = vec![source.to_string()];
+  let inputs: Vec<String> = sources.to_vec();
+  let remote: Vec<String> = sources
+    .iter()
+    .zip(&local)
+    .filter(|(_, is_local)| !**is_local)
+    .map(|(source, _)| source.clone())
+    .collect();
 
   println!("\x1b[2m── download\x1b[0m");
-  if is_local {
-    println!("\x1b[1;33mskipping\x1b[0m download — '{source}' is already a local file");
-  } else {
+  for (source, &is_local) in sources.iter().zip(&local) {
+    if is_local {
+      println!("\x1b[1;33mskipping\x1b[0m download — '{source}' is already a local file");
+    }
+  }
+  if !remote.is_empty() {
     command_handler_osm_pbf_file_download(
       data_path,
       threads,
-      &inputs,
+      &remote,
       ls_endpoint,
       abort_on_any_error,
     );
-  }
-
-  let resolved = is_local || {
     let conn = store::open_catalog(data_path);
-    osm_pbf_file::open(Some(&conn), data_path)
-      .resolve(source)
-      .is_some()
-  };
-  if !resolved {
-    eprintln!(
-      "\x1b[1;31merror\x1b[0m: could not resolve source after download — aborting pipeline"
-    );
-    std::process::exit(1);
+    let files = osm_pbf_file::open(Some(&conn), data_path);
+    for source in &remote {
+      if files.resolve(source).is_none() {
+        eprintln!(
+          "\x1b[1;31merror\x1b[0m: could not resolve '{source}' after download — aborting pipeline"
+        );
+        std::process::exit(1);
+      }
+    }
   }
 
   println!();
@@ -88,7 +98,6 @@ pub fn command_handler_build(
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_admin_levels.name());
   let touched = command_handler_extract_osm_admin_levels(
     data_path,
-    source,
     crate::presets::DEFAULT.extract_osm_admin_levels.admin_levels,
     threads,
     false,
@@ -97,7 +106,7 @@ pub fn command_handler_build(
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::extract_osm_house_numbers.name());
-  let numbered = command_handler_extract_osm_house_numbers(data_path, source, false);
+  let numbered = command_handler_extract_osm_house_numbers(data_path, false);
 
   let isos: HashSet<String> = touched
     .iter()
@@ -115,7 +124,7 @@ pub fn command_handler_build(
 
   println!();
   println!("\x1b[2m── {}\x1b[0m", stage::optimize_delete_intermediary_data.name());
-  command_handler_optimize(data_path, source, &bases);
+  command_handler_optimize(data_path, &bases);
 
   println!();
   store::seal_bases(&bases);

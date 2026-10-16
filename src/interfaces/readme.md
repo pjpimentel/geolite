@@ -20,8 +20,8 @@ the query, so a base of many countries answers each one under its own.
 
 `exec <group>-<stage>` runs one stage of the pipeline by its name, after asserting that the stages
 it requires ran: [`cli/exec`](cli/exec/readme.md) holds the stages, what each one requires and the
-evidence it reads. `build` chains the same handlers, and a second build into the same data path adds
-to the bases it touches.
+evidence it reads. `build` chains the same handlers over one or more sources, and a second build
+into the same data path writes the countries it has no base for.
 
 `query`, `http-server` and `tui` answer over every base of the data path (`served_bases`), or over
 the one `--sqlite-path` names; `--country` and the `country` parameter narrow a question to the

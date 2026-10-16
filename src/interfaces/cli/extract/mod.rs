@@ -44,7 +44,6 @@ pub(super) struct resolved_input {
   pub path: String,
   pub name: String,
   pub id: u32,
-  pub stem: String,
 }
 
 pub(super) fn resolve_input(
@@ -82,11 +81,5 @@ pub(super) fn resolve_input(
     .to_string_lossy()
     .into_owned();
   let id = crate::osm_pbf_file::repository::ensure_by_file_path(conn, &path);
-  let stem = crate::database::store::stem_of(&path);
-  Some(resolved_input {
-    path,
-    name,
-    id,
-    stem,
-  })
+  Some(resolved_input { path, name, id })
 }

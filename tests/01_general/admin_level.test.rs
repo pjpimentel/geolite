@@ -12,13 +12,7 @@ const COUNTRY_STATE_CITY: i64 = 40;
 const EVERY_EDGE: i64 = 13_353;
 
 pub(crate) fn admin_levels_at(w: &world, dir: &Path, levels: &str, extra: &[&str]) -> output {
-  let mut args = vec![
-    "exec",
-    "extract-osm-admin-levels",
-    "santos.osm.pbf",
-    "--admin-level",
-    levels,
-  ];
+  let mut args = vec!["exec", "extract-osm-admin-levels", "--admin-level", levels];
   args.extend_from_slice(extra);
   stage(w, dir, &args)
 }

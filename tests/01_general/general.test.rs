@@ -111,7 +111,7 @@ fn _00_03_sqlite_and_tantivy_artifacts_exist() {
 fn _00_04_optimize_deletes_the_osm_data_sibling() {
   let w = world();
   assert!(
-    !w.data_path.join("santos.osm_data.sqlite3").exists(),
+    !w.data_path.join("osm_data.sqlite3").exists(),
     "the intermediary osm_data database must be deleted by the optimize stage"
   );
 }
@@ -254,7 +254,7 @@ fn _00_10_the_build_reports_the_house_numbers_it_linked_and_the_optimize_steps()
   for line in [
     house_numbers.as_str(),
     "── optimize-delete-intermediary-data",
-    "deleted santos.osm_data.sqlite3",
+    "deleted osm_data.sqlite3",
     "deleted 1 tables in",
     "optimizing sqlite file...",
     "optimized sqlite in",

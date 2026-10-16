@@ -501,7 +501,7 @@ fn _08_a_file_extracted_before_being_downloaded_takes_the_download_origin() {
   assert_eq!(after[0].url.as_deref(), Some(url.as_str()));
   assert_eq!(after[0].path, before[0].path);
 
-  let chunks = open_sqlite_at(&dir.join("alpha.osm_data.sqlite3"));
+  let chunks = open_sqlite_at(&dir.join("osm_data.sqlite3"));
   assert!(
     count(
       &chunks,
@@ -598,7 +598,7 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
     );
   }
   assert!(dir.join("br.tantivy").join("meta.json").exists());
-  assert!(!dir.join("alpha.osm_data.sqlite3").exists());
+  assert!(!dir.join("osm_data.sqlite3").exists());
 }
 
 // 11. idempotent stage
@@ -618,7 +618,7 @@ fn _11_re_running_a_stage_without_recreate_keeps_one_ledger_row_and_one_chunk_se
     assert_eq!(out.status, 0, "stderr: {}", out.stderr);
     let rows = ledger(&database(&dir));
     assert_eq!(rows.len(), 1);
-    let chunks = open_sqlite_at(&dir.join("santos.osm_data.sqlite3"));
+    let chunks = open_sqlite_at(&dir.join("osm_data.sqlite3"));
     seen.push((
       rows[0].id,
       count(
@@ -844,12 +844,12 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
     .find("deleted santos.osm.pbf")
     .unwrap_or_else(|| panic!("the pbf inside data_path must be deleted:\n{stdout}"));
   let sibling = stdout
-    .find("deleted santos.osm_data.sqlite3")
+    .find("deleted osm_data.sqlite3")
     .unwrap_or_else(|| panic!("the osm_data sibling must be deleted:\n{stdout}"));
   assert!(pbf < sibling, "the pbf is reported before the sibling");
   assert!(stdout.contains("deleted 2 tables"), "{stdout}");
   assert!(!dir.join("santos.osm.pbf").exists());
-  assert!(!dir.join("santos.osm_data.sqlite3").exists());
+  assert!(!dir.join("osm_data.sqlite3").exists());
   let listing = plain(&w.geolite_in(&dir, &["osm-pbf-file", "ls", "local"]).stdout);
   assert!(listing.contains("no pbf files found"), "{listing}");
 

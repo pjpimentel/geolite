@@ -16,9 +16,8 @@ const SQL_CREATE: &str = "
 const SQL_CREATE_INDEXES: &str = "
   CREATE INDEX IF NOT EXISTS osm_data.osm_relations_search_by_admin_level
     ON osm_relations(JSON_EXTRACT(payload, '$.tags.admin_level'));
+  CREATE INDEX IF NOT EXISTS osm_data.osm_relations_search_by_chunk ON osm_relations(osm_pbf_chunk_id);
 ";
-
-const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_relations;";
 
 // sqlite only takes an expression index when the query spells the expression exactly as the
 // index does: the bare `'$.tags.admin_level'` path stays a literal here instead of going through
@@ -39,10 +38,19 @@ impl table for osm_relations {
   const INDEXES: &str = SQL_CREATE_INDEXES;
 }
 
-pub(crate) fn drop_table(conn: &Connection) {
+pub fn delete_by_file_id(conn: &Connection, file_id: u32) {
+  const SQL_DELETE_BY_FILE_ID: &str = "
+    DELETE FROM osm_data.osm_relations
+    WHERE osm_pbf_chunk_id IN (
+      SELECT id
+      FROM osm_data.osm_pbf_blob_chunks
+      WHERE file_id = ?1
+    )
+  ";
+
   conn
-    .execute_batch(SQL_DROP)
-    .expect("failed to drop osm_relations");
+    .execute(SQL_DELETE_BY_FILE_ID, [file_id])
+    .expect("failed to delete the relations of a file");
 }
 
 pub struct relation_coord_row {

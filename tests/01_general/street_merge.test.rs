@@ -117,11 +117,7 @@ pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
 pub(crate) fn resolved(w: &world, name: &str) -> scratch {
   let s = extracted(w, name, "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
-  stage(
-    w,
-    &s.dir,
-    &["exec", "extract-osm-house-numbers", "santos.osm.pbf"],
-  );
+  stage(w, &s.dir, &["exec", "extract-osm-house-numbers"]);
   index_at(w, &s.dir, "admin-levels-hierarchy");
   s
 }

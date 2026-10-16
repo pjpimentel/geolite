@@ -64,16 +64,15 @@ pub fn command_handler_extract_osm_pbf_data(
   buffer_limit_in_mb: Option<u64>,
 ) {
   let buffer_bytes = resolve_buffer_bytes(buffer_limit_in_mb);
-  let catalog = crate::database::store::open_catalog(data_path);
+  let conn = crate::database::store::open_osm_data_write(data_path);
 
   for (i, input) in inputs.iter().enumerate() {
-    let Some(resolved) = super::resolve_input(&catalog, data_path, i, input) else {
+    let Some(resolved) = super::resolve_input(&conn, data_path, i, input) else {
       continue;
     };
     if recreate {
-      crate::database::store::destroy_source(data_path, &resolved.stem, false);
+      crate::database::store::destroy_source(&conn, resolved.id, false);
     }
-    let conn = crate::database::store::open_source(data_path, &resolved.stem);
     let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
     stage::extract_osm_pbf_data.require(&stage_context {
       catalog: Some(&conn),
@@ -126,7 +125,7 @@ pub fn command_handler_extract_osm_pbf_data(
 
     let decoder_bar_cb = decoder_bar.clone();
     let writer_bar_cb = writer_bar.clone();
-    let write_conn = crate::database::store::open_source(data_path, &resolved.stem);
+    let write_conn = crate::database::store::open_osm_data(data_path);
     let counts = file
       .extract_osm_data(
         osm_pbf_file_path,
@@ -185,8 +184,8 @@ pub fn command_handler_extract_osm_pbf_data(
       fmt_count(counts.ways),
       fmt_count(counts.relations),
     );
-    index_elements(&conn);
   }
+  index_elements(&conn);
 }
 
 fn index_elements(conn: &rusqlite::Connection) {

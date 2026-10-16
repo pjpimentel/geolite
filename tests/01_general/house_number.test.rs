@@ -21,7 +21,7 @@ const FIRST_INJECTED_NODE: i64 = 9_000_000_001;
 pub(crate) const NODE_OF_197: u64 = 2_061_634_141;
 
 fn house_numbers_at(w: &world, dir: &Path, extra: &[&str]) -> output {
-  let mut args = vec!["exec", "extract-osm-house-numbers", "santos.osm.pbf"];
+  let mut args = vec!["exec", "extract-osm-house-numbers"];
   args.extend_from_slice(extra);
   stage(w, dir, &args)
 }
@@ -118,7 +118,7 @@ fn injected(w: &world, name: &str, numbers: &[&str]) -> (scratch, output) {
 
   let s = streets(w, name);
   {
-    let conn = rusqlite::Connection::open(s.dir.join("santos.osm_data.sqlite3"))
+    let conn = rusqlite::Connection::open(s.dir.join("osm_data.sqlite3"))
       .expect("failed to open the scratch osm data for writing");
     for (offset, number) in numbers.iter().enumerate() {
       let payload = json!({
@@ -310,10 +310,7 @@ fn _00_05_a_link_by_name_names_the_street_the_node_names() {
   conn
     .execute(
       "ATTACH DATABASE ?1 AS osm_data",
-      [s.dir
-        .join("santos.osm_data.sqlite3")
-        .to_string_lossy()
-        .as_ref()],
+      [s.dir.join("osm_data.sqlite3").to_string_lossy().as_ref()],
     )
     .expect("failed to attach the osm_data sibling");
   assert_eq!(
@@ -385,14 +382,7 @@ fn _00_08_the_intermediary_data_cannot_be_deleted_before_the_house_numbers_are_l
   let s = extracted(w, "house_number_delete_before_link", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
   index_at(w, &s.dir, "admin-levels-hierarchy");
-  let out = w.geolite_in(
-    &s.dir,
-    &[
-      "exec",
-      "optimize-delete-intermediary-data",
-      "santos.osm.pbf",
-    ],
-  );
+  let out = w.geolite_in(&s.dir, &["exec", "optimize-delete-intermediary-data"]);
   assert_eq!(out.status, 1, "stderr: {}", out.stderr);
   assert!(
     out
@@ -401,7 +391,7 @@ fn _00_08_the_intermediary_data_cannot_be_deleted_before_the_house_numbers_are_l
     "stderr: {}",
     out.stderr
   );
-  assert!(s.dir.join("santos.osm_data.sqlite3").is_file());
+  assert!(s.dir.join("osm_data.sqlite3").is_file());
 }
 
 // 01.00. the `#` prefix is a number only where the policy of the country allows it: the world
@@ -552,12 +542,7 @@ fn _01_02_the_stage_keeps_drops_and_canonizes_the_shapes_the_fixture_never_bring
   let out = stage(
     w,
     &s.dir,
-    &[
-      "exec",
-      "extract-osm-house-numbers",
-      "santos.osm.pbf",
-      "--recreate",
-    ],
+    &["exec", "extract-osm-house-numbers", "--recreate"],
   );
   let under_default = stored(|shape| shape.2);
   assert!(

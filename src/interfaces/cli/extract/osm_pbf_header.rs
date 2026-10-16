@@ -3,13 +3,12 @@ use std::io::Write;
 use crate::interfaces::cli::exec::stages::{stage, stage_context};
 
 pub fn command_handler_extract_osm_pbf_header(data_path: &str, inputs: &[String]) {
-  let catalog = crate::database::store::open_catalog(data_path);
+  let conn = crate::database::store::open_osm_data(data_path);
 
   for (i, input) in inputs.iter().enumerate() {
-    let Some(resolved) = super::resolve_input(&catalog, data_path, i, input) else {
+    let Some(resolved) = super::resolve_input(&conn, data_path, i, input) else {
       continue;
     };
-    let conn = crate::database::store::open_source(data_path, &resolved.stem);
     let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
     stage::extract_osm_pbf_header.require(&stage_context {
       catalog: Some(&conn),

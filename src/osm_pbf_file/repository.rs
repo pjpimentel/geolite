@@ -403,9 +403,28 @@ pub fn update_downloaded(
   }
 }
 
-// the rows of a file in the base attached as `base`, traced through the chunks of its osm_data
-pub fn count_admin_levels_of_file(conn: &Connection, file_id: u32) -> i64 {
-  const SQL_COUNT_ADMIN_LEVELS_OF_FILE: &str = "
+pub fn known_paths(conn: &Connection) -> Vec<String> {
+  const SQL_KNOWN_PATHS: &str = "
+    SELECT path
+    FROM osm_pbf_files
+    WHERE path IS NOT NULL
+    ORDER BY id
+  ";
+
+  let mut stmt = conn
+    .prepare(SQL_KNOWN_PATHS)
+    .expect("failed to prepare the known paths");
+  stmt
+    .query_map([], |row| row.get(0))
+    .expect("failed to list the known paths")
+    .map(|row| row.expect("failed to read a path"))
+    .collect()
+}
+
+// the rows of every file in the base attached as `base`, traced through the chunks of the
+// osm_data; one pass per base, because each pass materialises a join over every way
+pub fn count_admin_levels_per_file(conn: &Connection) -> Vec<(u32, i64)> {
+  const SQL_COUNT_ADMIN_LEVELS_PER_FILE: &str = "
     WITH way_to_file AS (
       SELECT
         osm_data.osm_ways.id AS osm_id,
@@ -422,21 +441,22 @@ pub fn count_admin_levels_of_file(conn: &Connection, file_id: u32) -> i64 {
       JOIN osm_data.osm_pbf_blob_chunks
         ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_relations.osm_pbf_chunk_id
     )
-    SELECT COUNT(*)
+    SELECT
+      COALESCE(way_to_file.file_id, relation_to_file.file_id) AS file_id,
+      COUNT(*)
     FROM base.admin_levels
     LEFT JOIN way_to_file ON way_to_file.osm_id = base.admin_levels.way_id
     LEFT JOIN relation_to_file ON relation_to_file.osm_id = base.admin_levels.relation_id
     WHERE base.admin_levels.wkb IS NOT NULL
-      AND COALESCE(way_to_file.file_id, relation_to_file.file_id) = ?1
+      AND COALESCE(way_to_file.file_id, relation_to_file.file_id) IS NOT NULL
+    GROUP BY 1
   ";
 
-  conn
-    .query_row(SQL_COUNT_ADMIN_LEVELS_OF_FILE, [file_id], |row| row.get(0))
-    .expect("failed to count the admin levels of a file")
+  counts_per_file(conn, SQL_COUNT_ADMIN_LEVELS_PER_FILE)
 }
 
-pub fn count_house_numbers_of_file(conn: &Connection, file_id: u32) -> i64 {
-  const SQL_COUNT_HOUSE_NUMBERS_OF_FILE: &str = "
+pub fn count_house_numbers_per_file(conn: &Connection) -> Vec<(u32, i64)> {
+  const SQL_COUNT_HOUSE_NUMBERS_PER_FILE: &str = "
     WITH way_to_file AS (
       SELECT
         osm_data.osm_ways.id AS osm_id,
@@ -461,15 +481,27 @@ pub fn count_house_numbers_of_file(conn: &Connection, file_id: u32) -> i64 {
       LEFT JOIN way_to_file ON way_to_file.osm_id = base.admin_levels.way_id
       LEFT JOIN relation_to_file ON relation_to_file.osm_id = base.admin_levels.relation_id
     )
-    SELECT COUNT(*)
+    SELECT
+      admin_to_file.file_id,
+      COUNT(*)
     FROM base.house_numbers
     JOIN admin_to_file ON admin_to_file.admin_id = base.house_numbers.admin_level_id
-    WHERE admin_to_file.file_id = ?1
+    WHERE admin_to_file.file_id IS NOT NULL
+    GROUP BY admin_to_file.file_id
   ";
 
-  conn
-    .query_row(SQL_COUNT_HOUSE_NUMBERS_OF_FILE, [file_id], |row| row.get(0))
-    .expect("failed to count the house numbers of a file")
+  counts_per_file(conn, SQL_COUNT_HOUSE_NUMBERS_PER_FILE)
+}
+
+fn counts_per_file(conn: &Connection, sql: &str) -> Vec<(u32, i64)> {
+  let mut stmt = conn
+    .prepare(sql)
+    .expect("failed to prepare the counts per file");
+  stmt
+    .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+    .expect("failed to count the rows per file")
+    .map(|row| row.expect("failed to read a count per file"))
+    .collect()
 }
 
 pub fn set_admin_levels_count(conn: &Connection, file_id: u32, total: i64) {
@@ -513,7 +545,9 @@ pub fn any_osm_data_extracted(conn: &Connection) -> bool {
     SELECT EXISTS (
       SELECT 1
       FROM osm_pbf_files
-      WHERE osm_data_extracted_at IS NOT NULL
+      JOIN osm_data.osm_pbf_blob_chunks
+        ON osm_data.osm_pbf_blob_chunks.file_id = osm_pbf_files.id
+      WHERE osm_pbf_files.osm_data_extracted_at IS NOT NULL
     )
   ";
 

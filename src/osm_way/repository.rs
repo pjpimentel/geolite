@@ -18,8 +18,6 @@ const SQL_CREATE_INDEXES: &str = "
   CREATE INDEX IF NOT EXISTS osm_data.osm_ways_search_by_chunk ON osm_ways(osm_pbf_chunk_id);
 ";
 
-const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_ways;";
-
 const PAYLOAD: &str = "osm_data.osm_ways.payload";
 
 pub struct osm_ways;
@@ -29,10 +27,19 @@ impl table for osm_ways {
   const INDEXES: &str = SQL_CREATE_INDEXES;
 }
 
-pub(crate) fn drop_table(conn: &Connection) {
+pub fn delete_by_file_id(conn: &Connection, file_id: u32) {
+  const SQL_DELETE_BY_FILE_ID: &str = "
+    DELETE FROM osm_data.osm_ways
+    WHERE osm_pbf_chunk_id IN (
+      SELECT id
+      FROM osm_data.osm_pbf_blob_chunks
+      WHERE file_id = ?1
+    )
+  ";
+
   conn
-    .execute_batch(SQL_DROP)
-    .expect("failed to drop osm_ways");
+    .execute(SQL_DELETE_BY_FILE_ID, [file_id])
+    .expect("failed to delete the ways of a file");
 }
 
 pub struct way_coord_row {

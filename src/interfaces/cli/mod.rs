@@ -110,8 +110,8 @@ enum commands {
     port: u16,
   },
   build {
-    #[arg(value_name = "id_or_url")]
-    source: String,
+    #[arg(value_name = "id_or_url", num_args(1..))]
+    sources: Vec<String>,
   },
   tui {
     #[arg(value_name = "path")]
@@ -268,10 +268,10 @@ pub fn run() {
       crate::interfaces::http::bind(&format!("{host}:{port}")),
       args.threads,
     ),
-    commands::build { source } => build::command_handler_build(
+    commands::build { sources } => build::command_handler_build(
       &args.data_path,
       &args.threads,
-      &source,
+      &sources,
       None,
       args.abort_on_any_error,
     ),

@@ -9,6 +9,8 @@ pub mod message;
 pub mod osm_data;
 pub mod repository;
 
+use std::collections::BTreeMap;
+
 use crate::database::table;
 
 pub use blob_index::osm_pbf_blob_chunks;
@@ -116,27 +118,40 @@ impl<'a> osm_pbf_file<'a> {
     output
   }
 
-  // the ledger counts what every base holds of a file: one base attached at a time, the counts
-  // summed, the sum stamped
-  pub fn stamp_admin_levels_count(&self, file_id: u32, bases: &[String]) {
-    let total = self.summed(bases, |conn| repository::count_admin_levels_of_file(conn, file_id));
-    repository::set_admin_levels_count(self.database(), file_id, total);
+  // the ledger counts what every base holds of every file whose chunks are in the osm_data: one
+  // base attached at a time, the counts per file summed across the bases, and 0 stamped on a file
+  // the bases hold nothing of, so it still reads as counted
+  pub fn stamp_admin_levels_count(&self, bases: &[String]) {
+    let totals = self.summed_per_file(bases, repository::count_admin_levels_per_file);
+    for file_id in blob_index::file_ids(self.database()) {
+      let total = totals.get(&file_id).copied().unwrap_or(0);
+      repository::set_admin_levels_count(self.database(), file_id, total);
+    }
   }
 
-  pub fn stamp_house_numbers_count(&self, file_id: u32, bases: &[String]) {
-    let total = self.summed(bases, |conn| repository::count_house_numbers_of_file(conn, file_id));
-    repository::set_house_numbers_count(self.database(), file_id, total);
+  pub fn stamp_house_numbers_count(&self, bases: &[String]) {
+    let totals = self.summed_per_file(bases, repository::count_house_numbers_per_file);
+    for file_id in blob_index::file_ids(self.database()) {
+      let total = totals.get(&file_id).copied().unwrap_or(0);
+      repository::set_house_numbers_count(self.database(), file_id, total);
+    }
   }
 
-  fn summed(&self, bases: &[String], count: impl Fn(&rusqlite::Connection) -> i64) -> i64 {
+  fn summed_per_file(
+    &self,
+    bases: &[String],
+    count: impl Fn(&rusqlite::Connection) -> Vec<(u32, i64)>,
+  ) -> BTreeMap<u32, i64> {
     let conn = self.database();
-    let mut total = 0i64;
+    let mut totals: BTreeMap<u32, i64> = BTreeMap::new();
     for base in bases {
       crate::database::store::attach_base(conn, base);
-      total += count(conn);
+      for (file_id, rows) in count(conn) {
+        *totals.entry(file_id).or_insert(0) += rows;
+      }
       crate::database::store::detach_base(conn);
     }
-    total
+    totals
   }
 
   pub fn delete(&self, path: &str) -> u64 {

@@ -27,6 +27,7 @@
 1. MODIFIED the street rules to leave out the ways tagged `boundary` or `location=underwater`, so a border line and a submarine cable are never streets.
 1. MODIFIED `query`, `http-server` and the tui to open a base immutable, so a reader creates no `-wal` or `-shm` beside it and a base on read-only media answers.
 1. MODIFIED `build` to seal the base of each country it writes, read-only at the os level and taking no row from a later source, so a base built once is final.
+1. MODIFIED the osm data to one `osm_data.sqlite3` shared by every source, `extract-osm-admin-levels`, `extract-osm-house-numbers` and `optimize-delete-intermediary-data` taking no source and `build` taking several (not backward compatible), so several extracts are downloaded and decoded before one extraction writes the bases.
 
 ## **2026-10-12** - 0.0.16
 

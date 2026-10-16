@@ -60,9 +60,6 @@ pub enum exec_commands {
   },
   #[command(name = stage::extract_osm_admin_levels.name())]
   extract_osm_admin_levels {
-    #[arg(value_name = "source")]
-    source: String,
-
     #[arg(long)]
     admin_level: Option<String>,
 
@@ -80,9 +77,6 @@ pub enum exec_commands {
   },
   #[command(name = stage::extract_osm_house_numbers.name())]
   extract_osm_house_numbers {
-    #[arg(value_name = "source")]
-    source: String,
-
     #[arg(long, default_value_t = false)]
     recreate: bool,
   },
@@ -112,10 +106,7 @@ pub enum exec_commands {
     countries: Vec<String>,
   },
   #[command(name = stage::optimize_delete_intermediary_data.name())]
-  optimize_delete_intermediary_data {
-    #[arg(value_name = "source")]
-    source: String,
-  },
+  optimize_delete_intermediary_data,
   #[command(name = stage::optimize_sqlite_file.name())]
   optimize_sqlite_file {
     #[arg(value_name = "country", num_args(0..))]
@@ -191,7 +182,7 @@ fn with_stale_indexes(
   bases: &[base_files],
   handler: fn(&str, &str) -> bool,
 ) {
-  super::optimize::with_sizes(data_path, None, || {
+  super::optimize::with_sizes(data_path, || {
     per_base(bases, |base| {
       if handler(&base.sqlite, &base.index) {
         println!(
@@ -240,7 +231,6 @@ pub fn command_handler_exec(data_path: &str, threads: &u8, command: exec_command
       );
     }
     exec_commands::extract_osm_admin_levels {
-      source,
       admin_level,
       recreate,
       name_priority,
@@ -267,15 +257,14 @@ pub fn command_handler_exec(data_path: &str, threads: &u8, command: exec_command
       };
       osm_admin_levels::command_handler_extract_osm_admin_levels(
         data_path,
-        &source,
         &levels,
         threads,
         recreate,
         names.as_deref(),
       );
     }
-    exec_commands::extract_osm_house_numbers { source, recreate } => {
-      osm_house_numbers::command_handler_extract_osm_house_numbers(data_path, &source, recreate);
+    exec_commands::extract_osm_house_numbers { recreate } => {
+      osm_house_numbers::command_handler_extract_osm_house_numbers(data_path, recreate);
     }
     exec_commands::index_admin_levels_hierarchy { countries } => {
       per_base(&writable_bases_for(data_path, &countries, stage::index_admin_levels_hierarchy), |base| {
@@ -302,17 +291,14 @@ pub fn command_handler_exec(data_path: &str, threads: &u8, command: exec_command
       &writable_bases_for(data_path, &countries, stage::optimize_merge_admin_levels),
       merge_admin_levels::command_handler_optimize_merge_admin_levels,
     ),
-    exec_commands::optimize_delete_intermediary_data { source } => {
-      let stem = store::stem_of(&source);
-      super::optimize::with_sizes(data_path, Some(&stem), || {
-        delete_intermediary_data::command_handler_optimize_delete_intermediary_data(
-          data_path, &source,
-        );
+    exec_commands::optimize_delete_intermediary_data => {
+      super::optimize::with_sizes(data_path, || {
+        delete_intermediary_data::command_handler_optimize_delete_intermediary_data(data_path);
       })
     }
     exec_commands::optimize_sqlite_file { countries } => {
       let bases = writable_bases_for(data_path, &countries, stage::optimize_sqlite_file);
-      super::optimize::with_sizes(data_path, None, || {
+      super::optimize::with_sizes(data_path, || {
         per_base(&bases, |base| {
           sqlite_file::command_handler_optimize_sqlite_file(&base.sqlite)
         })
