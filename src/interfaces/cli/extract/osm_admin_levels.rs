@@ -1,12 +1,12 @@
 use indicatif::ProgressBar;
 use std::time::Instant;
 
+use crate::admin_level::country_index::country_index;
 use crate::admin_level::extract::{source, stage};
-use crate::admin_level::{
-  admin_level, extract_event, extract_opts, extract_step, extraction_rules, level,
-};
+use crate::admin_level::{admin_level, extract_event, extract_opts, extract_step, level};
+use crate::database::store::{self, base_pool};
 use crate::database::table;
-use crate::interfaces::cli::exec::stages::stage as exec_stage;
+use crate::interfaces::cli::exec::stages::{stage as exec_stage, stage_context};
 use crate::interfaces::cli::progress;
 use crate::progress_report;
 
@@ -31,7 +31,7 @@ impl stage_renderer {
         println!("\x1b[1;32mremoving\x1b[0m already processed... done ({pending} remaining)");
       }
       extract_step::progress(report) => self.advance(report),
-      extract_step::finished => self.finish(),
+      extract_step::finished { kept, dropped } => self.finish(kept, dropped),
     }
   }
 
@@ -69,7 +69,7 @@ impl stage_renderer {
     progress::advance(running.bar.as_ref().unwrap(), &report);
   }
 
-  fn finish(&mut self) {
+  fn finish(&mut self, kept: u64, dropped: u64) {
     let Some(running) = self.current.take() else {
       return;
     };
@@ -87,9 +87,15 @@ impl stage_renderer {
       .started_at
       .map_or(0.0, |started_at| started_at.elapsed().as_secs_f64());
     println!(
-      "\x1b[1;32mextracted\x1b[0m {} {} in {elapsed:.1}s",
-      running.total, running.label
+      "\x1b[1;32mextracted\x1b[0m {kept} {} in {elapsed:.1}s",
+      running.label
     );
+    if dropped > 0 {
+      println!(
+        "\x1b[1;33mdropped\x1b[0m {dropped} {} — the base of their country is sealed",
+        running.label
+      );
+    }
   }
 }
 
@@ -110,25 +116,37 @@ fn label_of(stage: stage) -> String {
 }
 
 pub fn command_handler_extract_osm_admin_levels(
-  sqlite_path: &str,
+  data_path: &str,
   admin_levels: &[level],
   threads: &u8,
   recreate: bool,
-  name_priority: &[&str],
-  rules: &[extraction_rules],
-) {
-  if recreate {
-    crate::database::destroy_data(sqlite_path, false, false, true, true);
+  name_priority: Option<&[&str]>,
+) -> Vec<&'static str> {
+  let conn = store::open_osm_data(data_path);
+  let mut pool = base_pool::new(data_path);
+  for base in pool.on_disk() {
+    if base.is_sealed() {
+      println!("\x1b[1;33msealed\x1b[0m {} — takes no row", base.file_name());
+    }
   }
-
-  let conn = crate::database::open_write(sqlite_path);
-  exec_stage::extract_osm_admin_levels.require(&conn, None);
-  let opts = extract_opts {
-    threads: (*threads).max(1) as usize,
-    name_priority,
-    rules,
-  };
+  if recreate {
+    for base in pool.writable_on_disk() {
+      store::destroy_base(&base.sqlite, true, true);
+    }
+  }
+  exec_stage::extract_osm_admin_levels.require(&stage_context {
+    catalog: Some(&conn),
+    file: None,
+    bases: vec![],
+  });
+  let mut name_tags: Vec<&str> = crate::presets::name_tags();
+  for &tag in name_priority.unwrap_or(&[]) {
+    if !name_tags.contains(&tag) {
+      name_tags.push(tag);
+    }
+  }
   let mut renderer = stage_renderer::default();
+  let countries = country_index::from_boundaries();
 
   for (i, &level) in admin_levels.iter().enumerate() {
     if i > 0 {
@@ -141,10 +159,34 @@ pub fn command_handler_extract_osm_admin_levels(
       level.name()
     );
 
-    admin_level::extract(&conn, level, &opts, |event| renderer.on(event));
+    let opts = extract_opts {
+      threads: (*threads).max(1) as usize,
+      name_priority,
+      name_tags: &name_tags,
+      countries: &countries,
+    };
+    admin_level::extract(&conn, level, &opts, &mut pool, |event| renderer.on(event));
   }
 
-  crate::admin_level::admin_levels::create_indexes(&conn);
+  for (_, base) in pool.open_bases() {
+    crate::admin_level::admin_levels::create_indexes(base);
+  }
+  let touched: Vec<&'static str> = pool.touched().to_vec();
+  let bases: Vec<String> = pool.on_disk().into_iter().map(|base| base.sqlite).collect();
+  drop(pool);
+  crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path).stamp_admin_levels_count(&bases);
+  println!();
+  println!("\x1b[1;32mbases\x1b[0m {}", bases_label(&touched));
+  touched
+}
 
-  crate::osm_pbf_file::repository::update_admin_levels_count(&conn);
+pub(crate) fn bases_label(isos: &[&str]) -> String {
+  if isos.is_empty() {
+    return "none".to_string();
+  }
+  isos
+    .iter()
+    .map(|iso| format!("{}.sqlite3", iso.to_ascii_lowercase()))
+    .collect::<Vec<_>>()
+    .join(", ")
 }

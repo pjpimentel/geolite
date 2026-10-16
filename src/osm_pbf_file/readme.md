@@ -1,7 +1,7 @@
 # osm_pbf_file
 
-where every build starts: one row per `.osm.pbf` file, from the moment it is found in the geofabrik
-catalogue to the counts left behind after extraction.
+where every build starts: one row per `.osm.pbf` file in `catalog.sqlite3`, from the moment it is
+found in the geofabrik catalogue to the counts left behind after extraction.
 
 ## the folder without an entity
 
@@ -13,7 +13,7 @@ the row is a **ledger written in column groups**, each by a different moment of 
 | `path`, `size_bytes`, `md5`, `downloaded_at` | `download` |
 | `osm_header_*` | `header` |
 | `node_count`, `way_count`, `relation_count`, `osm_data_extracted_at` | `osm_data` |
-| `admin_levels_count`, `house_numbers_count` | the admin-level and house-number stages |
+| `admin_levels_count`, `house_numbers_count` | the admin-level and house-number stages, for every file whose chunks are in the osm_data, summed over every base (`stamp_admin_levels_count`, `stamp_house_numbers_count`: one base attached at a time, one pass per base grouped by file) |
 
 and it is read back only by `path`, `url`, `origin_id` and `id`. **nothing ever reads the row
 whole** — the struct that could, and the query behind it, sat unused behind `#[allow(dead_code)]`
@@ -87,9 +87,9 @@ transfer, the ledger and the progress bar share.
 file's blob chunks, clears the four download columns (`path`, `size_bytes`, `md5`,
 `downloaded_at`) and removes the file. the row stays, with its header and its counts — the ledger
 still says what was extracted from the file, it just no longer points at a file that is gone, so
-nothing resolves to it. `optimize-delete-intermediary-data` is this for every `.osm.pbf` under
-`data_path`, followed by `database::remove_osm_data_files`, which drops the whole `osm_data`
-sibling (chunks, nodes, ways, relations) in one go; the sibling goes last because a writable
+nothing resolves to it. `optimize-delete-intermediary-data` is this for every pbf the ledger knows
+inside `data_path`, followed by `store::remove_osm_data_files`, which drops the whole shared
+`osm_data` (chunks, nodes, ways, relations) in one go; the file goes last because a writable
 connection recreates it.
 
 ## the wire format — `message` and `compression`
@@ -121,7 +121,8 @@ that belongs to someone lives with them.
 
 `osm_data.osm_pbf_blob_chunks` is a second table subordinate to the first, the same arrangement
 `admin_levels` has with `admin_levels_rtree` in `admin_level/spatial_index.rs`: a chunk is a byte
-range **of a file** and means nothing without one. `blob_scanner` fills it by walking the file front
+range **of a file** and means nothing without one, and the chunks of every source share the table,
+each row naming its file. `blob_scanner` fills it by walking the file front
 to back, reading only the length-prefixed blob headers and skipping every body — the one pass that
 never decompresses anything. `osm_data` then reads it to know which ranges to hand each decoder
 thread.
@@ -136,6 +137,13 @@ the stage behind `geolite exec extract-osm-pbf-data`, and the file's `extract_os
 1. encodes every element into its jsonb payload, still in the decoder threads
 1. bulk-inserts the rows into `osm_nodes`, `osm_ways` and `osm_relations`, and writes `node_count`,
    `way_count`, `relation_count` and `osm_data_extracted_at` on the file's row
+
+**the three element tables are shared by every source and keyed by osm id**, and the insert is
+`INSERT OR IGNORE`: an element two extracts carry — a way on the border they share, the country
+relation in `sudeste` and in `nordeste` — is stored once, with the payload and the chunk of the file
+decoded first, and the ledger credits what is derived from it to that file; the other file's counts
+hold only what it brought alone, `0` when it repeated everything. the decoded counts on the row are
+what the file held, not what was new.
 
 **one pass, not one per element.** `data_opts` selects which of the three to keep, but every blob
 is inflated and decoded exactly once whatever the selection: a use case per element would read,

@@ -115,9 +115,41 @@ domain decides what a level is made of; the caller only watches:
 it in order, emitting an `extract_event { stage, step }` at each step: `started`; `candidates`,
 from relations stages only, with how many relations the level has and how many are not extracted
 yet; `progress(progress_report)` after every batch; `finished`. an event carries its stage, so a
-consumer needs no state to know what it is looking at. the cli's renderer keeps one bar per stage
-and prints the lines it always printed. `extract_opts` carries the thread count of the relations
-stage, the name priority and the rule overrides.
+consumer needs no state to know what it is looking at; `finished` carries how many rows the stage
+kept, which is what the cli prints, the candidates being what the bar counts. the cli's renderer
+keeps one bar per stage and prints the lines it always printed. `extract_opts` carries the thread
+count of the relations stage, the `--name-priority` override, the name tags the loaders select and
+the countries of the base.
+
+## the country of a row — `country_index`
+
+every row is written under the preset of the country whose boundary holds it
+(`presets::for_country`), and carries that country in `country_iso_code`, so the index and the
+query read the preset back from the row, the default one for a country without a preset of its
+own. the boundary is the country's, compiled into the binary, one per country of the geofabrik
+index ([`presets/boundaries`](../presets/readme.md)), never the level 2 relation of the extract:
+a sub-region extract carries no closed boundary of its country, and a clipped relation never closes
+into a polygon, so a base built from either would have gone under the default preset. `country_index`
+is built from the boundaries once per run and asks, for every element of every level, which boundary
+holds its centroid; then its first vertex, when the centroid falls in no country, a concave shape
+or one drawn along a border; then the nearest boundary, whatever the distance, because an island
+or a street over the water can still fall outside every outline, and each of them belongs to the
+country closest to it. so every row has a country. the outlines are the ones of the geofabrik
+extracts, each drawn a few kilometres into its neighbours, so a point near a border is inside two
+of them: it goes to the country whose outline is farthest from it, the one it is deeper inside,
+which is the true border when both outlines run the same distance past it. the point test is the
+one of the hierarchy resolver, in `point_in_polygon`.
+
+the country decides two things before the row is written (`extract::identity_of`): whether the
+level is one the country keeps at all (`admin_levels`, the reason a brazilian `region` or
+`municipality` is never a row), and which name tag names the row (`name_priority`, `name:pt`
+before `name` in brazil); the loaders select every tag any country asks for (`presets::name_tags`)
+and the choice is made in rust, per element. the row then goes to the base of its country
+(`database::store::base_pool`, one `<iso>.sqlite3` per country in the data path), whatever the
+source: a country, a continent, a local file and a url write every base they touch, but one a
+build sealed, which takes no row: its rows are dropped and counted (`dropped N street — the base of
+their country is sealed`). a resume subtracts from the candidates what the bases already hold at
+the level.
 
 what the cli keeps is the run, not the level: the `--recreate` wipe before the loop, and after the
 last level the index and the count on the ledger — the index is created once at the end because
@@ -133,11 +165,11 @@ once its ways are folded.
 
 ## the rules — `rules`
 
-`extraction_rules { level, include, exclude }` is what a preset can override per level
-(`admin_levels_rules`); `resolve_rules` answers with the override when there is one and with the
-defaults below otherwise. relations stages take no rules: they are selected by the `admin_level`
-tag alone. every source drops elements without a `name`, because a nameless area cannot produce
-useful data.
+`rules_of(level)` answers the include and the exclude filters of a level, the defaults below. a
+preset cannot override them: a filter runs in sql over every way before any element is read, where
+the country of a way is not known yet, and no country has asked for a rule of its own. relations
+stages take no rules: they are selected by the `admin_level` tag alone. every source drops
+elements without a `name`, because a nameless area cannot produce useful data.
 
 | level | include | because | exclude | because |
 |---|---|---|---|---|
@@ -146,6 +178,8 @@ useful data.
 | 10 | ways tagged `place=suburb` | in some regions suburbs are the de-facto neighbourhood unit when `place=neighbourhood` is not mapped | | |
 | 12 | every way | the simplest selection | ways tagged `place=neighbourhood` or `place=suburb` | already captured at level 10 |
 | 12 | | | ways tagged `leisure=park`, `building` or `waterway` | noise in street-level data |
+| 12 | | | ways tagged `boundary` | a border drawn on the map, named in the languages of both sides, never a street |
+| 12 | | | ways tagged `location=underwater` | a submarine cable or pipeline runs under the sea from one country to another, never a street |
 
 the filter vocabulary is `osm_way::way_filter`: `rules` selects with it, and only the way's
 repository knows what each variant means in sql. this table is the reference for those defaults:

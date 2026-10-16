@@ -1,5 +1,5 @@
 use crate::common::ask::ask;
-use crate::common::harness::{encode, get, scenario, world, world_cell};
+use crate::common::harness::{encode, get, query_at, relabel_country, scenario, world, world_cell};
 use crate::common::query::{
   distances, first, kind_of, leaves, level_at, levels_of, matches, name_at, names_at, number_of,
   point_of, street_way, way_ids, wkt_at,
@@ -15,7 +15,6 @@ pub static SCENARIO: scenario = scenario {
   region: "02_preset_brazil",
   fixture_dir: "02_preset_brazil",
   pbf: "santos.osm.pbf",
-  preset: "brazil",
 };
 
 pub(crate) static WORLD: world_cell = world_cell::new();
@@ -262,7 +261,7 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
         "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
         "latitude": -23.9694,
         "longitude": -46.3175,
-        "score": 108.702,
+        "score": 108.577,
         "similarity": 1.0,
       },
     ]),
@@ -853,7 +852,7 @@ fn _02_00_an_ascii_folded_query_matches_the_accented_name() {
 // 02.01. ambiguity
 #[test]
 #[ignore]
-fn _02_01_the_preset_expands_the_street_abbreviation() {
+fn _02_01_the_country_of_the_row_expands_the_street_abbreviation() {
   let abbreviated = world().run(&["r. castro alves, embare, santos"]);
   let spelled = world().run(&["rua castro alves, embare, santos"]);
   assert_eq!(way_ids(&abbreviated), way_ids(&spelled));
@@ -1177,22 +1176,10 @@ fn _03_11_the_http_api_names_the_ways_of_a_folded_street_and_of_no_other_level()
   }
 }
 
-// 04.00. pipeline integrity: the preset is inferred from the source path, not from a flag
+// 04.00. pipeline integrity
 #[test]
 #[ignore]
-fn _04_00_build_resolves_the_preset_from_the_source_path() {
-  let w = world();
-  let banner = format!("preset: {}", "brazil");
-  assert!(
-    w.build_stdout.contains(&banner),
-    "expected {banner:?} to be inferred from the file name"
-  );
-}
-
-// 04.01. pipeline integrity
-#[test]
-#[ignore]
-fn _04_01_header_stage_reports_the_fixture_generator() {
+fn _04_00_header_stage_reports_the_fixture_generator() {
   let w = world();
   assert!(
     w.build_stdout.contains("geolite-e2e-fixture/1"),
@@ -1529,7 +1516,7 @@ fn _02_08_every_point_along_the_numbered_street_lands_on_the_same_street() {
 }
 
 // 02.09. ambiguity: twelve spellings of the square address, every one landing on the same street,
-// with the number presumed from the preset's metres per number on a street without any
+// with the number presumed from the metres per number of the street's country on a street without any
 #[test]
 #[ignore]
 fn _02_09_every_spelling_of_the_square_address_lands_on_the_street_along_it_with_a_presumed_number()
@@ -1673,4 +1660,38 @@ fn _02_12_every_point_around_the_jose_menino_square_lands_on_the_same_square() {
       "{input}: the square hangs from both neighbourhoods"
     );
   }
+}
+
+// 02.13. ambiguity: the abbreviations the index expands are the ones of the country of each row,
+// so the same base reindexed as swiss no longer lets `r.` through the strict query, and the
+// abbreviated question falls to the loose one, which answers every street sharing a word;
+// relabelled brazilian again, the strict query answers the one street the spelled question does
+#[test]
+#[ignore]
+fn _02_13_the_index_expands_the_abbreviations_of_the_country_of_the_row() {
+  let w = world();
+  let copy = w.world_copy("abbreviations_of_the_country");
+  let reindexed = |iso: &str| {
+    relabel_country(&copy, Some(iso));
+    let out = w.geolite_in(&copy, &["exec", "index-addresses"]);
+    assert_eq!(out.status, 0, "reindex under {iso}:\n{}", out.stderr);
+    query_at(w, &copy, "r. castro alves, embare, santos")
+  };
+  let swiss = way_ids(&reindexed("CH"));
+  let brazilian = way_ids(&reindexed("BR"));
+  let spelled = way_ids(&query_at(w, &copy, "rua castro alves, embare, santos"));
+  assert_eq!(
+    brazilian, spelled,
+    "under brazil `r.` reads as `rua`, and the strict query answers the one street"
+  );
+  assert!(!brazilian.is_empty());
+  assert!(
+    swiss.len() > brazilian.len(),
+    "under switzerland `r.` is a token no document holds, and the loose query answers every \
+     street that shares a word: {swiss:?} against {brazilian:?}"
+  );
+  assert!(
+    brazilian.iter().all(|id| swiss.contains(id)),
+    "the street is still among the loose answers: {swiss:?} against {brazilian:?}"
+  );
 }

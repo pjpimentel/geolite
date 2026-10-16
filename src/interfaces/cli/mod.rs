@@ -3,7 +3,6 @@ pub mod exec;
 pub mod extract;
 pub mod http_server;
 pub mod index;
-pub mod merge;
 pub mod optimize;
 pub mod osm_pbf_file;
 mod progress;
@@ -24,6 +23,8 @@ pub(crate) fn require_sqlite(path: &str) {
 use clap::{Parser, Subcommand};
 use exec::exec_commands;
 use osm_pbf_file::osm_pbf_file_commands;
+
+use crate::database::store::base_files;
 
 pub(crate) fn progress_draw_target() -> indicatif::ProgressDrawTarget {
   indicatif::ProgressDrawTarget::stderr()
@@ -67,9 +68,6 @@ struct cli {
   #[arg(long, default_value_t = false)]
   abort_on_any_error: bool,
 
-  #[arg(long)]
-  preset: Option<String>,
-
   #[command(subcommand)]
   command: commands,
 }
@@ -101,6 +99,8 @@ enum commands {
     last_admin_levels: Option<Vec<crate::admin_level::level>>,
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_wkt: bool,
+    #[arg(long, value_delimiter = ',')]
+    country: Option<Vec<String>>,
   },
   #[command(name = "http-server")]
   http_server {
@@ -110,14 +110,8 @@ enum commands {
     port: u16,
   },
   build {
-    #[arg(value_name = "id_or_url")]
-    source: String,
-  },
-  merge {
-    #[arg(value_name = "base")]
-    base: String,
-    #[arg(value_name = "databases", num_args = 1..)]
-    databases: Vec<String>,
+    #[arg(value_name = "id_or_url", num_args(1..))]
+    sources: Vec<String>,
   },
   tui {
     #[arg(value_name = "path")]
@@ -138,7 +132,7 @@ impl known_errors {
   }
 }
 
-fn preflight_checks(data_path: &str, sqlite_path: &str) {
+fn preflight_checks(data_path: &str, sqlite_path: Option<&str>) {
   let data_dir = std::path::Path::new(data_path);
   if !data_dir.exists() && std::fs::create_dir_all(data_dir).is_err() {
     known_errors::missing_write_permission.exit("failed to create dir ".to_string() + data_path);
@@ -156,36 +150,69 @@ fn preflight_checks(data_path: &str, sqlite_path: &str) {
   if std::fs::read_dir(data_dir).is_err() {
     known_errors::missing_read_permission.exit("no read access to dir ".to_string() + data_path);
   }
-  let sqlite = std::path::Path::new(sqlite_path);
-  if sqlite.exists() && std::fs::File::open(sqlite).is_err() {
-    known_errors::missing_read_permission.exit("no read access to file ".to_string() + sqlite_path);
+  if let Some(sqlite_path) = sqlite_path {
+    let sqlite = std::path::Path::new(sqlite_path);
+    if sqlite.exists() && std::fs::File::open(sqlite).is_err() {
+      known_errors::missing_read_permission.exit("no read access to file ".to_string() + sqlite_path);
+    }
   }
+}
+
+// the bases a query, the server or the tui answer over: the one named by --sqlite-path, or every
+// base of the data path
+pub(crate) fn served_bases(data_path: &str, single: Option<&base_files>) -> Vec<base_files> {
+  let bases = match single {
+    Some(base) => vec![base.clone()],
+    None => crate::database::store::bases(data_path),
+  };
+  if bases.is_empty() {
+    eprintln!(
+      "\x1b[1;31merror\x1b[0m: no base in {data_path} — first you need to build the data using geolite build"
+    );
+    std::process::exit(1);
+  }
+  for base in &bases {
+    require_sqlite(&base.sqlite);
+  }
+  bases
+}
+
+pub(crate) fn select_bases(
+  bases: &[base_files],
+  countries: Option<&[String]>,
+) -> Result<Vec<base_files>, String> {
+  let Some(countries) = countries else {
+    return Ok(bases.to_vec());
+  };
+  countries
+    .iter()
+    .map(|iso| {
+      bases
+        .iter()
+        .find(|base| base.iso.eq_ignore_ascii_case(iso))
+        .cloned()
+        .ok_or_else(|| format!("country: no base for '{iso}'"))
+    })
+    .collect()
 }
 
 pub fn run() {
   let args = cli::parse();
-
-  let preset = crate::presets::resolve(args.preset.clone());
 
   // TODO: implantar solucao para debug em release.
   if args.debug {
     crate::debug!("debug: on");
   }
 
-  let sqlite_path: String = args
-    .sqlite_path
-    .unwrap_or_else(|| format!("{}/database.sqlite3", args.data_path));
+  let single: Option<base_files> = args.sqlite_path.as_deref().map(|sqlite_path| {
+    let mut base = base_files::of(sqlite_path);
+    if let Some(index_path) = &args.index_path {
+      base.index = index_path.clone();
+    }
+    base
+  });
 
-  let explicit_index_path = args.index_path.clone();
-  let index_path: String = args
-    .index_path
-    .or_else(|| {
-      crate::admin_level_hierarchy::search_index::default_path_for(&sqlite_path)
-        .map(|p| p.to_string_lossy().into_owned())
-    })
-    .unwrap_or_else(|| format!("{}/database.tantivy", args.data_path));
-
-  preflight_checks(&args.data_path, &sqlite_path);
+  preflight_checks(&args.data_path, single.as_ref().map(|base| base.sqlite.as_str()));
 
   match args.command {
     commands::osm_pbf_file {
@@ -197,7 +224,6 @@ pub fn run() {
         recreate_cache,
       } => osm_pbf_file::ls::command_handler_osm_pbf_file_ls(
         &args.data_path,
-        &sqlite_path,
         &source,
         ls_endpoint.as_deref(),
         &recreate_cache,
@@ -206,21 +232,15 @@ pub fn run() {
         osm_pbf_file::download::command_handler_osm_pbf_file_download(
           &args.data_path,
           &args.threads,
-          &sqlite_path,
           &id_from_ls_or_url,
           ls_endpoint.as_deref(),
           args.abort_on_any_error,
         )
       }
     },
-    commands::exec { command } => exec::command_handler_exec(
-      &args.data_path,
-      &args.threads,
-      &sqlite_path,
-      &index_path,
-      command,
-      &preset,
-    ),
+    commands::exec { command } => {
+      exec::command_handler_exec(&args.data_path, &args.threads, command)
+    }
     commands::query {
       input,
       friendly_name_format,
@@ -228,9 +248,11 @@ pub fn run() {
       bounding_wkt,
       last_admin_levels,
       include_wkt,
+      country,
     } => query::command_handler_query(
-      &sqlite_path,
-      &index_path,
+      &args.data_path,
+      single.as_ref(),
+      country.as_deref(),
       &input,
       crate::address::query_opts {
         friendly_name_format: friendly_name_format.as_deref(),
@@ -239,38 +261,22 @@ pub fn run() {
         last_admin_levels,
         include_wkt,
       },
-      &preset,
     ),
     commands::http_server { host, port } => http_server::command_handler_http_server(
-      &sqlite_path,
-      &index_path,
+      &args.data_path,
+      single.as_ref(),
       crate::interfaces::http::bind(&format!("{host}:{port}")),
       args.threads,
-      &preset,
     ),
-    commands::build { source } => {
-      let preset = crate::presets::resolve(args.preset.or(Some(source.clone())));
-      build::command_handler_build(
-        &args.data_path,
-        &args.threads,
-        &sqlite_path,
-        &index_path,
-        &source,
-        None,
-        args.abort_on_any_error,
-        &preset,
-      )
+    commands::build { sources } => build::command_handler_build(
+      &args.data_path,
+      &args.threads,
+      &sources,
+      None,
+      args.abort_on_any_error,
+    ),
+    commands::tui { path } => {
+      tui::command_handler_tui(&args.data_path, single.as_ref(), path.as_deref())
     }
-    commands::merge { base, databases } => {
-      // the tantivy index belongs to the base (positional), not the global --sqlite-path default.
-      let merge_index_path = explicit_index_path
-        .or_else(|| {
-          crate::admin_level_hierarchy::search_index::default_path_for(&base)
-            .map(|p| p.to_string_lossy().into_owned())
-        })
-        .unwrap_or_else(|| format!("{}/database.tantivy", args.data_path));
-      merge::command_handler_merge(&base, &databases, &merge_index_path, &preset)
-    }
-    commands::tui { path } => tui::command_handler_tui(&sqlite_path, path.as_deref()),
   }
 }

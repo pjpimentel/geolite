@@ -16,9 +16,8 @@ const SQL_CREATE: &str = "
 const SQL_CREATE_INDEXES: &str = "
   CREATE INDEX IF NOT EXISTS osm_data.osm_relations_search_by_admin_level
     ON osm_relations(JSON_EXTRACT(payload, '$.tags.admin_level'));
+  CREATE INDEX IF NOT EXISTS osm_data.osm_relations_search_by_chunk ON osm_relations(osm_pbf_chunk_id);
 ";
-
-const SQL_DROP: &str = "DROP TABLE IF EXISTS osm_data.osm_relations;";
 
 // sqlite only takes an expression index when the query spells the expression exactly as the
 // index does: the bare `'$.tags.admin_level'` path stays a literal here instead of going through
@@ -39,16 +38,24 @@ impl table for osm_relations {
   const INDEXES: &str = SQL_CREATE_INDEXES;
 }
 
-pub(crate) fn drop_table(conn: &Connection) {
+pub fn delete_by_file_id(conn: &Connection, file_id: u32) {
+  const SQL_DELETE_BY_FILE_ID: &str = "
+    DELETE FROM osm_data.osm_relations
+    WHERE osm_pbf_chunk_id IN (
+      SELECT id
+      FROM osm_data.osm_pbf_blob_chunks
+      WHERE file_id = ?1
+    )
+  ";
+
   conn
-    .execute_batch(SQL_DROP)
-    .expect("failed to drop osm_relations");
+    .execute(SQL_DELETE_BY_FILE_ID, [file_id])
+    .expect("failed to delete the relations of a file");
 }
 
 pub struct relation_coord_row {
   pub relation_id: u64,
-  pub relation_name: String,
-  pub country_iso_code: Option<String>,
+  pub names: Vec<Option<String>>,
   pub post_code: Option<String>,
   pub way_order: u32,
   pub way_id: u64,
@@ -68,38 +75,20 @@ pub fn all_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
     .collect()
 }
 
-pub fn remaining_ids_by_admin_level(conn: &Connection, level: level) -> Vec<u64> {
-  let sql = format!(
-    "
-    WITH candidates AS ({SQL_CANDIDATES_BY_ADMIN_LEVEL})
-    SELECT candidates.id
-    FROM candidates
-    LEFT JOIN main.admin_levels ON main.admin_levels.relation_id = candidates.id
-      AND main.admin_levels.admin_level = ?2
-    WHERE main.admin_levels.relation_id IS NULL
-    "
-  );
-  let level_tag = level.value().to_string();
-  let mut stmt = conn
-    .prepare(&sql)
-    .expect("failed to prepare remaining relation ids");
-  stmt
-    .query_map(rusqlite::params![level_tag, level.value()], |row| {
-      row.get::<_, u64>(0)
-    })
-    .expect("failed to query remaining relation ids")
-    .map(|r| r.expect("failed to read relation id"))
-    .collect()
-}
-
 pub fn relation_coords_chunk(
   conn: &Connection,
   ids: &[u64],
-  name_priority: &[&str],
+  name_tags: &[&str],
 ) -> Vec<relation_coord_row> {
   let placeholders = crate::database::placeholders_for(ids.len());
-  let name_select = select::coalesce_of(PAYLOAD, name_priority);
-  let country_iso_select = select::normalized_coalesce(PAYLOAD, key::COUNTRY_ISO);
+  let name_selects = select::each_of(PAYLOAD, name_tags)
+    .iter()
+    .enumerate()
+    .map(|(at, expr)| format!("{expr} AS name_{at},\n"))
+    .collect::<String>();
+  let name_columns = (0..name_tags.len())
+    .map(|at| format!("way_members.name_{at},\n"))
+    .collect::<String>();
   // named after the osm tag: codeql reads a `post_code` local reaching the query as personal data
   // stored in clear (rust/cleartext-storage-database), and this is a column expression
   let postal_code_select = select::normalized_coalesce(PAYLOAD, key::POST_CODE);
@@ -110,8 +99,7 @@ pub fn relation_coords_chunk(
         osm_data.osm_relations.id AS relation_id,
         CAST(mem.key AS INTEGER) AS way_order,
         CAST(JSON_EXTRACT(mem.value, '$.id') AS INTEGER) AS way_id,
-        {name_select} AS relation_name,
-        {country_iso_select} AS country_iso_code,
+        {name_selects}
         {postal_code_select} AS post_code
       FROM osm_data.osm_relations,
         JSON_EACH(JSON_EXTRACT(osm_data.osm_relations.payload, '$.members')) AS mem
@@ -120,8 +108,7 @@ pub fn relation_coords_chunk(
     )
     SELECT
       way_members.relation_id,
-      way_members.relation_name,
-      way_members.country_iso_code,
+      {name_columns}
       way_members.post_code,
       way_members.way_order,
       way_members.way_id,
@@ -134,16 +121,18 @@ pub fn relation_coords_chunk(
     ORDER BY way_members.relation_id ASC, way_members.way_order ASC, node_refs.key ASC
     "
   );
+  let after_names = 1 + name_tags.len();
   crate::database::query_by_ids(conn, &sql, ids.iter().map(|&id| id as i64), |row| {
     Ok(relation_coord_row {
       relation_id: row.get(0)?,
-      relation_name: row.get(1)?,
-      country_iso_code: row.get(2)?,
-      post_code: row.get(3)?,
-      way_order: row.get(4)?,
-      way_id: row.get(5)?,
-      lon: row.get(6)?,
-      lat: row.get(7)?,
+      names: (1..after_names)
+        .map(|at| row.get::<_, Option<String>>(at))
+        .collect::<rusqlite::Result<Vec<_>>>()?,
+      post_code: row.get(after_names)?,
+      way_order: row.get(after_names + 1)?,
+      way_id: row.get(after_names + 2)?,
+      lon: row.get(after_names + 3)?,
+      lat: row.get(after_names + 4)?,
     })
   })
 }

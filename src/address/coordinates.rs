@@ -7,7 +7,6 @@ use super::{house_number, query_opts};
 use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::repository as admin_level_repository;
 use crate::admin_level::spatial_index;
-use crate::house_number::house_number_policy;
 
 const WORLD_BOUNDING_BOX: bounding_box = bounding_box {
   min_lat: -90.0,
@@ -49,7 +48,6 @@ fn paths_at<'a>(
 
 pub(super) fn run(
   conn: &Connection,
-  house_numbers: &house_number_policy,
   latitude: f64,
   longitude: f64,
   opts: &query_opts,
@@ -75,7 +73,8 @@ pub(super) fn run(
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
   let mut sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);
   sources.load_leaf_boxes(conn);
-  let numbers = house_number::at_point(conn, input_pt, &candidates, house_numbers);
+  let numbers =
+    house_number::at_point(conn, input_pt, &candidates, |id| sources.house_number_policy_of(id));
 
   let mut matches: Vec<query_match> = Vec::new();
   for c in &candidates {

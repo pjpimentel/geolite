@@ -2,36 +2,44 @@ use geo::{Coord, Geometry, LineString};
 use rusqlite::Connection;
 
 use super::entity::admin_level;
-use super::extract::CHUNK_SIZE;
+use super::extract::{CHUNK_SIZE, extract_opts, identity_of, known_way_ids, write_batch, written};
 use super::id::admin_level_id;
-use super::rules::{extraction_rules, resolve_rules};
+use super::rules::rules_of;
 use super::scale::level;
+use crate::database::store::base_pool;
 use crate::progress_report;
 
 struct way_work {
   way_id: u64,
-  name: String,
+  names: Vec<Option<String>>,
   post_code: Option<String>,
   coords: Vec<Coord<f64>>,
 }
 
 pub(super) fn run(
   conn: &Connection,
-  rules: &[extraction_rules],
-  name_priority: &[&str],
+  opts: &extract_opts,
+  pool: &mut base_pool,
   mut progress: impl FnMut(progress_report),
-) {
-  let (_, exclude) = resolve_rules(level::street, rules);
-  let candidate_ids =
-    crate::osm_way::repository::remaining_ids_by_tags(conn, level::street, exclude);
+) -> written {
+  let (_, exclude) = rules_of(level::street);
+  let known = known_way_ids(pool, level::street);
+  let candidate_ids: Vec<u64> = crate::osm_way::repository::candidate_ids_by_tags(conn, exclude)
+    .into_iter()
+    .filter(|id| !known.contains(id))
+    .collect();
 
   let total = candidate_ids.len() as u64;
   progress(progress_report {
     total: Some(total),
     processed: 0,
   });
+  let mut written = written {
+    kept: 0,
+    dropped: 0,
+  };
   if candidate_ids.is_empty() {
-    return;
+    return written;
   }
 
   // the per-item geometry work (line assembly) is far cheaper than the
@@ -39,25 +47,29 @@ pub(super) fn run(
   // sequentially is as fast as a worker pool without the channel overhead
   let mut processed: u64 = 0;
   for chunk in candidate_ids.chunks(CHUNK_SIZE) {
-    let works = load_chunk(conn, chunk, name_priority);
+    let works = load_chunk(conn, chunk, opts.name_tags);
+    processed += works.len() as u64;
     let mut batch: Vec<admin_level> = Vec::new();
     for w in works {
-      if let Some(row) = process_one_way(w.way_id, &w.coords, &w.name, w.post_code.as_deref()) {
+      if let Some(row) = process_one_way(w, opts) {
         batch.push(row);
       }
     }
-    processed += super::repository::batch_upsert(conn, &batch) as u64;
+    let wrote = write_batch(pool, batch);
+    written.kept += wrote.kept;
+    written.dropped += wrote.dropped;
     progress(progress_report {
       total: Some(total),
       processed,
     });
   }
+  written
 }
 
-fn load_chunk(conn: &Connection, chunk: &[u64], name_priority: &[&str]) -> Vec<way_work> {
-  let raw_rows = crate::osm_way::repository::way_coords_chunk(conn, chunk, name_priority);
+fn load_chunk(conn: &Connection, chunk: &[u64], name_tags: &[&str]) -> Vec<way_work> {
+  let raw_rows = crate::osm_way::repository::way_coords_chunk(conn, chunk, name_tags);
 
-  type way_name_tuple = (String, Option<String>);
+  type way_name_tuple = (Vec<Option<String>>, Option<String>);
 
   let mut way_order: Vec<u64> = Vec::new();
   let mut way_names: std::collections::HashMap<u64, way_name_tuple> =
@@ -68,7 +80,7 @@ fn load_chunk(conn: &Connection, chunk: &[u64], name_priority: &[&str]) -> Vec<w
   for row in &raw_rows {
     if let std::collections::hash_map::Entry::Vacant(e) = way_names.entry(row.way_id) {
       way_order.push(row.way_id);
-      e.insert((row.way_name.clone(), row.post_code.clone()));
+      e.insert((row.names.clone(), row.post_code.clone()));
       way_coords.insert(row.way_id, Vec::new());
     }
     way_coords.get_mut(&row.way_id).unwrap().push(Coord {
@@ -79,11 +91,11 @@ fn load_chunk(conn: &Connection, chunk: &[u64], name_priority: &[&str]) -> Vec<w
 
   let mut works = Vec::with_capacity(way_order.len());
   for way_id in way_order {
-    let (name, post_code) = way_names.remove(&way_id).unwrap();
+    let (names, post_code) = way_names.remove(&way_id).unwrap();
     let coords = way_coords.remove(&way_id).unwrap();
     works.push(way_work {
       way_id,
-      name,
+      names,
       post_code,
       coords,
     });
@@ -91,25 +103,21 @@ fn load_chunk(conn: &Connection, chunk: &[u64], name_priority: &[&str]) -> Vec<w
   works
 }
 
-fn process_one_way(
-  way_id: u64,
-  coords: &[Coord<f64>],
-  name: &str,
-  post_code: Option<&str>,
-) -> Option<admin_level> {
-  if coords.is_empty() {
+fn process_one_way(w: way_work, opts: &extract_opts) -> Option<admin_level> {
+  if w.coords.is_empty() {
     return None;
   }
 
   // streets are always lines — never polygon, even if the ring is closed
-  let ls = LineString(coords.to_vec());
+  let geom = Geometry::LineString(LineString(w.coords));
 
+  let identity = identity_of(opts, level::street, &geom, &w.names)?;
   Some(admin_level {
-    id: admin_level_id::from_way(way_id),
+    id: admin_level_id::from_way(w.way_id),
     level: level::street,
-    name: name.to_owned(),
-    country_iso_code: None,
-    post_code: post_code.map(str::to_owned),
-    wkb: Geometry::LineString(ls).into(),
+    name: identity.name,
+    country_iso_code: Some(identity.iso.to_string()),
+    post_code: w.post_code,
+    wkb: geom.into(),
   })
 }

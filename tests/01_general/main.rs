@@ -24,8 +24,8 @@ mod house_number;
 #[path = "isolated_admin_levels.test.rs"]
 mod isolated_admin_levels;
 
-#[path = "merge.test.rs"]
-mod merge;
+#[path = "build.test.rs"]
+mod build;
 
 #[path = "street_merge.test.rs"]
 mod street_merge;

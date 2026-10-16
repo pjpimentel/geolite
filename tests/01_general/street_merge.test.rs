@@ -26,9 +26,9 @@ const GUARUJA: i64 = 596_927;
 const EMBARE: i64 = 8_565_765;
 const GONZAGA: i64 = 8_565_769;
 const JOSE_MENINO: i64 = 8_565_771;
-const STREETS: i64 = 12_878;
-const STREETS_AFTER: i64 = 7_195;
-const PIECES: i64 = 1_984;
+pub(crate) const STREETS: i64 = 12_611;
+const STREETS_AFTER: i64 = 7_149;
+const PIECES: i64 = 1_958;
 pub(crate) const NUMBERS_MOVED: usize = 261;
 pub(crate) const TEXT_QUERY: &str = "rua castro alves, embare, santos, sao paulo";
 const EUCLIDES_GONZAGA_QUERY: &str = "rua euclides da cunha, gonzaga, santos, sao paulo";
@@ -39,7 +39,7 @@ pub(crate) fn way(osm_id: u64) -> i64 {
 }
 
 pub(crate) fn writable(dir: &Path) -> rusqlite::Connection {
-  rusqlite::Connection::open(dir.join("database.sqlite3"))
+  rusqlite::Connection::open(dir.join("br.sqlite3"))
     .expect("failed to open the scratch database for writing")
 }
 
@@ -75,10 +75,7 @@ pub(crate) fn assert_refused(out: &output, reason: &str) {
 
 // the merge stage run where it is expected to refuse, so the exit code is the scenario's to assert
 fn merge_refused(w: &world, dir: &Path) -> output {
-  w.geolite_in(
-    dir,
-    &["--preset", "brazil", "exec", "optimize-merge-admin-levels"],
-  )
+  w.geolite_in(dir, &["exec", "optimize-merge-admin-levels"])
 }
 
 pub(crate) fn merged_summary() -> String {
@@ -105,11 +102,7 @@ pub(crate) fn drop_merged_way_ids(dir: &Path) {
 }
 
 fn merged_at(w: &world, dir: &Path) -> output {
-  stage(
-    w,
-    dir,
-    &["--preset", "brazil", "exec", "optimize-merge-admin-levels"],
-  )
+  stage(w, dir, &["exec", "optimize-merge-admin-levels"])
 }
 
 pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
@@ -124,11 +117,7 @@ pub(crate) fn indexed_and_merged(w: &world, dir: &Path) {
 pub(crate) fn resolved(w: &world, name: &str) -> scratch {
   let s = extracted(w, name, "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8,10,12", &[]);
-  stage(
-    w,
-    &s.dir,
-    &["--preset", "brazil", "exec", "extract-osm-house-numbers"],
-  );
+  stage(w, &s.dir, &["exec", "extract-osm-house-numbers"]);
   index_at(w, &s.dir, "admin-levels-hierarchy");
   s
 }
@@ -232,7 +221,7 @@ pub(crate) fn assert_a_run_with_nothing_to_do_keeps_the_indexes(
 
   assert!(again.contains(skipped), "{again}");
   assert_eq!(snapshot(&s.ledger()), before);
-  assert!(s.dir.join("database.tantivy").is_dir());
+  assert!(s.dir.join("br.tantivy").is_dir());
   assert_eq!(rtree_rows(s), rtree);
 }
 
@@ -243,29 +232,20 @@ pub(crate) fn assert_the_indexes_are_cleared_and_recreated(
   query: &str,
 ) {
   indexed_after(w, s);
-  assert!(s.dir.join("database.tantivy").is_dir());
+  assert!(s.dir.join("br.tantivy").is_dir());
 
   let out = run(w, &s.dir);
 
   assert!(
-    plain(&out.stdout)
-      .contains("next run `geolite exec index-addresses` and `geolite exec index-coordinates`"),
+    plain(&out.stdout).contains(
+      "next run `geolite exec index-addresses br` and `geolite exec index-coordinates br`"
+    ),
     "{}",
     out.stdout
   );
-  assert!(!s.dir.join("database.tantivy").exists());
+  assert!(!s.dir.join("br.tantivy").exists());
   assert_eq!(rtree_rows(s), 0);
-  let asked = w.geolite_in(
-    &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "query",
-      query,
-      "--include-wkt",
-      "false",
-    ],
-  );
+  let asked = w.geolite_in(&s.dir, &["query", query, "--include-wkt", "false"]);
   assert_eq!(asked.status, 1);
   assert!(
     asked.stderr.contains("tantivy index not found"),
@@ -276,14 +256,19 @@ pub(crate) fn assert_the_indexes_are_cleared_and_recreated(
   indexed_after(w, s);
 }
 
-pub(crate) fn assert_the_ledger_follows_the_tables(conn: &rusqlite::Connection) {
-  let (admins, houses): (i64, i64) = conn
+// what the ledger says a source brought: the admin levels and the house numbers it counted
+pub(crate) fn ledger_counts(conn: &rusqlite::Connection) -> (i64, i64) {
+  conn
     .query_row(
       "SELECT admin_levels_count, house_numbers_count FROM osm_pbf_files",
       [],
       |r| Ok((r.get(0)?, r.get(1)?)),
     )
-    .expect("failed to read the ledger");
+    .expect("failed to read the ledger")
+}
+
+pub(crate) fn assert_the_ledger_counts_the_extraction(conn: &rusqlite::Connection) {
+  let (admins, houses) = ledger_counts(conn);
   assert_eq!(
     admins,
     count(
@@ -535,19 +520,27 @@ fn _00_06_the_indexes_after_it_are_cleared_and_have_to_be_recreated() {
 
   assert_the_indexes_are_cleared_and_recreated(w, &s, merged_at, TEXT_QUERY);
 
-  let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
+  let result = query_at(w, &s.dir, TEXT_QUERY);
   assert_eq!(matches(&result).len(), 1, "the street answers once");
 }
 
-// 00.07. the ledger counts what the table holds after the fold
+// 00.07. the ledger counts what the source brought, and the fold, which only rearranges it,
+// leaves the count where the extraction stamped it
 #[test]
 #[ignore]
-fn _00_07_the_ledger_follows_the_table_after_the_merge() {
+fn _00_07_the_ledger_keeps_what_the_source_brought_through_the_merge() {
   let w = world();
   let s = resolved(w, "street_merge_ledger");
+  assert_the_ledger_counts_the_extraction(&s.ledger());
+  let before = ledger_counts(&s.ledger());
+
   merged_at(w, &s.dir);
 
-  assert_the_ledger_follows_the_tables(&s.ledger());
+  assert_eq!(ledger_counts(&s.ledger()), before);
+  assert!(
+    street_rows(&s.ledger()) < before.0,
+    "the fold shrank the table, not the ledger"
+  );
 }
 
 // 00.08. resolving the hierarchy again over the folded rows writes the same edges
@@ -617,7 +610,7 @@ fn _00_10_ways_that_share_a_neighbourhood_fold_into_a_street_that_belongs_to_all
     vec![GONZAGA, JOSE_MENINO],
     "the street belongs to every neighbourhood its ways were in"
   );
-  let result = query_at(w, &s.dir, "brazil", EUCLIDES_GONZAGA_QUERY);
+  let result = query_at(w, &s.dir, EUCLIDES_GONZAGA_QUERY);
   let in_gonzaga = matches(&result)
     .iter()
     .filter(|m| name_at(m, 12).as_deref() == Some("Rua Euclides da Cunha"))
@@ -673,7 +666,7 @@ fn _00_12_each_label_of_a_street_answers_a_point_inside_its_own_neighbourhood() 
     (EUCLIDES_GONZAGA_QUERY, GONZAGA),
     (EUCLIDES_JOSE_MENINO_QUERY, JOSE_MENINO),
   ] {
-    let result = query_at(w, &s.dir, "brazil", query);
+    let result = query_at(w, &s.dir, query);
     let across = matches(&result)
       .iter()
       .find(|m| {
@@ -850,10 +843,7 @@ fn _02_01_it_refuses_an_empty_database() {
 
   let out = merge_refused(w, &s.dir);
 
-  assert_refused(
-    &out,
-    "optimize-merge-admin-levels requires index-admin-levels-hierarchy",
-  );
+  assert_refused(&out, "no base in");
 }
 
 // 02.02. it needs the hierarchy to cover every row: the ways extracted again after a fold have no
@@ -946,7 +936,7 @@ fn _03_01_query_still_answers_on_a_database_without_merged_way_ids() {
   let s = resolved(w, "street_merge_column_absent");
   indexed_and_merged(w, &s.dir);
   let trace_at = |level: u64| -> Option<serde_json::Value> {
-    let result = query_at(w, &s.dir, "brazil", TEXT_QUERY);
+    let result = query_at(w, &s.dir, TEXT_QUERY);
     level_at(&matches(&result)[0], level)
       .unwrap_or_else(|| panic!("the top match has no level {level}; {REGENERATE}"))
       .get("osm_merged_way_ids")

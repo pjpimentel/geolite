@@ -15,4 +15,6 @@ pub enum way_filter {
   exclude_leisure_park,
   exclude_building,
   exclude_waterway,
+  exclude_boundary,
+  exclude_location_underwater,
 }

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::admin_level::{admin_levels_at, index_at};
-use crate::common::harness::{decode_wkb, output, plain, query_at, world};
+use crate::common::harness::{decode_wkb, output, plain, query_at, relabel_country, world};
 use crate::common::query::{first, levels_of};
 use crate::extract::{REGENERATE, count, extracted, scratch, stage};
 use crate::general::world;
@@ -21,7 +21,7 @@ const FIRST_INJECTED_NODE: i64 = 9_000_000_001;
 pub(crate) const NODE_OF_197: u64 = 2_061_634_141;
 
 fn house_numbers_at(w: &world, dir: &Path, extra: &[&str]) -> output {
-  let mut args = vec!["--preset", "brazil", "exec", "extract-osm-house-numbers"];
+  let mut args = vec!["exec", "extract-osm-house-numbers"];
   args.extend_from_slice(extra);
   stage(w, dir, &args)
 }
@@ -49,8 +49,8 @@ fn indexed(w: &world, name: &str) -> scratch {
   s
 }
 
-fn asked(w: &world, dir: &Path, preset: &str, number: &str) -> Value {
-  query_at(w, dir, preset, &format!("{NUMBERED_STREET} {number}"))
+fn asked(w: &world, dir: &Path, number: &str) -> Value {
+  query_at(w, dir, &format!("{NUMBERED_STREET} {number}"))
 }
 
 fn extracted_line(stdout: &str, inserted: i64) -> bool {
@@ -118,7 +118,7 @@ fn injected(w: &world, name: &str, numbers: &[&str]) -> (scratch, output) {
 
   let s = streets(w, name);
   {
-    let conn = rusqlite::Connection::open(s.dir.join("database.osm_data.sqlite3"))
+    let conn = rusqlite::Connection::open(s.dir.join("osm_data.sqlite3"))
       .expect("failed to open the scratch osm data for writing");
     for (offset, number) in numbers.iter().enumerate() {
       let payload = json!({
@@ -310,10 +310,7 @@ fn _00_05_a_link_by_name_names_the_street_the_node_names() {
   conn
     .execute(
       "ATTACH DATABASE ?1 AS osm_data",
-      [s.dir
-        .join("database.osm_data.sqlite3")
-        .to_string_lossy()
-        .as_ref()],
+      [s.dir.join("osm_data.sqlite3").to_string_lossy().as_ref()],
     )
     .expect("failed to attach the osm_data sibling");
   assert_eq!(
@@ -394,16 +391,19 @@ fn _00_08_the_intermediary_data_cannot_be_deleted_before_the_house_numbers_are_l
     "stderr: {}",
     out.stderr
   );
-  assert!(s.dir.join("database.osm_data.sqlite3").is_file());
+  assert!(s.dir.join("osm_data.sqlite3").is_file());
 }
 
-// 01.00. the `#` prefix is a number only where the preset allows it
+// 01.00. the `#` prefix is a number only where the policy of the country allows it: the world
+// relabelled as colombia reads it, the world itself, brazilian, does not
 #[test]
 #[ignore]
 fn _01_00_the_hash_prefix_is_a_number_only_under_the_colombia_policy() {
   let w = world();
+  let colombia = w.world_copy("house_number_hash_prefix");
+  relabel_country(&colombia, Some("CO"));
   for number in ["#197", "# 197"] {
-    let result = asked(w, &w.data_path, "colombia", number);
+    let result = asked(w, &colombia, number);
     assert_eq!(
       first(&result)["house_number"],
       json!({
@@ -416,7 +416,7 @@ fn _01_00_the_hash_prefix_is_a_number_only_under_the_colombia_policy() {
     );
     assert_eq!(levels_of(first(&result)).last(), Some(&12), "{number}");
   }
-  let result = asked(w, &w.data_path, "brazil", "#197");
+  let result = asked(w, &w.data_path, "#197");
   assert!(
     first(&result).get("house_number").is_none(),
     "brazil reads no number in '#197'"
@@ -430,7 +430,7 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
   let w = world();
   let s = indexed(w, "house_number_compound");
   {
-    let conn = rusqlite::Connection::open(s.dir.join("database.sqlite3"))
+    let conn = rusqlite::Connection::open(s.dir.join("br.sqlite3"))
       .expect("failed to open the scratch database for writing");
     for (node_id, number, from) in [
       (9_000_000_001i64, "82-52", "197"),
@@ -448,7 +448,8 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
     }
   }
 
-  let exact = asked(w, &s.dir, "colombia", "82-52");
+  relabel_country(&s.dir, Some("CO"));
+  let exact = asked(w, &s.dir, "82-52");
   assert_eq!(
     first(&exact)["house_number"],
     json!({
@@ -458,24 +459,25 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
       "meters_per_number": null,
     })
   );
-  let known = asked(w, &s.dir, "colombia", "197");
+  let known = asked(w, &s.dir, "197");
   assert_eq!(
     (&first(&exact)["latitude"], &first(&exact)["longitude"]),
     (&first(&known)["latitude"], &first(&known)["longitude"]),
     "the compound number sits on the point it was copied from"
   );
-  let unplaced = asked(w, &s.dir, "colombia", "82-56");
+  let unplaced = asked(w, &s.dir, "82-56");
   assert!(
     first(&unplaced).get("house_number").is_none(),
     "a compound number is never presumed: the street answers bare"
   );
   assert_eq!(
-    first(&asked(w, &s.dir, "colombia", "82"))["house_number"]["kind"],
+    first(&asked(w, &s.dir, "82"))["house_number"]["kind"],
     "presumed_from_multiple_references_from_street",
     "the control: a simple number is presumed from the references of this street"
   );
+  relabel_country(&s.dir, Some("BR"));
   assert!(
-    first(&asked(w, &s.dir, "brazil", "82-52"))
+    first(&asked(w, &s.dir, "82-52"))
       .get("house_number")
       .is_none(),
     "brazil reads no number in '82-52'"
@@ -483,7 +485,8 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
 }
 
 // 01.02. the stage keeps, drops and canonizes the shapes the fixture never brings, as the policy
-// of the preset says: brazil drops its non-values, the default keeps them
+// of the country of the street says: brazil drops its non-values, a street without a country
+// keeps them
 #[test]
 #[ignore]
 fn _01_02_the_stage_keeps_drops_and_canonizes_the_shapes_the_fixture_never_brings() {
@@ -535,6 +538,7 @@ fn _01_02_the_stage_keeps_drops_and_canonizes_the_shapes_the_fixture_never_bring
     "under brazil"
   );
 
+  relabel_country(&s.dir, None);
   let out = stage(
     w,
     &s.dir,
@@ -564,12 +568,13 @@ fn _01_03_a_compound_number_matches_across_its_letter_case_and_separator() {
     index_at(w, &s.dir, index);
   }
 
+  relabel_country(&s.dir, Some("CO"));
   for (typed, node) in [
     ("25b-48", FIRST_INJECTED_NODE),
     ("16I56", FIRST_INJECTED_NODE + 1),
     ("16i-56", FIRST_INJECTED_NODE + 1),
   ] {
-    let result = asked(w, &s.dir, "colombia", typed);
+    let result = asked(w, &s.dir, typed);
     assert_eq!(
       first(&result)["house_number"],
       json!({
@@ -582,8 +587,9 @@ fn _01_03_a_compound_number_matches_across_its_letter_case_and_separator() {
     );
     assert_eq!(levels_of(first(&result)).last(), Some(&12), "{typed}");
   }
+  relabel_country(&s.dir, Some("BR"));
   assert!(
-    first(&asked(w, &s.dir, "brazil", "16I56"))
+    first(&asked(w, &s.dir, "16I56"))
       .get("house_number")
       .is_none(),
     "brazil reads no number in '16I56'"

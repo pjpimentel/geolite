@@ -72,6 +72,23 @@ pub fn count_by_file_id(conn: &Connection, file_id: u32) -> i64 {
     .expect("failed to count blob chunks")
 }
 
+pub fn file_ids(conn: &Connection) -> Vec<u32> {
+  const SQL_FILE_IDS: &str = "
+    SELECT DISTINCT file_id
+    FROM osm_data.osm_pbf_blob_chunks
+    ORDER BY file_id
+  ";
+
+  let mut stmt = conn
+    .prepare(SQL_FILE_IDS)
+    .expect("failed to prepare the files of the osm_data");
+  stmt
+    .query_map([], |row| row.get(0))
+    .expect("failed to list the files of the osm_data")
+    .map(|row| row.expect("failed to read a file id"))
+    .collect()
+}
+
 pub fn delete_by_file_id(conn: &Connection, file_id: u32) {
   const SQL_DELETE_BY_FILE_ID: &str = "
     DELETE FROM osm_data.osm_pbf_blob_chunks

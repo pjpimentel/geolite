@@ -9,15 +9,12 @@ use super::{filter, query_opts};
 use crate::admin_level::level;
 use crate::admin_level::repository::admin_area_row;
 use crate::admin_level_hierarchy::search_index::{self, search_hit, tantivy_index, tokenize};
-use crate::house_number::{
-  house_number_policy, house_number_resolution, house_number_scenario, token,
-};
+use crate::house_number::{house_number_resolution, house_number_scenario, policy, token};
 
 const MAX_FTS_HITS: u8 = 50;
 
 pub(super) fn run(
   conn: &Connection,
-  house_numbers: &house_number_policy,
   index: &tantivy_index,
   text: &str,
   opts: &query_opts,
@@ -38,10 +35,11 @@ pub(super) fn run(
   }
   // the fts runs on the full text: a number can be part of the street name ("25" in
   // "rua 25 de marco"), so stripping it would break the match; the house number is resolved
-  // per candidate afterwards
+  // per candidate afterwards, under the policy of the candidate's country, which is not known
+  // here: the words are read under every shape, and they only mark optional tokens
   let hits = index.search(
     text,
-    &token::house_number_words(text, house_numbers),
+    &token::house_number_words(text, &policy::EVERY_SHAPE),
     MAX_FTS_HITS as usize,
     opts.last_admin_levels.as_deref(),
     region_ids.as_deref(),
@@ -62,7 +60,8 @@ pub(super) fn run(
     .iter()
     .filter(|r| r.admin_level == level::street)
     .collect();
-  let numbers = house_number::from_query(conn, text, &streets, house_numbers);
+  let numbers =
+    house_number::from_query(conn, text, &streets, |id| sources.house_number_policy_of(id));
 
   // one match per hit: a hit is one path of an area, and its ordinal names the path
   let mut matches: Vec<query_match> = hits

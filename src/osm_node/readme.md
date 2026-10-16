@@ -25,7 +25,7 @@ variable limit.
 ## the filters — `osm_way::filter` and `repository`
 
 `way_filter` is the meaning — which ways a level wants (`include_place_neighbourhood`,
-`exclude_building`, …); `admin_level::rules` selects with it and a preset may override it. the sql
+`exclude_building`, …); `admin_level::rules` selects with it. the sql
 of each variant lives in the way's repository alone, built from `osm_tag::select` over typed keys
 and values, so the vocabulary and its translation are separate and the translation has one owner.
 

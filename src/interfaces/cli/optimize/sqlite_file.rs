@@ -6,7 +6,7 @@ pub fn command_handler_optimize_sqlite_file(sqlite_path: &str) {
   print!("\x1b[1;32moptimizing\x1b[0m sqlite file...");
   let _ = std::io::stdout().flush();
   let start = Instant::now();
-  let conn = crate::database::open_write_main(sqlite_path);
+  let conn = crate::database::store::open_base_write(sqlite_path);
   let (bytes_before, bytes_after) = crate::database::compact(&conn);
   drop(conn);
   let elapsed = start.elapsed().as_secs_f64();

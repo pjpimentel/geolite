@@ -177,7 +177,6 @@ fn expand_abbreviations(text: &str, abbreviations: &[(&str, &str)]) -> String {
 pub fn run(
   conn: &Connection,
   index_path: &Path,
-  preset: &crate::presets::index_addresses_preset,
   progress: impl Fn(progress_report),
 ) -> tantivy_index {
   let total = repository::count(conn) as u64;
@@ -185,7 +184,7 @@ pub fn run(
     total: Some(total),
     processed: 0,
   });
-  let index = build(conn, index_path, preset.boosts, preset.abbreviations);
+  let index = build(conn, index_path);
   progress(progress_report {
     total: Some(total),
     processed: total,
@@ -193,13 +192,15 @@ pub fn run(
   index
 }
 
-pub fn build(
-  conn: &Connection,
-  index_path: &Path,
-  boosts: tantivy_boosts,
-  abbreviations: &[(&str, &str)],
-) -> tantivy_index {
-  let _ = std::fs::remove_dir_all(index_path);
+type abbreviations = &'static [(&'static str, &'static str)];
+
+fn abbreviations_of(iso: Option<&str>) -> abbreviations {
+  crate::presets::for_country(iso).index_addresses.abbreviations
+}
+
+pub fn build(conn: &Connection, index_path: &Path) -> tantivy_index {
+  let boosts = crate::presets::DEFAULT.index_addresses.boosts;
+  destroy(index_path);
   std::fs::create_dir_all(index_path).expect("failed to create tantivy index dir");
 
   let (
@@ -223,9 +224,20 @@ pub fn build(
   // giving ["01310", "100"], while the digits-only form stays one token
   let mut names_map: HashMap<i64, String> = HashMap::new();
   let mut levels_map: HashMap<i64, u64> = HashMap::new();
+  // the abbreviations of a row are its country's; a row written before the country reached every
+  // row borrows the one of the country on its path
+  let mut abbreviations_map: HashMap<i64, abbreviations> = HashMap::new();
+  let mut country_rows: HashMap<i64, abbreviations> = HashMap::new();
   for row in crate::admin_level::repository::load_all_names(conn) {
     names_map.insert(row.id, build_entity_text(&row.name, row.post_code.as_deref()));
     levels_map.insert(row.id, row.admin_level.value() as u64);
+    if let Some(iso) = row.country_iso_code.as_deref() {
+      let abbreviations = abbreviations_of(Some(iso));
+      abbreviations_map.insert(row.id, abbreviations);
+      if row.admin_level == level::country {
+        country_rows.insert(row.id, abbreviations);
+      }
+    }
   }
 
   let mut writer = index
@@ -238,9 +250,14 @@ pub fn build(
   ids.sort_unstable();
   for id in ids {
     let own_name = names_map.get(&id).cloned().unwrap_or_default();
-    let own_name_folded = expand_abbreviations(&own_name, abbreviations);
     let admin_level = levels_map.get(&id).copied().unwrap_or(0);
     for (ordinal, path) in paths::paths_of(id, &edges).iter().enumerate() {
+      let abbreviations = abbreviations_map
+        .get(&id)
+        .or_else(|| path.iter().find_map(|aid| country_rows.get(aid)))
+        .copied()
+        .unwrap_or_else(|| abbreviations_of(None));
+      let own_name_folded = expand_abbreviations(&own_name, abbreviations);
       let hier_text: String = path
         .iter()
         .filter_map(|aid| names_map.get(aid).cloned())

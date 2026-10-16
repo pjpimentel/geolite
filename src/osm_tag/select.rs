@@ -20,6 +20,13 @@ pub fn coalesce_of(payload_expr: &str, keys: &[&str]) -> String {
   }
 }
 
+pub fn each_of(payload_expr: &str, keys: &[&str]) -> Vec<String> {
+  keys
+    .iter()
+    .map(|key| format!("JSON_EXTRACT({payload_expr}, '{}')", json_path_of(key)))
+    .collect()
+}
+
 pub fn normalized_coalesce(payload_expr: &str, tags: &[osm_tag]) -> String {
   let parts: Vec<String> = tags
     .iter()

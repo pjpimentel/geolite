@@ -170,3 +170,36 @@ fn _00_03_a_level_the_path_lacks_keeps_its_line() {
   assert_eq!(leaf.field("admin level 10 (neighborhood)"), Some("n/a"));
   assert_eq!(leaf.levels_held().len(), 3);
 }
+
+// 00.04. a data path of several bases is listed from a folder per base, named after its
+// country, and a path starts with it
+#[test]
+#[ignore]
+fn _00_04_a_data_path_of_several_bases_lists_a_folder_per_base() {
+  let w = world();
+  let dir = w.world_copy("tui_two_bases");
+  w.copy_base_into(&dir, "ar");
+
+  let listed = w.geolite_in(&dir, &["tui"]);
+  assert_eq!(listed.status, 0, "stderr: {}", listed.stderr);
+  let rows: Vec<Vec<&str>> = listed
+    .stdout
+    .lines()
+    .skip(2)
+    .map(|line| line.split_whitespace().collect())
+    .collect();
+  assert_eq!(rows, [vec!["base", "1", "AR"], vec!["base", "1", "BR"]]);
+
+  let entered = w.geolite_in(&dir, &["tui", "AR"]);
+  assert_eq!(entered.status, 0, "stderr: {}", entered.stderr);
+  assert_eq!(
+    entered
+      .stdout
+      .lines()
+      .last()
+      .map(|line| line.split_whitespace().collect::<Vec<_>>()),
+    Some(vec!["country", "27", "Brasil"]),
+    "the folder of a base lists its roots:\n{}",
+    entered.stdout
+  );
+}

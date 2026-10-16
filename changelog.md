@@ -12,6 +12,23 @@
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
 1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
 
+
+## **planned** - 0.0.17
+
+1. REMOVED the `--preset` flag and the preset inferred from the source name, a row extracted, indexed and answered under the preset of the country whose boundary holds it (not backward compatible), so a base of many countries answers each one under its own preset.
+1. ADDED the boundary of every country the geofabrik index names, the outline of its extract compiled into the binary, so the country of a row is decided against it, with or without a preset of its own, and never against what the extract happens to hold.
+1. REMOVED `admin_levels_rules`, `number_tags` and `street_tags` from the presets, the defaults the only rules, so a preset holds only what varies by country.
+1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
+1. MODIFIED the storage to one base per country, `<iso>.sqlite3` and `<iso>.tantivy` in the data path, the rows of a source routed by the boundary that holds them and the sources kept in `catalog.sqlite3` (not backward compatible), so a data path holds the world one country at a time.
+1. MODIFIED `build` to write every country a source holds, `build south-america` one base per country and `build sudeste` a part of `br.sqlite3`, so a continent, a country and a region are built by the same command.
+1. REMOVED `merge`, a second build into the same data path writing the countries it has no base for and leaving the sealed ones as they are, so a data path grows country by country without a step of its own.
+1. MODIFIED `query` and `http-server` to answer over every base of the data path, a coordinate merged by distance and a text by similarity, with `country` to narrow, so one server answers a continent.
+1. MODIFIED the tui to open every base of the data path, one folder per country at the root, so the terminal browses what the api answers.
+1. MODIFIED the street rules to leave out the ways tagged `boundary` or `location=underwater`, so a border line and a submarine cable are never streets.
+1. MODIFIED `query`, `http-server` and the tui to open a base immutable, so a reader creates no `-wal` or `-shm` beside it and a base on read-only media answers.
+1. MODIFIED `build` to seal the base of each country it writes, read-only at the os level and taking no row from a later source, so a base built once is final.
+1. MODIFIED the osm data to one `osm_data.sqlite3` shared by every source, `extract-osm-admin-levels`, `extract-osm-house-numbers` and `optimize-delete-intermediary-data` taking no source and `build` taking several (not backward compatible), so several extracts are downloaded and decoded before one extraction writes the bases.
+
 ## **2026-10-12** - 0.0.16
 
 1. REMOVED the admin level 30 from the scale and from the ladder, the house number of a match carried only by its `house_number` object (not backward compatible).

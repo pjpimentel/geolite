@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use crate::common::harness::{open_sqlite_at, output, plain, query_at, world};
+use crate::common::harness::{
+  make_writable, open_scratch, open_sqlite_at, output, plain, query_at, world,
+};
 use crate::common::query::first;
 use crate::common::stub;
 use crate::extract::{NODES, REGENERATE, extracted, stage};
@@ -68,7 +70,7 @@ fn fixture_bytes(w: &world) -> Vec<u8> {
 }
 
 fn database(dir: &Path) -> rusqlite::Connection {
-  open_sqlite_at(&dir.join("database.sqlite3"))
+  open_scratch(dir)
 }
 
 fn joined(dir: &Path, name: &str) -> String {
@@ -168,14 +170,13 @@ fn _00_the_ledger_row_of_a_local_build_has_a_local_path_origin() {
     "the osm-data stage must fill the counts"
   );
   assert_eq!(houses, count(&conn, "SELECT COUNT(*) FROM house_numbers"));
+  // the ledger counts what the source brought, before the fold of the streets shrank the table
   assert_eq!(
     count(&conn, "SELECT admin_levels_count FROM osm_pbf_files"),
-    count(
-      &conn,
-      "SELECT COUNT(*) FROM admin_levels WHERE wkb IS NOT NULL"
-    )
+    1 + 27 + 12 + 63 + crate::street_merge::STREETS,
+    "{REGENERATE}"
   );
-  assert_eq!(count(&conn, "PRAGMA user_version"), 3);
+  assert_eq!(count(&conn, "PRAGMA user_version"), 4);
 }
 
 // 01. schema version
@@ -184,25 +185,23 @@ fn _00_the_ledger_row_of_a_local_build_has_a_local_path_origin() {
 fn _01_a_write_command_refuses_a_database_stamped_with_another_schema_version() {
   let w = world();
   let dir = w.scratch("foreign_version_write");
-  std::fs::copy(&w.sqlite_path, dir.join("database.sqlite3")).expect("failed to copy the database");
+  std::fs::copy(&w.sqlite_path, dir.join("br.sqlite3")).expect("failed to copy the database");
+  make_writable(&dir.join("br.sqlite3"));
   {
-    let conn = rusqlite::Connection::open(dir.join("database.sqlite3")).expect("failed to open");
+    let conn = rusqlite::Connection::open(dir.join("br.sqlite3")).expect("failed to open");
     conn
       .pragma_update(None, "user_version", 1)
       .expect("failed to stamp user_version");
   }
-  let out = w.geolite_in(
-    &dir,
-    &["exec", "extract-osm-pbf-header", &w.pbf.to_string_lossy()],
-  );
+  let out = w.geolite_in(&dir, &["exec", "index-addresses"]);
   assert_ne!(
     out.status, 0,
-    "a write command must refuse the database:\n{}",
+    "a write command must refuse the base:\n{}",
     out.stdout
   );
   assert!(
     out.stderr.contains("incompatible schema version")
-      && out.stderr.contains("found 1, expected 3"),
+      && out.stderr.contains("found 1, expected 4"),
     "stderr: {}",
     out.stderr
   );
@@ -214,9 +213,10 @@ fn _01_a_write_command_refuses_a_database_stamped_with_another_schema_version() 
 fn _02_query_still_answers_on_a_database_stamped_with_another_schema_version() {
   let w = world();
   let dir = w.scratch("foreign_version_query");
-  std::fs::copy(&w.sqlite_path, dir.join("database.sqlite3")).expect("failed to copy the database");
+  std::fs::copy(&w.sqlite_path, dir.join("br.sqlite3")).expect("failed to copy the database");
+  make_writable(&dir.join("br.sqlite3"));
   {
-    let conn = rusqlite::Connection::open(dir.join("database.sqlite3")).expect("failed to open");
+    let conn = rusqlite::Connection::open(dir.join("br.sqlite3")).expect("failed to open");
     conn
       .pragma_update(None, "user_version", 1)
       .expect("failed to stamp user_version");
@@ -224,6 +224,8 @@ fn _02_query_still_answers_on_a_database_stamped_with_another_schema_version() {
   let out = w.geolite_in(
     &dir,
     &[
+      "--sqlite-path",
+      &dir.join("br.sqlite3").to_string_lossy(),
       "--index-path",
       &w.index_path.to_string_lossy(),
       "query",
@@ -499,7 +501,7 @@ fn _08_a_file_extracted_before_being_downloaded_takes_the_download_origin() {
   assert_eq!(after[0].url.as_deref(), Some(url.as_str()));
   assert_eq!(after[0].path, before[0].path);
 
-  let chunks = open_sqlite_at(&dir.join("database.osm_data.sqlite3"));
+  let chunks = open_sqlite_at(&dir.join("osm_data.sqlite3"));
   assert!(
     count(
       &chunks,
@@ -559,10 +561,7 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
   let s = stub::start(INDEX, vec![("alpha.osm.pbf", fixture_bytes(w))]);
   let url = s.url("/alpha.osm.pbf");
 
-  let out = w.geolite_in(
-    &dir,
-    &["--threads", "1", "--preset", "brazil", "build", &url],
-  );
+  let out = w.geolite_in(&dir, &["--threads", "1", "build", &url]);
   assert_eq!(
     out.status, 0,
     "build {url} failed:\n{}\n{}",
@@ -598,8 +597,8 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
       "{column} must be filled by the pipeline"
     );
   }
-  assert!(dir.join("database.tantivy").join("meta.json").exists());
-  assert!(!dir.join("database.osm_data.sqlite3").exists());
+  assert!(dir.join("br.tantivy").join("meta.json").exists());
+  assert!(!dir.join("osm_data.sqlite3").exists());
 }
 
 // 11. idempotent stage
@@ -619,7 +618,7 @@ fn _11_re_running_a_stage_without_recreate_keeps_one_ledger_row_and_one_chunk_se
     assert_eq!(out.status, 0, "stderr: {}", out.stderr);
     let rows = ledger(&database(&dir));
     assert_eq!(rows.len(), 1);
-    let chunks = open_sqlite_at(&dir.join("database.osm_data.sqlite3"));
+    let chunks = open_sqlite_at(&dir.join("osm_data.sqlite3"));
     seen.push((
       rows[0].id,
       count(
@@ -743,58 +742,6 @@ fn _14_a_url_download_receives_the_coverage_when_the_next_ls_promotes_it() {
   );
 }
 
-// 15. additive migration
-#[test]
-#[ignore]
-fn _15_a_database_without_origin_wkt_gains_it_on_the_next_write_command() {
-  let w = world();
-  let dir = w.scratch("coverage_migration");
-  std::fs::copy(&w.sqlite_path, dir.join("database.sqlite3")).expect("failed to copy the database");
-  let has_column = |conn: &rusqlite::Connection| {
-    count(
-      conn,
-      "SELECT COUNT(*) FROM pragma_table_info('osm_pbf_files') WHERE name = 'origin_wkt'",
-    ) == 1
-  };
-  let nodes_before = {
-    let conn = rusqlite::Connection::open(dir.join("database.sqlite3")).expect("failed to open");
-    conn
-      .execute_batch("ALTER TABLE osm_pbf_files DROP COLUMN origin_wkt")
-      .expect("failed to drop the column");
-    assert!(
-      !has_column(&conn),
-      "the copy now looks like a 0.0.6 database"
-    );
-    count(&conn, "SELECT node_count FROM osm_pbf_files")
-  };
-  let s = stub::start(INDEX_WITH_COVERAGE, vec![]);
-  ls(w, &dir, &s.url("/index.json"));
-  let conn = database(&dir);
-  assert!(
-    has_column(&conn),
-    "the write command must add the column back"
-  );
-  assert_eq!(
-    count(&conn, "PRAGMA user_version"),
-    3,
-    "no version bump for an added column"
-  );
-  let santos = ledger(&conn)
-    .into_iter()
-    .find(|r| r.origin == 0)
-    .expect("the local build row survives");
-  assert_eq!(santos.origin_name.as_deref(), Some("santos.osm.pbf"));
-  assert_eq!(
-    count(
-      &conn,
-      "SELECT node_count FROM osm_pbf_files WHERE origin = 0"
-    ),
-    nodes_before,
-    "the migration keeps every value of the old rows"
-  );
-  assert!(coverage(&conn, "alpha").is_some());
-}
-
 // 16. download twice
 #[test]
 #[ignore]
@@ -885,17 +832,7 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
   let w = world();
   let dir = w.scratch("build_inside_data_path");
   std::fs::copy(&w.pbf, dir.join("santos.osm.pbf")).expect("failed to copy the fixture");
-  let out = w.geolite_in(
-    &dir,
-    &[
-      "--threads",
-      "2",
-      "--preset",
-      "brazil",
-      "build",
-      "santos.osm.pbf",
-    ],
-  );
+  let out = w.geolite_in(&dir, &["--threads", "2", "build", "santos.osm.pbf"]);
   assert_eq!(
     out.status, 0,
     "build failed:\n{}\n{}",
@@ -912,7 +849,7 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
   assert!(pbf < sibling, "the pbf is reported before the sibling");
   assert!(stdout.contains("deleted 2 tables"), "{stdout}");
   assert!(!dir.join("santos.osm.pbf").exists());
-  assert!(!dir.join("database.osm_data.sqlite3").exists());
+  assert!(!dir.join("osm_data.sqlite3").exists());
   let listing = plain(&w.geolite_in(&dir, &["osm-pbf-file", "ls", "local"]).stdout);
   assert!(listing.contains("no pbf files found"), "{listing}");
 
@@ -931,7 +868,13 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
     )
     .expect("failed to read the counts");
   assert_eq!(nodes, NODES, "{REGENERATE}");
-  assert_eq!(admins, count(&conn, "SELECT COUNT(*) FROM admin_levels"));
+  // the ledger counts what the source brought, before the fold of the streets shrank the table
+  assert_eq!(
+    admins,
+    1 + 27 + 12 + 63 + crate::street_merge::STREETS,
+    "{REGENERATE}"
+  );
+  assert!(admins > count(&conn, "SELECT COUNT(*) FROM admin_levels"));
   assert_eq!(houses, count(&conn, "SELECT COUNT(*) FROM house_numbers"));
 
   let unresolved = w.geolite_in(&dir, &["exec", "extract-osm-pbf-header", "1"]);
@@ -940,7 +883,7 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
     "the deleted file resolves to nothing:\n{}",
     unresolved.stderr
   );
-  let result = query_at(w, &dir, "brazil", "rua januario dos santos, santos 197");
+  let result = query_at(w, &dir, "rua januario dos santos, santos 197");
   assert_eq!(
     first(&result)["house_number"]["kind"],
     "from_osm_data",

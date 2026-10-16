@@ -2,17 +2,17 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
 
-use crate::interfaces::cli::exec::stages::stage;
+use crate::interfaces::cli::exec::stages::{stage, stage_context};
 use crate::interfaces::cli::progress;
 
-pub fn command_handler_index_addresses(
-  sqlite_path: &str,
-  index_path: &str,
-  preset: &crate::presets::index_addresses_preset,
-) {
+pub fn command_handler_index_addresses(sqlite_path: &str, index_path: &str) {
   crate::interfaces::cli::require_sqlite(sqlite_path);
-  let conn = crate::database::open_write(sqlite_path);
-  stage::index_addresses.require(&conn, None);
+  let conn = crate::database::store::open_base_write(sqlite_path);
+  stage::index_addresses.require(&stage_context {
+    catalog: None,
+    file: None,
+    bases: vec![&conn],
+  });
   let path = Path::new(index_path);
   print!("\x1b[1;32mclearing\x1b[0m addresses...");
   let _ = std::io::stdout().flush();
@@ -23,12 +23,9 @@ pub fn command_handler_index_addresses(
 
   let start = Instant::now();
 
-  let _ = crate::admin_level_hierarchy::search_index::run(
-    &conn,
-    path,
-    preset,
-    |p| progress::advance(&bar, &p),
-  );
+  let _ = crate::admin_level_hierarchy::search_index::run(&conn, path, |p| {
+    progress::advance(&bar, &p)
+  });
 
   bar.finish();
 

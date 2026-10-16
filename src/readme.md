@@ -17,7 +17,9 @@ admin_level/    a named administrative area — the `admin_levels` table
   geometry          the wkb column codec, its mbr shortcut, the bounding box, the region of `--bounding-wkt` and its parse, the ring assembly, the folding of lines, and the outline of a shape
   repository        the ddl, the index, the reads every consumer of the table goes through, and the upsert
   spatial_index     the rtree of every level's bounding box, the pass that fills it, and the nearest streets to a point
-  rules             which ways each level includes or excludes, and the preset override
+  point_in_polygon  the ring index and the point test the resolver and the country index share
+  country_index     the boundary of every preset as polygons, and the preset whose boundary holds an element
+  rules             which ways each level includes or excludes
   extract           `admin_level::extract(level)`: the stages of a level and the events they emit
   relations         the stage that assembles boundary relations into areas
   place_ways        the stage that reads `place=neighbourhood|suburb` ways at level 10
@@ -33,14 +35,14 @@ admin_level_hierarchy/  which area contains which — the `admin_levels_hierarch
 house_number/   a door number placed on a street — the `house_numbers` table
   entity            the row as it is written: node, street id, number, point, strategy
   value             the number itself: `normalize` (extraction), `recognize` (query), one comparison key
-  policy            per-region rules: tags, non-values, digit cap, written forms, `#` prefix
+  policy            per-country rules: non-values, digit cap, written forms, `#` prefix, metres per number; the tags of the candidates and the policy of the pre-search
   strategy          how the number was attached to its street: by_proximity | by_name, and the stored codes
   scenario          where a number came from: the osm data, or presumed from the street's references, from one, or from the constants — the four values of `house_number.kind`
   axis              the street as one line: the distance along it of a point, and the point at a distance
   token             finding the number inside a free-text query, skipping the street's own name
   resolution        placing a typed number on a street and reading the number at a point, by the scenario the street's references allow
   repository        the ddl, the index, the candidate scan, the street reads, the numbers of a street, the count, the insert and the move of a way's numbers
-  extract           `house_number_link::extract(policy)`: candidates, tiles of 2°, the fan-out and the batches it reports
+  extract           `house_number_link::extract`: candidates, tiles of 2°, the streets of every base, the fan-out and the link landing in the base of its street
   linker            the pass over one tile: by name first, then the nearest street within 0.15°, projected onto it
 address/        an address resolved from a text or from a coordinate — not a table
   entity            the response as the api renders it: the match, its level ladder, its attributes, built from one set of loads
@@ -50,9 +52,10 @@ address/        an address resolved from a text or from a coordinate — not a t
   text              `address::query_by_text`: the search, the matches, the house number, the sort, and the point of a street that answers without one
   coordinates       `address::query_by_coordinates`: the nearest streets, the matches under the areas that hold each street's nearest point, the number at the point
   path              `address::at_path`: the match of an area under a path already known, without a search
+  fan_out           `address::query_by_text_across` and `_by_coordinates_across`: one question over every base of the data path, the answers joined by coverage or by distance
   house_number      the number of each street, resolved before its match is built; the rule itself is `house_number`
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
-  repository        the ddl, the index and the ten writes and reads
+  repository        the ddl, the index, the writes and reads of the ledger and the counts of a file over an attached base
   catalog           the `source` enum, the endpoint it resolves, and the listing of each source
   download          the parallel range download and the md5 verdict
   message           the protobuf structs the file is written in
@@ -126,7 +129,8 @@ take their persistence out of `src/database`, which owns no table any more.
 - test scenarios are numbered contiguously from `_00` within their file, and the file names and
   scenario names are in english.
 
-what stays outside the concept folders is what belongs to no concept in particular: the sqlite
-connection lifecycle with the `table` trait, the presets, the `progress_report` every long pass
-emits — four lines in the crate root, beside the `debug!` macro — and the interfaces, the cli and
-the http server, grouped in `interfaces/`.
+what stays outside the concept folders is what belongs to no concept in particular: the layout of
+the data path and the connection lifecycle with the `table` trait ([`database`](database/readme.md):
+`store` names the catalogue, the shared osm_data and the base of a country, and opens each),
+the presets, the `progress_report` every long pass emits — four lines in the crate root, beside the
+`debug!` macro — and the interfaces, the cli and the http server, grouped in `interfaces/`.

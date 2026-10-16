@@ -201,6 +201,27 @@ impl match_sources {
     )
   }
 
+  // the country of a row is written on it; a row written before the country reached every row
+  // reads the one of the country on its path
+  pub(super) fn country_iso_of(&self, own_id: i64, chain: &[i64]) -> Option<&str> {
+    let own = self.meta.get(&own_id);
+    own
+      .and_then(|m| m.country_iso_code.as_deref())
+      .or_else(|| {
+        chain
+          .iter()
+          .filter_map(|id| self.meta.get(id))
+          .chain(own)
+          .find(|m| m.admin_level == level::country)
+          .and_then(|m| m.country_iso_code.as_deref())
+      })
+  }
+
+  pub(super) fn house_number_policy_of(&self, own_id: i64) -> crate::house_number::house_number_policy {
+    let first_path = self.paths_of(own_id).first().map(Vec::as_slice).unwrap_or(&[]);
+    crate::presets::for_country(self.country_iso_of(own_id, first_path)).house_numbers
+  }
+
   pub(super) fn post_code_of(&self, own_id: i64, chain: &[i64]) -> Option<String> {
     std::iter::once(&own_id)
       .chain(chain)
@@ -262,7 +283,7 @@ impl match_sources {
       score: None,
       friendly_name,
       attributes: query_match_attributes {
-        country_iso_3166_1_alpha_2_code: country_iso_of(ancestors, self.meta.get(&leaf.id)),
+        country_iso_3166_1_alpha_2_code: self.country_iso_of(leaf.id, path).map(str::to_owned),
         post_code: self.post_code_of(leaf.id, path),
       },
       house_number: house_number.cloned(),
@@ -286,14 +307,3 @@ fn friendly_name_of(
   }
 }
 
-fn country_iso_of(
-  ancestors: &[&admin_meta_row],
-  leaf: Option<&admin_meta_row>,
-) -> Option<String> {
-  ancestors
-    .iter()
-    .copied()
-    .chain(leaf)
-    .find(|a| a.admin_level == level::country)
-    .and_then(|a| a.country_iso_code.clone())
-}
