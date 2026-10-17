@@ -41,7 +41,7 @@ pub fn command_handler_optimize_delete_isolated_admin_levels(
     store::remove_base(&base);
     println!(
       "\x1b[1;33mdeleted\x1b[0m {} — no area left in it",
-      base.file_name()
+      base.label()
     );
     return false;
   }

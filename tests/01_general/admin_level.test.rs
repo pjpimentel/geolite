@@ -206,7 +206,7 @@ fn _00_03_recreate_empties_the_hierarchy_and_the_rtree() {
   indexed(w, &s.dir);
   assert_eq!(hierarchy_count(&s), COUNTRY_STATE_CITY, "{REGENERATE}");
   assert_eq!(rtree_count(&s), COUNTRY_STATE_CITY);
-  assert!(s.dir.join("br.tantivy").is_dir());
+  assert!(s.dir.join("br/index.tantivy").is_dir());
 
   admin_levels_at(w, &s.dir, "8", &["--recreate"]);
   assert_eq!(
@@ -268,7 +268,7 @@ fn _00_05_a_row_outside_the_scale_is_skipped_with_a_warning() {
   let s = extracted(w, "admin_level_off_the_scale", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
   {
-    let conn = rusqlite::Connection::open(s.dir.join("br.sqlite3"))
+    let conn = rusqlite::Connection::open(s.dir.join("br/data.sqlite3"))
       .expect("failed to open the scratch database for writing");
     let changed = conn
       .execute(
@@ -446,7 +446,7 @@ fn _03_00_an_unreadable_geometry_warns_and_drops_the_row() {
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
   indexed(w, &s.dir);
   {
-    let conn = rusqlite::Connection::open(s.dir.join("br.sqlite3"))
+    let conn = rusqlite::Connection::open(s.dir.join("br/data.sqlite3"))
       .expect("failed to open the scratch database for writing");
     conn
       .execute(

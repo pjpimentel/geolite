@@ -13,10 +13,11 @@ it serves.
 
 the server opens every base of the data path, one tantivy index per base and, in each worker, one
 immutable connection per base, so it writes nothing beside them and serves from read-only media,
-and sees a base rebuilt under it only when started again; `/geocode` asks them all, or the ones `country=br,ar` names (a code without a
+and sees a base rebuilt under it only when started again; `/geocode` asks them all, or the ones `countries=br,ar` names (a code without a
 base is a 400), and joins the answers as [`address`](../../address/readme.md) does; a text is a 503
 only when no base asked has its index. `/status` reports one entry per base, `file` the name of its
-sqlite, and `is_ok` is every service of every base. `--sqlite-path` serves one base alone.
+sqlite (`br/data.sqlite3`), and `is_ok` is every service of every base; the answer of `/geocode`
+names the bases it asked in `databases`, one entry each in the same shape. `--sqlite-path` serves one base alone.
 
 every json answer carries an `etag`, and a request whose `If-None-Match` names it — as one tag, in
 a list, weak under `W/` or as `*` — is answered `304` with no body and the etag again, so a client

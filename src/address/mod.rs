@@ -13,7 +13,8 @@ use crate::admin_level::level;
 use crate::admin_level_hierarchy::tantivy_index;
 
 pub use entity::{
-  admin_level, query_house_number, query_match, query_match_attributes, query_output, query_service,
+  admin_level, database_status, query_house_number, query_match, query_match_attributes,
+  query_output, query_service,
 };
 pub use filter::parse_min_quality;
 pub use input::query_input;
@@ -32,8 +33,9 @@ pub fn at_path(conn: &rusqlite::Connection, id: i64, path: &[i64]) -> Option<que
   path::run(conn, id, path)
 }
 
-// a base a question is asked of: its connection and its index when it has one
+// a base a question is asked of: its label, its connection and its index when it has one
 pub struct base<'a> {
+  pub file: &'a str,
   pub conn: &'a rusqlite::Connection,
   pub index: Option<&'a tantivy_index>,
 }

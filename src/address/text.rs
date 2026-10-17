@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use geo::{Centroid, Closest, ClosestPoint, Geometry, Point};
 use rusqlite::Connection;
 
-use super::entity::{leaf, match_sources, query_match, query_output, query_service, round5};
+use super::entity::{leaf, match_sources, query_match, round5};
 use super::house_number;
 use super::{filter, query_opts};
 use crate::admin_level::level;
@@ -18,11 +18,7 @@ pub(super) fn run(
   index: &tantivy_index,
   text: &str,
   opts: &query_opts,
-) -> query_output {
-  let empty = || query_output {
-    service: query_service::text_to_address,
-    matches: vec![],
-  };
+) -> Vec<query_match> {
   // a region restricts the ranking inside tantivy rather than filtering after the fts cut, so
   // a match of the region ranked below the global cap is not lost; the exact containment of the
   // polygon runs in the filters
@@ -31,7 +27,7 @@ pub(super) fn run(
     .as_ref()
     .map(|b| crate::admin_level::spatial_index::ids_in_bounding_box(conn, b.envelope));
   if region_ids.as_ref().is_some_and(|r| r.is_empty()) {
-    return empty();
+    return vec![];
   }
   // the fts runs on the full text: a number can be part of the street name ("25" in
   // "rua 25 de marco"), so stripping it would break the match; the house number is resolved
@@ -45,7 +41,7 @@ pub(super) fn run(
     region_ids.as_deref(),
   );
   if hits.is_empty() {
-    return empty();
+    return vec![];
   }
 
   let query_tokens = tokenize(text);
@@ -95,11 +91,7 @@ pub(super) fn run(
   });
 
   filter::apply_filters_and_truncate(&mut matches, opts);
-
-  query_output {
-    service: query_service::text_to_address,
-    matches,
-  }
+  matches
 }
 
 pub(super) fn resting_point(

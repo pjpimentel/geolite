@@ -46,7 +46,7 @@ impl scratch {
 
 // the rows a scratch holds: none before its first base is written
 pub(crate) fn admin_levels_rows(s: &scratch) -> i64 {
-  if !s.dir.join("br.sqlite3").exists() {
+  if !s.dir.join("br/data.sqlite3").exists() {
     return 0;
   }
   count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels")
@@ -468,7 +468,7 @@ fn _18_every_row_carries_the_country_whose_boundary_holds_it() {
     "every state, city and street is brazilian; {REGENERATE}"
   );
   assert!(
-    !s.dir.join("ve.sqlite3").exists(),
+    !s.dir.join("ve/data.sqlite3").exists(),
     "no row fell on the venezuelan side of the border, so no base of venezuela was written"
   );
 }

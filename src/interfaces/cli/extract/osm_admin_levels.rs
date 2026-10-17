@@ -126,7 +126,7 @@ pub fn command_handler_extract_osm_admin_levels(
   let mut pool = base_pool::new(data_path);
   for base in pool.on_disk() {
     if base.is_sealed() {
-      println!("\x1b[1;33msealed\x1b[0m {} — takes no row", base.file_name());
+      println!("\x1b[1;33msealed\x1b[0m {} — takes no row", base.label());
     }
   }
   if recreate {
@@ -186,7 +186,7 @@ pub(crate) fn bases_label(isos: &[&str]) -> String {
   }
   isos
     .iter()
-    .map(|iso| format!("{}.sqlite3", iso.to_ascii_lowercase()))
+    .map(|iso| format!("{}/{}", iso.to_ascii_lowercase(), crate::database::store::BASE_FILE))
     .collect::<Vec<_>>()
     .join(", ")
 }

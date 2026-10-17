@@ -185,10 +185,11 @@ fn _00_the_ledger_row_of_a_local_build_has_a_local_path_origin() {
 fn _01_a_write_command_refuses_a_database_stamped_with_another_schema_version() {
   let w = world();
   let dir = w.scratch("foreign_version_write");
-  std::fs::copy(&w.sqlite_path, dir.join("br.sqlite3")).expect("failed to copy the database");
-  make_writable(&dir.join("br.sqlite3"));
+  std::fs::create_dir_all(dir.join("br")).expect("failed to create the folder of the base");
+  std::fs::copy(&w.sqlite_path, dir.join("br/data.sqlite3")).expect("failed to copy the database");
+  make_writable(&dir.join("br/data.sqlite3"));
   {
-    let conn = rusqlite::Connection::open(dir.join("br.sqlite3")).expect("failed to open");
+    let conn = rusqlite::Connection::open(dir.join("br/data.sqlite3")).expect("failed to open");
     conn
       .pragma_update(None, "user_version", 1)
       .expect("failed to stamp user_version");
@@ -213,10 +214,11 @@ fn _01_a_write_command_refuses_a_database_stamped_with_another_schema_version() 
 fn _02_query_still_answers_on_a_database_stamped_with_another_schema_version() {
   let w = world();
   let dir = w.scratch("foreign_version_query");
-  std::fs::copy(&w.sqlite_path, dir.join("br.sqlite3")).expect("failed to copy the database");
-  make_writable(&dir.join("br.sqlite3"));
+  std::fs::create_dir_all(dir.join("br")).expect("failed to create the folder of the base");
+  std::fs::copy(&w.sqlite_path, dir.join("br/data.sqlite3")).expect("failed to copy the database");
+  make_writable(&dir.join("br/data.sqlite3"));
   {
-    let conn = rusqlite::Connection::open(dir.join("br.sqlite3")).expect("failed to open");
+    let conn = rusqlite::Connection::open(dir.join("br/data.sqlite3")).expect("failed to open");
     conn
       .pragma_update(None, "user_version", 1)
       .expect("failed to stamp user_version");
@@ -225,7 +227,7 @@ fn _02_query_still_answers_on_a_database_stamped_with_another_schema_version() {
     &dir,
     &[
       "--sqlite-path",
-      &dir.join("br.sqlite3").to_string_lossy(),
+      &dir.join("br/data.sqlite3").to_string_lossy(),
       "--index-path",
       &w.index_path.to_string_lossy(),
       "query",
@@ -597,7 +599,7 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
       "{column} must be filled by the pipeline"
     );
   }
-  assert!(dir.join("br.tantivy").join("meta.json").exists());
+  assert!(dir.join("br/index.tantivy").join("meta.json").exists());
   assert!(!dir.join("osm_data.sqlite3").exists());
 }
 

@@ -1,7 +1,7 @@
 use geo::{Intersects, Point};
 use rusqlite::Connection;
 
-use super::entity::{leaf, match_sources, query_match, query_output, query_service};
+use super::entity::{leaf, match_sources, query_match};
 use super::filter;
 use super::{house_number, query_opts};
 use crate::admin_level::geometry::bounding_box;
@@ -51,7 +51,7 @@ pub(super) fn run(
   latitude: f64,
   longitude: f64,
   opts: &query_opts,
-) -> query_output {
+) -> Vec<query_match> {
   let input_pt = Point::new(longitude, latitude);
 
   let envelope = opts.bounding.as_ref().map(|b| b.envelope).unwrap_or(WORLD_BOUNDING_BOX);
@@ -108,9 +108,5 @@ pub(super) fn run(
   }
 
   filter::apply_filters_and_truncate(&mut matches, opts);
-
-  query_output {
-    service: query_service::coordinates_to_address,
-    matches,
-  }
+  matches
 }

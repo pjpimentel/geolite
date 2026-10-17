@@ -45,7 +45,7 @@ pub fn index_bases(bases: &[base_files]) -> Vec<base_files> {
       println!();
       println!("\x1b[2m── {}\x1b[0m", stage::index_admin_levels_hierarchy.name());
     }
-    println!("\x1b[2mbase {}\x1b[0m", base.file_name());
+    println!("\x1b[2mbase {}\x1b[0m", base.label());
     if index_base(base) {
       kept.push(base.clone());
     }

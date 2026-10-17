@@ -145,7 +145,7 @@ level is one the country keeps at all (`admin_levels`, the reason a brazilian `r
 `municipality` is never a row), and which name tag names the row (`name_priority`, `name:pt`
 before `name` in brazil); the loaders select every tag any country asks for (`presets::name_tags`)
 and the choice is made in rust, per element. the row then goes to the base of its country
-(`database::store::base_pool`, one `<iso>.sqlite3` per country in the data path), whatever the
+(`database::store::base_pool`, one `<iso>/data.sqlite3` per country in the data path), whatever the
 source: a country, a continent, a local file and a url write every base they touch, but one a
 build sealed, which takes no row: its rows are dropped and counted (`dropped N street — the base of
 their country is sealed`). a resume subtracts from the candidates what the bases already hold at

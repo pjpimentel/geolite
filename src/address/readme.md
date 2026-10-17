@@ -20,12 +20,14 @@ server answers 503 and keeps answering coordinates.
 ## one question, every base — `fan_out`
 
 a data path holds one base per country, and a question is asked of all of them (`base`, a
-connection and its optional index; `query_by_text_across`, `query_by_coordinates_across`). one
+label, a connection and its optional index; `query_by_text_across`, `query_by_coordinates_across`). one
 base answers in its own order. several answer together, and what orders them has to compare
 across bases: the distance of a coordinate does, so the coordinate answers are joined by the
 leaf's level, the distance and the id, as one base orders them; the bm25 of a text does not, two
 indexes scoring with their own statistics, so the text answers are joined by `similarity`, the
-coverage of the tokens, and the score only breaks the tie. both cut at ten after the join.
+coverage of the tokens, and the score only breaks the tie. both cut at ten after the join. the
+answer names every base asked in `databases` (`database_status`: the label and the two services it
+offers, the shape `/status` reports), a base without an index included, though a text skips it.
 
 ## the two services — `text` and `coordinates`
 

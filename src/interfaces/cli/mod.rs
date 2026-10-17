@@ -100,7 +100,7 @@ enum commands {
     #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
     include_wkt: bool,
     #[arg(long, value_delimiter = ',')]
-    country: Option<Vec<String>>,
+    countries: Option<Vec<String>>,
   },
   #[command(name = "http-server")]
   http_server {
@@ -191,7 +191,7 @@ pub(crate) fn select_bases(
         .iter()
         .find(|base| base.iso.eq_ignore_ascii_case(iso))
         .cloned()
-        .ok_or_else(|| format!("country: no base for '{iso}'"))
+        .ok_or_else(|| format!("countries: no base for '{iso}'"))
     })
     .collect()
 }
@@ -248,11 +248,11 @@ pub fn run() {
       bounding_wkt,
       last_admin_levels,
       include_wkt,
-      country,
+      countries,
     } => query::command_handler_query(
       &args.data_path,
       single.as_ref(),
-      country.as_deref(),
+      countries.as_deref(),
       &input,
       crate::address::query_opts {
         friendly_name_format: friendly_name_format.as_deref(),

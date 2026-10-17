@@ -1,5 +1,9 @@
 # decisions
 
+## **2026-10-17**
+
+1. each country keeps its own database and its own search index to scale the application of the presets per country and one server answering many countries.
+
 ## **2026-09-26**
 
 1. the e2e battery over real data is the only regression battery: no unit tests are written, and each guard lives in a scenario.

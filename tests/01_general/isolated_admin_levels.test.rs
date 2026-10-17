@@ -444,12 +444,12 @@ fn _01_01_a_base_where_every_row_is_isolated_goes_with_its_rows() {
     out.stdout
   );
   assert!(
-    plain(&out.stdout).contains("deleted br.sqlite3 — no area left in it"),
+    plain(&out.stdout).contains("deleted br/data.sqlite3 — no area left in it"),
     "{}",
     out.stdout
   );
   assert!(
-    !dir.join("br.sqlite3").exists(),
+    !dir.join("br/data.sqlite3").exists(),
     "the base went with its rows"
   );
   let next = w.geolite_in(&dir, &["exec", MERGE_STAGE]);

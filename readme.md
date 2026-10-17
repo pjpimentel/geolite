@@ -189,9 +189,9 @@ $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:la
 ```
 
 `query` and `http-server` answer over every base of the data path: a coordinate is answered by
-distance across them, a text by the coverage of its tokens, and `country` (`--country br,ar` on
-the cli, `country=br,ar` on `/geocode`) narrows a question to the countries named. `--sqlite-path
-br.sqlite3` serves one base alone.
+distance across them, a text by the coverage of its tokens, and `countries` (`--countries br,ar` on
+the cli, `countries=br,ar` on `/geocode`) narrows a question to the countries named; the answer
+names the bases asked in `databases`. `--sqlite-path br/data.sqlite3` serves one base alone.
 
 ### run the end-to-end suite
 ```bash

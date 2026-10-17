@@ -24,7 +24,7 @@ evidence it reads. `build` chains the same handlers over one or more sources, an
 into the same data path writes the countries it has no base for.
 
 `query`, `http-server` and `tui` answer over every base of the data path (`served_bases`), or over
-the one `--sqlite-path` names; `--country` and the `country` parameter narrow a question to the
+the one `--sqlite-path` names; `--countries` and the `countries` parameter narrow a question to the
 countries named (`select_bases`).
 
 every long pass of the domain reports a `progress_report`, and `cli/progress` draws all

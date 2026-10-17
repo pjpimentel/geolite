@@ -39,7 +39,7 @@ pub(crate) fn way(osm_id: u64) -> i64 {
 }
 
 pub(crate) fn writable(dir: &Path) -> rusqlite::Connection {
-  rusqlite::Connection::open(dir.join("br.sqlite3"))
+  rusqlite::Connection::open(dir.join("br/data.sqlite3"))
     .expect("failed to open the scratch database for writing")
 }
 
@@ -221,7 +221,7 @@ pub(crate) fn assert_a_run_with_nothing_to_do_keeps_the_indexes(
 
   assert!(again.contains(skipped), "{again}");
   assert_eq!(snapshot(&s.ledger()), before);
-  assert!(s.dir.join("br.tantivy").is_dir());
+  assert!(s.dir.join("br/index.tantivy").is_dir());
   assert_eq!(rtree_rows(s), rtree);
 }
 
@@ -232,7 +232,7 @@ pub(crate) fn assert_the_indexes_are_cleared_and_recreated(
   query: &str,
 ) {
   indexed_after(w, s);
-  assert!(s.dir.join("br.tantivy").is_dir());
+  assert!(s.dir.join("br/index.tantivy").is_dir());
 
   let out = run(w, &s.dir);
 
@@ -243,7 +243,7 @@ pub(crate) fn assert_the_indexes_are_cleared_and_recreated(
     "{}",
     out.stdout
   );
-  assert!(!s.dir.join("br.tantivy").exists());
+  assert!(!s.dir.join("br/index.tantivy").exists());
   assert_eq!(rtree_rows(s), 0);
   let asked = w.geolite_in(&s.dir, &["query", query, "--include-wkt", "false"]);
   assert_eq!(asked.status, 1);

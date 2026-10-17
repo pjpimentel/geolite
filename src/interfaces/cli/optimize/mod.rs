@@ -93,7 +93,7 @@ pub fn command_handler_optimize(data_path: &str, bases: &[base_files]) {
   }
   for base in bases {
     println!();
-    println!("\x1b[2m── {} {}\x1b[0m", stage::optimize_sqlite_file.name(), base.file_name());
+    println!("\x1b[2m── {} {}\x1b[0m", stage::optimize_sqlite_file.name(), base.label());
     sqlite_file::command_handler_optimize_sqlite_file(&base.sqlite);
   }
   println!();

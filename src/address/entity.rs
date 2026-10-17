@@ -10,6 +10,7 @@ use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::level;
 use crate::admin_level::repository::admin_meta_row;
 use crate::admin_level_hierarchy::paths::paths_of;
+use crate::admin_level_hierarchy::tantivy_index;
 use crate::house_number::house_number_scenario;
 
 #[derive(Serialize, ToSchema)]
@@ -61,8 +62,34 @@ pub struct query_match {
 }
 
 #[derive(Serialize, ToSchema)]
+pub struct database_status {
+  pub file: String,
+  pub text_to_address: bool,
+  pub coordinates_to_address: bool,
+}
+
+impl database_status {
+  // structural probe: `prepare` compiles the table reference, so this is Ok iff admin_levels_rtree
+  // exists — the distinguishing dependency of the reverse-geocoding path. no row i/o.
+  pub fn of(file: &str, conn: &Connection, index: Option<&tantivy_index>) -> Self {
+    const SQL_COORDINATES_PROBE: &str = "
+      SELECT 1
+      FROM admin_levels_rtree
+      LIMIT 1
+    ";
+
+    database_status {
+      file: file.to_string(),
+      text_to_address: index.is_some(),
+      coordinates_to_address: conn.prepare(SQL_COORDINATES_PROBE).is_ok(),
+    }
+  }
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct query_output {
   pub service: query_service,
+  pub databases: Vec<database_status>,
   pub matches: Vec<query_match>,
 }
 

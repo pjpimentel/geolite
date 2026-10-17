@@ -150,7 +150,7 @@ fn writable_bases_for(data_path: &str, countries: &[String], stage: stage) -> Ve
   {
     eprintln!(
       "\x1b[1;31merror\x1b[0m: {} is sealed — a base built once is final; remove it to run {} again",
-      base.file_name(),
+      base.label(),
       stage.name()
     );
     std::process::exit(1);
@@ -158,7 +158,7 @@ fn writable_bases_for(data_path: &str, countries: &[String], stage: stage) -> Ve
   let (sealed, writable): (Vec<base_files>, Vec<base_files>) =
     bases.into_iter().partition(|base| base.is_sealed());
   for base in &sealed {
-    println!("\x1b[1;33msealed\x1b[0m {} — left as it is", base.file_name());
+    println!("\x1b[1;33msealed\x1b[0m {} — left as it is", base.label());
   }
   if writable.is_empty() {
     eprintln!("\x1b[1;31merror\x1b[0m: every base in {data_path} is sealed — a base built once is final");
@@ -172,7 +172,7 @@ fn per_base(bases: &[base_files], stage: impl Fn(&base_files)) {
     if i > 0 {
       println!();
     }
-    println!("\x1b[2mbase {}\x1b[0m", base.file_name());
+    println!("\x1b[2mbase {}\x1b[0m", base.label());
     stage(base);
   }
 }

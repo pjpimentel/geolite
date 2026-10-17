@@ -430,7 +430,7 @@ fn _01_01_a_compound_number_is_read_only_where_the_policy_allows_it() {
   let w = world();
   let s = indexed(w, "house_number_compound");
   {
-    let conn = rusqlite::Connection::open(s.dir.join("br.sqlite3"))
+    let conn = rusqlite::Connection::open(s.dir.join("br/data.sqlite3"))
       .expect("failed to open the scratch database for writing");
     for (node_id, number, from) in [
       (9_000_000_001i64, "82-52", "197"),

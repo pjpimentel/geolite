@@ -60,6 +60,7 @@ pub struct served_base {
 
 struct worker_base<'a> {
   files: &'a base_files,
+  label: String,
   conn: rusqlite::Connection,
   index: Option<&'a tantivy_index>,
 }
@@ -80,7 +81,7 @@ pub fn serve(bound: bound_server, bases: Vec<base_files>, threads: u8) {
         eprintln!(
           "\x1b[1;33mwarn\x1b[0m: tantivy index not found at {} — text_to_address disabled for {}; run `geolite exec index-addresses {}` to enable",
           files.index,
-          files.file_name(),
+          files.label(),
           files.iso
         );
       }
@@ -114,6 +115,7 @@ pub fn serve(bound: bound_server, bases: Vec<base_files>, threads: u8) {
           .iter()
           .map(|base| worker_base {
             files: &base.files,
+            label: base.files.label(),
             conn: crate::database::store::open_base_immutable(&base.files.sqlite),
             index: base.index.as_deref(),
           })
@@ -145,7 +147,7 @@ fn parse_countries(raw: &str) -> Result<Vec<String>, String> {
     .map(str::to_string)
     .collect();
   if isos.is_empty() {
-    return Err("country must be a comma-separated list of iso 3166-1 alpha-2 codes".to_string());
+    return Err("countries must be a comma-separated list of iso 3166-1 alpha-2 codes".to_string());
   }
   Ok(isos)
 }
@@ -160,7 +162,7 @@ fn select<'a>(bases: &'a [worker_base<'a>], countries: Option<&[String]>) -> Res
       bases
         .iter()
         .find(|base| base.files.iso.eq_ignore_ascii_case(iso))
-        .ok_or_else(|| format!("country: no base for '{iso}'"))
+        .ok_or_else(|| format!("countries: no base for '{iso}'"))
     })
     .collect()
 }
@@ -209,7 +211,7 @@ fn handle(request: tiny_http::Request, bases: &[worker_base]) {
       let report = status::build(
         bases
           .iter()
-          .map(|base| (base.files.file_name(), &base.conn, base.index)),
+          .map(|base| (base.label.clone(), &base.conn, base.index)),
       );
       match serde_json::to_string(&report) {
         Ok(body) if report.is_ok => respond_ok(request, &body),
@@ -237,7 +239,7 @@ fn handle(request: tiny_http::Request, bases: &[worker_base]) {
       let last_admin_levels = query_param(&query_string, "last_admin_levels")
         .map(|s| parse_last_admin_levels(&s))
         .transpose();
-      let countries = query_param(&query_string, "country")
+      let countries = query_param(&query_string, "countries")
         .map(|s| parse_countries(&s))
         .transpose()
         .and_then(|countries| select(bases, countries.as_deref()).map(|selected| (countries, selected)));
@@ -298,6 +300,7 @@ fn handle(request: tiny_http::Request, bases: &[worker_base]) {
               let asked: Vec<crate::address::base> = selected
                 .iter()
                 .map(|base| crate::address::base {
+                  file: &base.label,
                   conn: &base.conn,
                   index: base.index,
                 })

@@ -7,12 +7,16 @@ the layout of a data path and the connection lifecycle: `store` names every file
   catalog.sqlite3            layer 1: osm_pbf_files, the ledger of the sources and the cache of the geofabrik index
   <name>.osm.pbf             a source, downloaded or copied in; deleted at the end of the build
   osm_data.sqlite3           layers 2–3 of every source, one file per data path, attached as `osm_data` while the stages run; deleted at the end of the build
-  br.sqlite3  br.tantivy     layers 4–5 of one country, and its search index; one pair per country
+  br/                        one folder per country, named by its code
+    data.sqlite3             layers 4–5 of the country
+    index.tantivy            its search index
 ```
 
-a base is named by the iso 3166-1 alpha-2 code of its country in lower case, the name of its
-boundary file. `store` knows the paths (`catalog_path`, `osm_data_path`, `base_path`,
-`index_path_of`, `bases`, which lists the `??.sqlite3` of a data path) and the openings:
+a base is a folder named by the iso 3166-1 alpha-2 code of its country in lower case, the name of
+its boundary file, holding `data.sqlite3` and `index.tantivy`; a message names a file of a base by
+its folder, `br/data.sqlite3` (`label_of`). `store` knows the paths (`catalog_path`,
+`osm_data_path`, `base_path`, `index_path_of`, `bases`, which lists the `??/data.sqlite3` of a data
+path) and the openings:
 `open_catalog`; `open_osm_data`, the catalogue with the shared osm_data attached, and
 `open_osm_data_write`, the same after a probe connection took and released the write lock of the
 osm_data, so a second process writing it is refused aloud instead of meeting `database is locked`
@@ -23,8 +27,8 @@ of the run is writing, a resume subtracting what the base holds for instance: it
 `file:<path>?mode=ro&immutable=1`: no lock and no wal-index, so no `-wal` or `-shm` ever appears
 beside a base and a base on read-only media opens; the price is that a base written while it is
 read is seen as it was, until the reader opens it again.
-`base_pool` is what the extraction writes through: one connection per country, opened on the first
-row of that country, never attached, so the ten attachments sqlite allows are never in the way;
+`base_pool` is what the extraction writes through: one connection per country, opened (its folder
+created) on the first row of that country, never attached, so the ten attachments sqlite allows are never in the way;
 `attach_base` lets the ledger count the rows of a file in one base at a time.
 
 ## layers

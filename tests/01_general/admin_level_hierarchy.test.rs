@@ -109,7 +109,7 @@ pub(crate) fn resolved_at(w: &world, name: &str, rows: &[row]) -> PathBuf {
     &["exec", "extract-osm-admin-levels", "--admin-level", "8"],
   );
   {
-    let conn = rusqlite::Connection::open(dir.join("br.sqlite3"))
+    let conn = rusqlite::Connection::open(dir.join("br/data.sqlite3"))
       .expect("failed to open the scratch database for writing");
     conn
       .execute_batch("DELETE FROM admin_levels")
@@ -135,7 +135,7 @@ pub(crate) fn resolved_at(w: &world, name: &str, rows: &[row]) -> PathBuf {
 }
 
 fn resolved(w: &world, name: &str, rows: &[row]) -> rusqlite::Connection {
-  open_sqlite_at(&resolved_at(w, name, rows).join("br.sqlite3"))
+  open_sqlite_at(&resolved_at(w, name, rows).join("br/data.sqlite3"))
 }
 
 // 00.00. half of the samples nests an area under a peer of its level: 32 of 65 stay beside it,

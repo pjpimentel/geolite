@@ -305,7 +305,8 @@ fn _01_00_coordinates_query_prints_pretty_printed_json() {
   assert!(
     out
       .stdout
-      .starts_with("{\n  \"service\": \"coordinates_to_address\",\n  \"matches\": ["),
+      .starts_with("{\n  \"service\": \"coordinates_to_address\",\n  \"databases\": [")
+      && out.stdout.contains("\n  ],\n  \"matches\": ["),
     "unexpected output shape: {}",
     &out.stdout[..out.stdout.len().min(120)]
   );
@@ -459,7 +460,7 @@ fn _01_10_status_reports_both_services_available() {
     body["databases"][0]["file"]
       .as_str()
       .expect("file must be a string")
-      .ends_with("br.sqlite3"),
+      .ends_with("br/data.sqlite3"),
     "status must name the database it opened"
   );
 }
@@ -866,8 +867,8 @@ fn _01_26_exec_help_lists_the_stages_in_pipeline_order() {
 }
 
 // 01.28. contract: a data path of two bases is answered as one: a text answers both countries,
-// a coordinate answers them by distance, `country` narrows to one, a country without a base is
-// refused, and `/status` lists every base
+// a coordinate answers them by distance, `countries` narrows to one, a country without a base is
+// refused, `/status` lists every base and the answer the bases it asked
 #[test]
 #[ignore]
 fn _01_28_the_http_server_answers_over_every_base_of_the_data_path() {
@@ -884,7 +885,7 @@ fn _01_28_the_http_server_answers_over_every_base_of_the_data_path() {
     .iter()
     .filter_map(|database| database["file"].as_str())
     .collect();
-  assert_eq!(files, ["ar.sqlite3", "br.sqlite3"]);
+  assert_eq!(files, ["ar/data.sqlite3", "br/data.sqlite3"]);
 
   let countries_of = |body: &Value| -> Vec<String> {
     matches(body)
@@ -901,7 +902,16 @@ fn _01_28_the_http_server_answers_over_every_base_of_the_data_path() {
     "/geocode?query={}&include_wkt=false",
     encode("rua castro alves, embare, santos")
   );
-  let both = countries_of(&get(s.port, &text).json());
+  let answer = get(s.port, &text).json();
+  assert_eq!(
+    answer["databases"],
+    json!([
+      { "file": "ar/data.sqlite3", "text_to_address": true, "coordinates_to_address": true },
+      { "file": "br/data.sqlite3", "text_to_address": true, "coordinates_to_address": true },
+    ]),
+    "the answer names every base it asked"
+  );
+  let both = countries_of(&answer);
   assert!(
     both.contains(&"AR".to_string()) && both.contains(&"BR".to_string()),
     "a text answers both countries: {both:?}"
@@ -912,17 +922,72 @@ fn _01_28_the_http_server_answers_over_every_base_of_the_data_path() {
     by_distance.contains(&"AR".to_string()) && by_distance.contains(&"BR".to_string()),
     "a coordinate answers both countries: {by_distance:?}"
   );
-  let narrowed = countries_of(&get(s.port, &format!("{text}&country=ar")).json());
+  let narrowed_answer = get(s.port, &format!("{text}&countries=ar")).json();
+  assert_eq!(
+    narrowed_answer["databases"],
+    json!([{ "file": "ar/data.sqlite3", "text_to_address": true, "coordinates_to_address": true }]),
+    "`countries=ar` asks argentina alone"
+  );
+  let narrowed = countries_of(&narrowed_answer);
   assert!(
     !narrowed.is_empty() && narrowed.iter().all(|iso| iso == "AR"),
-    "`country=ar` answers argentina alone: {narrowed:?}"
+    "`countries=ar` answers argentina alone: {narrowed:?}"
   );
-  let refused = get(s.port, &format!("{text}&country=xx"));
+  let refused = get(s.port, &format!("{text}&countries=xx"));
   assert_eq!(refused.status, 400);
   assert!(
     refused.text().contains("no base for 'xx'"),
     "{}",
     refused.text()
+  );
+}
+
+// 01.30. contract: the cli narrows a question of a data path of two bases with `--countries`, its
+// answer names the bases it asked, and a country without a base exits non-zero
+#[test]
+#[ignore]
+fn _01_30_query_countries_narrows_the_cli_to_the_bases_named() {
+  let w = world();
+  let dir = w.world_copy("cli_two_bases");
+  w.copy_base_into(&dir, "ar");
+  let text = "rua castro alves, embare, santos";
+
+  let both = w.geolite_in(&dir, &["query", "--include-wkt", "false", text]);
+  assert_eq!(both.status, 0, "{}", both.stderr);
+  let both: Value = serde_json::from_str(&both.stdout).expect("the query must print json");
+  let files: Vec<&str> = both["databases"]
+    .as_array()
+    .expect("databases is a list")
+    .iter()
+    .filter_map(|database| database["file"].as_str())
+    .collect();
+  assert_eq!(files, ["ar/data.sqlite3", "br/data.sqlite3"]);
+
+  let narrowed = w.geolite_in(
+    &dir,
+    &["query", "--include-wkt", "false", "--countries", "ar", text],
+  );
+  assert_eq!(narrowed.status, 0, "{}", narrowed.stderr);
+  let narrowed: Value = serde_json::from_str(&narrowed.stdout).expect("the query must print json");
+  assert_eq!(
+    narrowed["databases"],
+    json!([{ "file": "ar/data.sqlite3", "text_to_address": true, "coordinates_to_address": true }]),
+  );
+  let isos: Vec<&str> = matches(&narrowed)
+    .iter()
+    .filter_map(|m| m["attributes"]["country_iso_3166_1_alpha_2_code"].as_str())
+    .collect();
+  assert!(
+    !isos.is_empty() && isos.iter().all(|iso| *iso == "AR"),
+    "`--countries ar` answers argentina alone: {isos:?}"
+  );
+
+  let refused = w.geolite_in(&dir, &["query", "--countries", "xx", text]);
+  assert_ne!(refused.status, 0);
+  assert!(
+    refused.stderr.contains("no base for 'xx'"),
+    "{}",
+    refused.stderr
   );
 }
 
@@ -1561,7 +1626,7 @@ fn _02_24_the_build_seals_what_it_leaves_in_the_data_path() {
 
   let w = world();
   assert!(
-    plain(&w.build_stdout).contains("sealed br.sqlite3, br.tantivy — read-only"),
+    plain(&w.build_stdout).contains("sealed br/data.sqlite3, br/index.tantivy — read-only"),
     "{}",
     w.build_stdout
   );

@@ -1,7 +1,6 @@
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tantivy::{
   DocId, Index, IndexReader, Score, Searcher, SegmentReader, TantivyDocument, Term,
   collector::TopDocs,
@@ -138,16 +137,6 @@ pub struct tantivy_index {
   name_lower_field: Field,
   hier_lower_field: Field,
   boosts: tantivy_boosts,
-}
-
-pub fn default_path_for(sqlite_path: &str) -> Option<PathBuf> {
-  if sqlite_path.is_empty() || sqlite_path == ":memory:" {
-    return None;
-  }
-  let p = Path::new(sqlite_path);
-  let stem = p.file_stem().and_then(OsStr::to_str).unwrap_or("database");
-  let parent = p.parent().unwrap_or(Path::new(""));
-  Some(parent.join(format!("{stem}.tantivy")))
 }
 
 pub fn destroy(index_path: &Path) {

@@ -22,17 +22,24 @@ pub fn osm_data_path(data_path: &str) -> String {
     .into_owned()
 }
 
+pub const BASE_FILE: &str = "data.sqlite3";
+pub const INDEX_DIR: &str = "index.tantivy";
+
 pub fn base_path(data_path: &str, iso: &str) -> String {
   Path::new(data_path)
-    .join(format!("{}.sqlite3", iso.to_ascii_lowercase()))
+    .join(iso.to_ascii_lowercase())
+    .join(BASE_FILE)
     .to_string_lossy()
     .into_owned()
 }
 
 pub fn index_path_of(base_path: &str) -> String {
-  crate::admin_level_hierarchy::search_index::default_path_for(base_path)
-    .map(|p| p.to_string_lossy().into_owned())
-    .unwrap_or_else(|| format!("{base_path}.tantivy"))
+  Path::new(base_path)
+    .parent()
+    .unwrap_or(Path::new(""))
+    .join(INDEX_DIR)
+    .to_string_lossy()
+    .into_owned()
 }
 
 #[derive(Clone)]
@@ -58,12 +65,8 @@ impl base_files {
     }
   }
 
-  pub fn file_name(&self) -> String {
-    Path::new(&self.sqlite)
-      .file_name()
-      .and_then(|name| name.to_str())
-      .unwrap_or(&self.sqlite)
-      .to_string()
+  pub fn label(&self) -> String {
+    label_of(&self.sqlite)
   }
 
   pub fn is_sealed(&self) -> bool {
@@ -71,10 +74,27 @@ impl base_files {
   }
 }
 
+pub fn label_of(path: &str) -> String {
+  let path = Path::new(path);
+  let name = file_name_of(&path.to_string_lossy());
+  match path.parent().and_then(iso_of_folder) {
+    Some(iso) => format!("{iso}/{name}"),
+    None => name,
+  }
+}
+
+fn iso_of_folder(folder: &Path) -> Option<String> {
+  let name = folder.file_name()?.to_str()?;
+  let is_iso = name.len() == 2 && name.bytes().all(|b| b.is_ascii_lowercase());
+  is_iso.then(|| name.to_string())
+}
+
 pub fn iso_of_base(path: &str) -> Option<String> {
-  let stem = Path::new(path).file_name()?.to_str()?.strip_suffix(".sqlite3")?;
-  let is_iso = stem.len() == 2 && stem.bytes().all(|b| b.is_ascii_lowercase());
-  is_iso.then(|| stem.to_string())
+  let path = Path::new(path);
+  if path.file_name()?.to_str()? != BASE_FILE {
+    return None;
+  }
+  iso_of_folder(path.parent()?)
 }
 
 pub fn bases(data_path: &str) -> Vec<base_files> {
@@ -84,7 +104,11 @@ pub fn bases(data_path: &str) -> Vec<base_files> {
   let mut found: Vec<base_files> = entries
     .flatten()
     .filter_map(|entry| {
-      let path = entry.path().to_string_lossy().into_owned();
+      let sqlite = entry.path().join(BASE_FILE);
+      if !sqlite.is_file() {
+        return None;
+      }
+      let path = sqlite.to_string_lossy().into_owned();
       iso_of_base(&path).map(|iso| base_files {
         iso,
         index: index_path_of(&path),
@@ -190,7 +214,7 @@ pub fn seal_bases(bases: &[base_files]) {
     for path in [&base.sqlite, &base.index] {
       if Path::new(path).exists() {
         super::seal_path(path);
-        sealed.push(file_name_of(path));
+        sealed.push(label_of(path));
       }
     }
   }
@@ -214,6 +238,9 @@ pub fn remove_base(base: &base_files) {
   }
   if Path::new(&base.index).exists() {
     std::fs::remove_dir_all(&base.index).expect("failed to remove the index of a base");
+  }
+  if let Some(folder) = Path::new(&base.sqlite).parent() {
+    let _ = std::fs::remove_dir(folder);
   }
 }
 
@@ -293,6 +320,9 @@ impl<'a> base_pool<'a> {
       if super::is_sealed(&path) {
         self.sealed.push(key);
         return None;
+      }
+      if let Some(folder) = Path::new(&path).parent() {
+        std::fs::create_dir_all(folder).expect("failed to create the folder of a base");
       }
       self.open.insert(key, open_base_write(&path));
       self.touched.push(key);

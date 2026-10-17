@@ -84,8 +84,8 @@ pub fn build(tag: &str, pbf_src: &Path) -> Result<built, String> {
     .map_err(|e| format!("failed to spawn {BIN}: {e}"))?;
 
   Ok(built {
-    sqlite_path: data_path.join("br.sqlite3"),
-    index_path: data_path.join("br.tantivy"),
+    sqlite_path: data_path.join("br/data.sqlite3"),
+    index_path: data_path.join("br/index.tantivy"),
     stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
     stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
     status: out.status.code().unwrap_or(-1),
@@ -161,8 +161,8 @@ fn build_world(scenario: &'static scenario) -> Result<world, String> {
     return Ok(world {
       scenario,
       pbf: root.join("pbf").join(scenario.pbf),
-      sqlite_path: data_path.join("br.sqlite3"),
-      index_path: data_path.join("br.tantivy"),
+      sqlite_path: data_path.join("br/data.sqlite3"),
+      index_path: data_path.join("br/index.tantivy"),
       build_stdout: read_or_empty(&root.join("build.stdout")),
       build_stderr: read_or_empty(&root.join("build.stderr")),
       build_status: read_or_empty(&root.join("build.status"))
@@ -584,7 +584,7 @@ pub fn relabel_base(sqlite_path: &Path, iso: Option<&str>) {
 }
 
 pub fn relabel_country(data_path: &Path, iso: Option<&str>) {
-  relabel_base(&data_path.join("br.sqlite3"), iso);
+  relabel_base(&data_path.join("br/data.sqlite3"), iso);
 }
 
 // a scratch read as one database: its brazilian base, or the catalogue when no base was written
@@ -596,7 +596,7 @@ pub fn open_scratch(dir: &Path) -> rusqlite::Connection {
     FROM catalog.osm_pbf_files
   ";
 
-  let base = dir.join("br.sqlite3");
+  let base = dir.join("br/data.sqlite3");
   let catalog = dir.join("catalog.sqlite3");
   let main = if base.exists() { &base } else { &catalog };
   let conn = rusqlite::Connection::open(main)
@@ -626,11 +626,14 @@ impl world {
   // the world's base copied beside a scratch's bases under another country, every row relabelled:
   // the way a data path holds two countries
   pub fn copy_base_into(&self, dir: &Path, iso: &str) {
-    let sqlite = dir.join(format!("{iso}.sqlite3"));
+    let folder = dir.join(iso);
+    std::fs::create_dir_all(&folder)
+      .unwrap_or_else(|e| panic!("failed to create {}: {e}", folder.display()));
+    let sqlite = folder.join("data.sqlite3");
     std::fs::copy(&self.sqlite_path, &sqlite)
       .unwrap_or_else(|e| panic!("failed to copy the base: {e}"));
     make_writable(&sqlite);
-    copy_dir(&self.index_path, &dir.join(format!("{iso}.tantivy")));
+    copy_dir(&self.index_path, &folder.join("index.tantivy"));
     if iso != "br" {
       relabel_base(&sqlite, Some(&iso.to_ascii_uppercase()));
     }

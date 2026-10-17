@@ -34,17 +34,19 @@ pub fn command_handler_query(
       "\x1b[1;31merror\x1b[0m: tantivy index not found for {} — run `geolite exec index-addresses` first",
       selected
         .iter()
-        .map(|base| base.file_name())
+        .map(|base| base.label())
         .collect::<Vec<_>>()
         .join(", ")
     );
     std::process::exit(1);
   }
-  let bases: Vec<base> = selected
+  let labels: Vec<String> = selected.iter().map(base_files::label).collect();
+  let bases: Vec<base> = labels
     .iter()
     .zip(&conns)
     .zip(&indexes)
-    .map(|((_, conn), index)| base {
+    .map(|((file, conn), index)| base {
+      file,
       conn,
       index: index.as_ref(),
     })

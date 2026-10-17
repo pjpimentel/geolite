@@ -145,7 +145,7 @@ fn _00_02_a_sealed_base_takes_no_row_from_a_later_source() {
   let built = w.geolite_in(&dir, &["--threads", "2", "build", &pbf]);
   assert_eq!(built.status, 0, "{}", built.stderr);
   assert!(
-    plain(&built.stdout).contains("sealed br.sqlite3, br.tantivy — read-only"),
+    plain(&built.stdout).contains("sealed br/data.sqlite3, br/index.tantivy — read-only"),
     "{}",
     built.stdout
   );
@@ -169,7 +169,7 @@ fn _00_02_a_sealed_base_takes_no_row_from_a_later_source() {
   );
   let stdout = plain(&out.stdout);
   assert!(
-    stdout.contains("sealed br.sqlite3 — takes no row"),
+    stdout.contains("sealed br/data.sqlite3 — takes no row"),
     "{stdout}"
   );
   assert!(
@@ -181,7 +181,7 @@ fn _00_02_a_sealed_base_takes_no_row_from_a_later_source() {
   let refused = w.geolite_in(&dir, &["exec", "index-addresses", "br"]);
   assert_eq!(refused.status, 1, "{}", refused.stdout);
   assert!(
-    plain(&refused.stderr).contains("br.sqlite3 is sealed"),
+    plain(&refused.stderr).contains("br/data.sqlite3 is sealed"),
     "{}",
     refused.stderr
   );
@@ -208,7 +208,7 @@ fn _00_03_a_build_of_two_sources_runs_the_pbf_stages_per_source_and_the_rest_onc
     "deleted santos-again.osm.pbf",
     "deleted osm_data.sqlite3",
     "deleted 3 tables in",
-    "sealed br.sqlite3, br.tantivy — read-only",
+    "sealed br/data.sqlite3, br/index.tantivy — read-only",
   ] {
     assert!(stdout.contains(line), "{line:?} missing:\n{stdout}");
   }
