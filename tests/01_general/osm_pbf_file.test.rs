@@ -5,7 +5,7 @@ use crate::common::harness::{
 };
 use crate::common::query::first;
 use crate::common::stub;
-use crate::extract::{NODES, REGENERATE, extracted, stage};
+use crate::extract::{REGENERATE, extracted, stage};
 use crate::general::world;
 
 const INDEX: &str = r#"{"features":[
@@ -124,23 +124,13 @@ fn download_columns(conn: &rusqlite::Connection, filter: &str) -> (i64, String) 
     .expect("failed to read the download columns")
 }
 
-// what a deleted download leaves behind: nothing in its three columns
-fn download_state(conn: &rusqlite::Connection) -> (Option<i64>, Option<String>, Option<i64>) {
-  conn
-    .query_row(
-      "SELECT size_bytes, md5, downloaded_at FROM osm_pbf_files",
-      [],
-      |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )
-    .expect("failed to read the download columns")
-}
-
-// 00. the ledger of the shared build
+// 00. the ledger of a source run stage by stage, read before the end of a build deletes it
 #[test]
 #[ignore]
 fn _00_the_ledger_row_of_a_local_build_has_a_local_path_origin() {
   let w = world();
-  let conn = w.open_sqlite();
+  let s = crate::street_merge::resolved(w, "ledger_of_a_local_source");
+  let conn = s.ledger();
   let rows = ledger(&conn);
   assert_eq!(
     rows.len(),
@@ -152,7 +142,10 @@ fn _00_the_ledger_row_of_a_local_build_has_a_local_path_origin() {
   assert_eq!(file.origin_id, None);
   assert_eq!(file.origin_name.as_deref(), Some("santos.osm.pbf"));
   assert_eq!(file.url, None);
-  assert_eq!(file.path.as_deref(), Some(w.pbf.to_string_lossy().as_ref()));
+  assert_eq!(
+    file.path.as_deref(),
+    Some(s.dir.join("santos.osm.pbf").to_string_lossy().as_ref())
+  );
 
   let (program, nodes, ways, relations, houses): (Option<String>, i64, i64, i64, i64) = conn
     .query_row(
@@ -577,30 +570,11 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
     );
   }
 
-  let conn = database(&dir);
-  let rows = ledger(&conn);
-  assert_eq!(rows.len(), 1);
-  assert_eq!(rows[0].origin, 2);
-  assert_eq!(rows[0].url.as_deref(), Some(url.as_str()));
-  assert_eq!(
-    rows[0].path, None,
-    "optimize deleted the download, so the ledger must forget its path"
-  );
-  assert_eq!(download_state(&conn), (None, None, None));
-  for column in [
-    "node_count",
-    "way_count",
-    "relation_count",
-    "admin_levels_count",
-    "house_numbers_count",
-  ] {
-    assert!(
-      count(&conn, &format!("SELECT {column} FROM osm_pbf_files")) > 0,
-      "{column} must be filled by the pipeline"
-    );
-  }
   assert!(dir.join("br/index.tantivy").join("meta.json").exists());
-  assert!(!dir.join("osm_data.sqlite3").exists());
+  assert!(
+    !dir.join("osm_data.sqlite3").exists(),
+    "the ledger goes with the osm_data at the end of the build"
+  );
 }
 
 // 11. idempotent stage
@@ -854,30 +828,10 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
   assert!(!dir.join("osm_data.sqlite3").exists());
   let listing = plain(&w.geolite_in(&dir, &["osm-pbf-file", "ls", "local"]).stdout);
   assert!(listing.contains("no pbf files found"), "{listing}");
-
-  let conn = database(&dir);
-  let rows = ledger(&conn);
-  assert_eq!(rows.len(), 1);
-  assert_eq!(rows[0].origin, 0);
-  assert_eq!(rows[0].origin_name.as_deref(), Some("santos.osm.pbf"));
-  assert_eq!(rows[0].path, None, "the ledger forgets a file that is gone");
-  assert_eq!(download_state(&conn), (None, None, None));
-  let (nodes, admins, houses): (i64, i64, i64) = conn
-    .query_row(
-      "SELECT node_count, admin_levels_count, house_numbers_count FROM osm_pbf_files",
-      [],
-      |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )
-    .expect("failed to read the counts");
-  assert_eq!(nodes, NODES, "{REGENERATE}");
-  // the ledger counts what the source brought, before the fold of the streets shrank the table
-  assert_eq!(
-    admins,
-    1 + 27 + 12 + 63 + crate::street_merge::STREETS,
-    "{REGENERATE}"
+  assert!(
+    !dir.join("osm_data.sqlite3").exists(),
+    "listing the local files leaves no ledger behind"
   );
-  assert!(admins > count(&conn, "SELECT COUNT(*) FROM admin_levels"));
-  assert_eq!(houses, count(&conn, "SELECT COUNT(*) FROM house_numbers"));
 
   let unresolved = w.geolite_in(&dir, &["exec", "extract-osm-pbf-header", "1"]);
   assert!(
@@ -920,8 +874,8 @@ fn _20_the_header_stage_stores_the_features_as_json_and_leaves_the_absent_fields
   }
 
   let w = world();
-  let header = w
-    .open_sqlite()
+  let header = extracted(w, "header_columns", "2", &[])
+    .ledger()
     .query_row(SQL_HEADER_COLUMNS, [], |r| {
       Ok(header_row {
         required: r.get(0)?,

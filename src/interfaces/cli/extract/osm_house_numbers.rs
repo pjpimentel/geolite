@@ -23,7 +23,7 @@ pub fn command_handler_extract_osm_house_numbers(data_path: &str, recreate: bool
     .collect();
   let bases: Vec<&Connection> = opened.iter().collect();
   stage::extract_osm_house_numbers.require(&stage_context {
-    catalog: Some(&conn),
+    osm_data: Some(&conn),
     file: None,
     bases: bases.clone(),
   });

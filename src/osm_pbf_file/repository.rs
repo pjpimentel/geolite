@@ -427,19 +427,19 @@ pub fn count_admin_levels_per_file(conn: &Connection) -> Vec<(u32, i64)> {
   const SQL_COUNT_ADMIN_LEVELS_PER_FILE: &str = "
     WITH way_to_file AS (
       SELECT
-        osm_data.osm_ways.id AS osm_id,
-        osm_data.osm_pbf_blob_chunks.file_id AS file_id
-      FROM osm_data.osm_ways
-      JOIN osm_data.osm_pbf_blob_chunks
-        ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_ways.osm_pbf_chunk_id
+        osm_ways.id AS osm_id,
+        osm_pbf_blob_chunks.file_id AS file_id
+      FROM osm_ways
+      JOIN osm_pbf_blob_chunks
+        ON osm_pbf_blob_chunks.id = osm_ways.osm_pbf_chunk_id
     ),
     relation_to_file AS (
       SELECT
-        osm_data.osm_relations.id AS osm_id,
-        osm_data.osm_pbf_blob_chunks.file_id AS file_id
-      FROM osm_data.osm_relations
-      JOIN osm_data.osm_pbf_blob_chunks
-        ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_relations.osm_pbf_chunk_id
+        osm_relations.id AS osm_id,
+        osm_pbf_blob_chunks.file_id AS file_id
+      FROM osm_relations
+      JOIN osm_pbf_blob_chunks
+        ON osm_pbf_blob_chunks.id = osm_relations.osm_pbf_chunk_id
     )
     SELECT
       COALESCE(way_to_file.file_id, relation_to_file.file_id) AS file_id,
@@ -459,19 +459,19 @@ pub fn count_house_numbers_per_file(conn: &Connection) -> Vec<(u32, i64)> {
   const SQL_COUNT_HOUSE_NUMBERS_PER_FILE: &str = "
     WITH way_to_file AS (
       SELECT
-        osm_data.osm_ways.id AS osm_id,
-        osm_data.osm_pbf_blob_chunks.file_id AS file_id
-      FROM osm_data.osm_ways
-      JOIN osm_data.osm_pbf_blob_chunks
-        ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_ways.osm_pbf_chunk_id
+        osm_ways.id AS osm_id,
+        osm_pbf_blob_chunks.file_id AS file_id
+      FROM osm_ways
+      JOIN osm_pbf_blob_chunks
+        ON osm_pbf_blob_chunks.id = osm_ways.osm_pbf_chunk_id
     ),
     relation_to_file AS (
       SELECT
-        osm_data.osm_relations.id AS osm_id,
-        osm_data.osm_pbf_blob_chunks.file_id AS file_id
-      FROM osm_data.osm_relations
-      JOIN osm_data.osm_pbf_blob_chunks
-        ON osm_data.osm_pbf_blob_chunks.id = osm_data.osm_relations.osm_pbf_chunk_id
+        osm_relations.id AS osm_id,
+        osm_pbf_blob_chunks.file_id AS file_id
+      FROM osm_relations
+      JOIN osm_pbf_blob_chunks
+        ON osm_pbf_blob_chunks.id = osm_relations.osm_pbf_chunk_id
     ),
     admin_to_file AS (
       SELECT
@@ -545,8 +545,8 @@ pub fn any_osm_data_extracted(conn: &Connection) -> bool {
     SELECT EXISTS (
       SELECT 1
       FROM osm_pbf_files
-      JOIN osm_data.osm_pbf_blob_chunks
-        ON osm_data.osm_pbf_blob_chunks.file_id = osm_pbf_files.id
+      JOIN osm_pbf_blob_chunks
+        ON osm_pbf_blob_chunks.file_id = osm_pbf_files.id
       WHERE osm_pbf_files.osm_data_extracted_at IS NOT NULL
     )
   ";

@@ -11,7 +11,7 @@ pub fn command_handler_extract_osm_pbf_header(data_path: &str, inputs: &[String]
     };
     let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
     stage::extract_osm_pbf_header.require(&stage_context {
-      catalog: Some(&conn),
+      osm_data: Some(&conn),
       file: Some(&resolved),
       bases: vec![],
     });

@@ -18,10 +18,10 @@ pub enum stage {
   optimize_sqlite_file,
 }
 
-// what a stage asserts against: the catalogue with the shared osm_data attached, the file when the
+// what a stage asserts against: the osm_data with its ledger, the file when the
 // stage has a source, and the bases it reads or writes
 pub(in crate::interfaces::cli) struct stage_context<'a> {
-  pub catalog: Option<&'a Connection>,
+  pub osm_data: Option<&'a Connection>,
   pub file: Option<&'a resolved_input>,
   pub bases: Vec<&'a Connection>,
 }
@@ -66,11 +66,11 @@ impl stage {
 
   fn ran(self, ctx: &stage_context) -> bool {
     match self {
-      stage::extract_osm_pbf_blob_chunks => match (ctx.catalog, ctx.file) {
+      stage::extract_osm_pbf_blob_chunks => match (ctx.osm_data, ctx.file) {
         (Some(conn), Some(f)) => crate::osm_pbf_file::blob_index::count_by_file_id(conn, f.id) > 0,
         _ => false,
       },
-      stage::extract_osm_pbf_data => match (ctx.catalog, ctx.file) {
+      stage::extract_osm_pbf_data => match (ctx.osm_data, ctx.file) {
         (Some(conn), Some(f)) => crate::osm_pbf_file::repository::osm_data_extracted(conn, f.id),
         (Some(conn), None) => crate::osm_pbf_file::repository::any_osm_data_extracted(conn),
         (None, _) => false,
@@ -85,7 +85,7 @@ impl stage {
           .iter()
           .any(|base| crate::house_number::repository::any(base))
           || ctx
-            .catalog
+            .osm_data
             .is_some_and(crate::osm_pbf_file::repository::any_house_numbers_counted)
       }
       stage::index_admin_levels_hierarchy => {

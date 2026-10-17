@@ -7,7 +7,7 @@ use crate::osm_tag::{key, osm_tag, select};
 use crate::database::table;
 
 const SQL_CREATE: &str = "
-  CREATE TABLE IF NOT EXISTS osm_data.osm_ways (
+  CREATE TABLE IF NOT EXISTS osm_ways (
     id INTEGER PRIMARY KEY,
     osm_pbf_chunk_id INTEGER,
     payload BLOB NOT NULL
@@ -15,10 +15,10 @@ const SQL_CREATE: &str = "
 ";
 
 const SQL_CREATE_INDEXES: &str = "
-  CREATE INDEX IF NOT EXISTS osm_data.osm_ways_search_by_chunk ON osm_ways(osm_pbf_chunk_id);
+  CREATE INDEX IF NOT EXISTS osm_ways_search_by_chunk ON osm_ways(osm_pbf_chunk_id);
 ";
 
-const PAYLOAD: &str = "osm_data.osm_ways.payload";
+const PAYLOAD: &str = "osm_ways.payload";
 
 pub struct osm_ways;
 
@@ -29,10 +29,10 @@ impl table for osm_ways {
 
 pub fn delete_by_file_id(conn: &Connection, file_id: u32) {
   const SQL_DELETE_BY_FILE_ID: &str = "
-    DELETE FROM osm_data.osm_ways
+    DELETE FROM osm_ways
     WHERE osm_pbf_chunk_id IN (
       SELECT id
-      FROM osm_data.osm_pbf_blob_chunks
+      FROM osm_pbf_blob_chunks
       WHERE file_id = ?1
     )
   ";
@@ -104,10 +104,10 @@ pub fn candidate_ids_by_tags(conn: &Connection, filter: &[way_filter]) -> Vec<u6
   let has_name = select::is_not_null(PAYLOAD, osm_tag::name);
   let sql = format!(
     "
-    SELECT osm_data.osm_ways.id
-    FROM osm_data.osm_ways
+    SELECT osm_ways.id
+    FROM osm_ways
     WHERE {has_name}{filter_part}
-    ORDER BY osm_data.osm_ways.id
+    ORDER BY osm_ways.id
     "
   );
   let mut stmt = conn
@@ -137,16 +137,16 @@ pub fn way_coords_chunk(
   let sql = format!(
     "
     SELECT
-      osm_data.osm_ways.id AS way_id,
+      osm_ways.id AS way_id,
       {name_selects}
       {postal_code_select} AS post_code,
-      CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lon') AS REAL) AS lon,
-      CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lat') AS REAL) AS lat
-    FROM osm_data.osm_ways,
-      JSON_EACH(JSON_EXTRACT(osm_data.osm_ways.payload, '$.refs')) AS node_refs
-    INNER JOIN osm_data.osm_nodes ON osm_data.osm_nodes.id = CAST(node_refs.value AS INTEGER)
-    WHERE osm_data.osm_ways.id IN ({placeholders})
-    ORDER BY osm_data.osm_ways.id ASC, node_refs.key ASC
+      CAST(JSON_EXTRACT(osm_nodes.payload, '$.lon') AS REAL) AS lon,
+      CAST(JSON_EXTRACT(osm_nodes.payload, '$.lat') AS REAL) AS lat
+    FROM osm_ways,
+      JSON_EACH(JSON_EXTRACT(osm_ways.payload, '$.refs')) AS node_refs
+    INNER JOIN osm_nodes ON osm_nodes.id = CAST(node_refs.value AS INTEGER)
+    WHERE osm_ways.id IN ({placeholders})
+    ORDER BY osm_ways.id ASC, node_refs.key ASC
     "
   );
   let after_names = 1 + name_tags.len();
@@ -165,7 +165,7 @@ pub fn way_coords_chunk(
 
 pub fn insert_rows(conn: &Connection, rows: &[osm_way_row]) {
   const SQL_INSERT_HEAD: &str = "
-    INSERT OR IGNORE INTO osm_data.osm_ways (
+    INSERT OR IGNORE INTO osm_ways (
       id,
       osm_pbf_chunk_id,
       payload

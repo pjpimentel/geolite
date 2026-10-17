@@ -21,7 +21,7 @@ pub fn command_handler_build(
   ls_endpoint: Option<&str>,
   abort_on_any_error: bool,
 ) {
-  // filesystem only, on purpose: the catalogue may not exist yet at this point of the build, and
+  // filesystem only, on purpose: the ledger may not exist yet at this point of the build, and
   // a local source must never reach resolve_geofabrik_url, which fetches the geofabrik index with
   // an `expect` that would take the whole pipeline down when the network fails
   let files = osm_pbf_file::open(None, data_path);
@@ -58,7 +58,7 @@ pub fn command_handler_build(
       ls_endpoint,
       abort_on_any_error,
     );
-    let conn = store::open_catalog(data_path);
+    let conn = store::open_ledger(data_path);
     let files = osm_pbf_file::open(Some(&conn), data_path);
     for source in &remote {
       if files.resolve(source).is_none() {

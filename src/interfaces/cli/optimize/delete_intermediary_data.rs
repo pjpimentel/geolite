@@ -24,7 +24,7 @@ pub fn command_handler_optimize_delete_intermediary_data(data_path: &str) -> boo
       .map(|base| store::open_base_readonly(&base.sqlite))
       .collect();
     stage::optimize_delete_intermediary_data.require(&stage_context {
-      catalog: Some(&conn),
+      osm_data: Some(&conn),
       file: None,
       bases: opened.iter().collect(),
     });

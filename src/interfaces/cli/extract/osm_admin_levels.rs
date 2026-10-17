@@ -135,7 +135,7 @@ pub fn command_handler_extract_osm_admin_levels(
     }
   }
   exec_stage::extract_osm_admin_levels.require(&stage_context {
-    catalog: Some(&conn),
+    osm_data: Some(&conn),
     file: None,
     bases: vec![],
   });

@@ -8,7 +8,7 @@ pub fn command_handler_index_admin_levels_hierarchy(sqlite_path: &str) {
   crate::interfaces::cli::require_sqlite(sqlite_path);
   let conn = crate::database::store::open_base_write(sqlite_path);
   stage::index_admin_levels_hierarchy.require(&stage_context {
-    catalog: None,
+    osm_data: None,
     file: None,
     bases: vec![&conn],
   });

@@ -9,7 +9,7 @@ pub fn command_handler_index_addresses(sqlite_path: &str, index_path: &str) {
   crate::interfaces::cli::require_sqlite(sqlite_path);
   let conn = crate::database::store::open_base_write(sqlite_path);
   stage::index_addresses.require(&stage_context {
-    catalog: None,
+    osm_data: None,
     file: None,
     bases: vec![&conn],
   });

@@ -307,12 +307,6 @@ fn _00_05_a_link_by_name_names_the_street_the_node_names() {
   let w = world();
   let (s, _) = linked(w, "house_number_by_name");
   let conn = s.ledger();
-  conn
-    .execute(
-      "ATTACH DATABASE ?1 AS osm_data",
-      [s.dir.join("osm_data.sqlite3").to_string_lossy().as_ref()],
-    )
-    .expect("failed to attach the osm_data sibling");
   assert_eq!(
     count(
       &conn,

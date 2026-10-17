@@ -54,7 +54,7 @@ pub fn load_all_candidates(conn: &Connection) -> Vec<candidate_row> {
       {street_select} AS addr_street,
       CAST(payload->>'lon' AS REAL) AS lon,
       CAST(payload->>'lat' AS REAL) AS lat
-    FROM osm_data.osm_nodes
+    FROM osm_nodes
     WHERE {number_select} IS NOT NULL
   ";
 

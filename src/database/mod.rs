@@ -133,7 +133,7 @@ pub(crate) fn has_column(conn: &Connection, schema: &str, table: &str, column: &
     > 0
 }
 
-// a writable file of the data path, the catalogue or a base: created on first open, stamped with
+// a writable file of the data path, the osm_data or a base: created on first open, stamped with
 // the schema version and refused when stamped with another
 pub(crate) fn open_writable(path: &str) -> Connection {
   // create_dir_all races between concurrent geolite processes sharing an ancestor directory:
@@ -149,7 +149,7 @@ pub(crate) fn open_writable(path: &str) -> Connection {
     panic!("{path} is sealed: a base built once is final \u{2014} remove it to build it again");
   }
   let conn = Connection::open(path).expect("failed to open sqlite");
-  require_schema_version(&conn, path);
+  let stamped = require_schema_version(&conn, path);
   conn
     .execute_batch(
       "PRAGMA journal_mode=WAL;
@@ -158,13 +158,17 @@ pub(crate) fn open_writable(path: &str) -> Connection {
        PRAGMA temp_store=MEMORY;",
     )
     .expect("failed to set pragmas");
-  conn
-    .pragma_update(None, "user_version", SCHEMA_VERSION)
-    .expect("failed to set user_version");
+  // a stamp already in place is not written again: the write would fail on the lock of a second
+  // process writing the file instead of letting that process be named
+  if stamped != SCHEMA_VERSION {
+    conn
+      .pragma_update(None, "user_version", SCHEMA_VERSION)
+      .expect("failed to set user_version");
+  }
   conn
 }
 
-fn require_schema_version(conn: &Connection, path: &str) {
+fn require_schema_version(conn: &Connection, path: &str) -> u32 {
   let stamped: u32 = conn
     .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
     .map(|v| v as u32)
@@ -174,6 +178,7 @@ fn require_schema_version(conn: &Connection, path: &str) {
       "incompatible schema version on {path}: found {stamped}, expected {SCHEMA_VERSION} \u{2014} rebuild required"
     );
   }
+  stamped
 }
 
 // what a build leaves behind is read-only at the os level as well, a file or a directory with

@@ -88,9 +88,20 @@ fn _00_00_two_sources_into_one_data_path_match_a_single_build() {
   let single = combined(w, "build_single_source");
 
   assert_eq!(signature(&dir), signature(&single), "{REGENERATE}");
-  assert!(ledger_count_of(&dir, "admin_levels_count", "santos.osm.pbf") > 0);
   assert_eq!(
-    ledger_count_of(&dir, "admin_levels_count", "santos-again.osm.pbf"),
+    ledger_count_of(&dir, "admin_levels_count", "santos.osm.pbf"),
+    1 + 27 + 12 + 63 + STREETS
+  );
+  assert_eq!(
+    ledger_count_of(&dir, "house_numbers_count", "santos.osm.pbf"),
+    HOUSE_NUMBERS
+  );
+  assert_eq!(
+    ledger_count_of(
+      &dir,
+      "admin_levels_count + house_numbers_count",
+      "santos-again.osm.pbf"
+    ),
     0,
     "the second source repeats the first: stored once, credited to the first"
   );
@@ -217,38 +228,12 @@ fn _00_03_a_build_of_two_sources_runs_the_pbf_stages_per_source_and_the_rest_onc
   assert_eq!(stdout.matches("── extract-osm-house-numbers").count(), 1);
 
   assert_eq!(
-    count(&open_scratch(&dir), "SELECT COUNT(*) FROM osm_pbf_files"),
-    2
-  );
-  assert_eq!(
-    count(
-      &open_scratch(&dir),
-      "SELECT COUNT(*) FROM osm_pbf_files WHERE path IS NOT NULL"
-    ),
-    0,
-    "the build deleted both pbfs and the ledger forgot their paths"
-  );
-  assert_eq!(
-    ledger_count_of(&dir, "admin_levels_count", "santos.osm.pbf"),
-    1 + 27 + 12 + 63 + STREETS
-  );
-  assert_eq!(
-    ledger_count_of(&dir, "house_numbers_count", "santos.osm.pbf"),
-    HOUSE_NUMBERS
-  );
-  assert_eq!(
-    ledger_count_of(
-      &dir,
-      "admin_levels_count + house_numbers_count",
-      "santos-again.osm.pbf"
-    ),
-    0,
-    "the second source repeats the first: stored once, credited to the first"
-  );
-  assert_eq!(
     query_at(w, &dir, TEXT_QUERY),
     query_at(w, &w.data_path, TEXT_QUERY),
     "two copies of the fixture build what one does"
   );
-  assert!(!dir.join("osm_data.sqlite3").exists());
+  assert!(
+    !dir.join("osm_data.sqlite3").exists(),
+    "the ledger goes with the osm_data at the end of the build"
+  );
 }

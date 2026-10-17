@@ -5,15 +5,7 @@ use rusqlite::Connection;
 
 use super::table;
 
-pub const CATALOG_FILE: &str = "catalog.sqlite3";
 pub const OSM_DATA_FILE: &str = "osm_data.sqlite3";
-
-pub fn catalog_path(data_path: &str) -> String {
-  Path::new(data_path)
-    .join(CATALOG_FILE)
-    .to_string_lossy()
-    .into_owned()
-}
 
 pub fn osm_data_path(data_path: &str) -> String {
   Path::new(data_path)
@@ -120,25 +112,14 @@ pub fn bases(data_path: &str) -> Vec<base_files> {
   found
 }
 
-pub fn open_catalog(data_path: &str) -> Connection {
-  let conn = super::open_writable(&catalog_path(data_path));
+pub fn open_ledger(data_path: &str) -> Connection {
+  let conn = super::open_writable(&osm_data_path(data_path));
   crate::osm_pbf_file::osm_pbf_files::create_table(&conn);
   conn
 }
 
 pub fn open_osm_data(data_path: &str) -> Connection {
-  let conn = open_catalog(data_path);
-  let osm_data = osm_data_path(data_path);
-  conn
-    .execute("ATTACH DATABASE ?1 AS osm_data", [&osm_data])
-    .expect("failed to attach osm_data");
-  conn
-    .execute_batch(
-      "PRAGMA osm_data.journal_mode=WAL;
-       PRAGMA osm_data.synchronous=NORMAL;
-       PRAGMA osm_data.cache_size=-32768;",
-    )
-    .expect("failed to set osm_data pragmas");
+  let conn = open_ledger(data_path);
   crate::osm_pbf_file::osm_pbf_blob_chunks::create_table(&conn);
   crate::osm_node::osm_nodes::create_table(&conn);
   crate::osm_way::osm_ways::create_table(&conn);
@@ -149,7 +130,6 @@ pub fn open_osm_data(data_path: &str) -> Connection {
 // one process at a time writes the osm data of a data path: a second writer meets the lock of the
 // first on a probe connection and is told so, instead of a `database is locked` deep in a stage
 pub fn open_osm_data_write(data_path: &str) -> Connection {
-  let conn = open_osm_data(data_path);
   let probe = Connection::open(osm_data_path(data_path)).expect("failed to open osm_data");
   match probe.execute_batch("BEGIN IMMEDIATE") {
     Ok(()) => probe
@@ -168,7 +148,8 @@ pub fn open_osm_data_write(data_path: &str) -> Connection {
     }
     Err(error) => panic!("failed to probe osm_data for a writer: {error}"),
   }
-  conn
+  drop(probe);
+  open_osm_data(data_path)
 }
 
 pub fn open_base_write(path: &str) -> Connection {

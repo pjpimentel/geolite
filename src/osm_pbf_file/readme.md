@@ -1,7 +1,8 @@
 # osm_pbf_file
 
-where every build starts: one row per `.osm.pbf` file in `catalog.sqlite3`, from the moment it is
-found in the geofabrik catalogue to the counts left behind after extraction.
+where every build starts: one row per `.osm.pbf` file in `osm_data.sqlite3`, from the moment it is
+found in the geofabrik catalogue to the counts left behind after extraction; the ledger goes with
+the osm_data at the end of a build, so a later build starts from an empty one.
 
 ## the folder without an entity
 

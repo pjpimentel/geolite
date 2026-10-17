@@ -9,7 +9,7 @@ pub fn command_handler_osm_pbf_file_ls(
 ) {
   let found = match from {
     osm_pbf_file_ls_source::geofabrik => {
-      let conn = crate::database::store::open_catalog(data_path);
+      let conn = crate::database::store::open_ledger(data_path);
       osm_pbf_file::open(Some(&conn), data_path).list((*from).into(), ls_endpoint, *recreate_cache)
     }
     osm_pbf_file_ls_source::local => {

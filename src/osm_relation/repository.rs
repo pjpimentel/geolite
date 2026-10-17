@@ -6,7 +6,7 @@ use crate::osm_tag::{key, select};
 use crate::database::table;
 
 const SQL_CREATE: &str = "
-  CREATE TABLE IF NOT EXISTS osm_data.osm_relations (
+  CREATE TABLE IF NOT EXISTS osm_relations (
     id INTEGER PRIMARY KEY,
     osm_pbf_chunk_id INTEGER,
     payload BLOB NOT NULL
@@ -14,9 +14,9 @@ const SQL_CREATE: &str = "
 ";
 
 const SQL_CREATE_INDEXES: &str = "
-  CREATE INDEX IF NOT EXISTS osm_data.osm_relations_search_by_admin_level
+  CREATE INDEX IF NOT EXISTS osm_relations_search_by_admin_level
     ON osm_relations(JSON_EXTRACT(payload, '$.tags.admin_level'));
-  CREATE INDEX IF NOT EXISTS osm_data.osm_relations_search_by_chunk ON osm_relations(osm_pbf_chunk_id);
+  CREATE INDEX IF NOT EXISTS osm_relations_search_by_chunk ON osm_relations(osm_pbf_chunk_id);
 ";
 
 // sqlite only takes an expression index when the query spells the expression exactly as the
@@ -24,12 +24,12 @@ const SQL_CREATE_INDEXES: &str = "
 // the quoted path of `osm_tag::select`, or every existing database would fall back to a full scan
 const SQL_CANDIDATES_BY_ADMIN_LEVEL: &str = "
   SELECT id
-  FROM osm_data.osm_relations
+  FROM osm_relations
   WHERE JSON_EXTRACT(payload, '$.tags.admin_level') = ?1
     AND JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
 ";
 
-const PAYLOAD: &str = "osm_data.osm_relations.payload";
+const PAYLOAD: &str = "osm_relations.payload";
 
 pub struct osm_relations;
 
@@ -40,10 +40,10 @@ impl table for osm_relations {
 
 pub fn delete_by_file_id(conn: &Connection, file_id: u32) {
   const SQL_DELETE_BY_FILE_ID: &str = "
-    DELETE FROM osm_data.osm_relations
+    DELETE FROM osm_relations
     WHERE osm_pbf_chunk_id IN (
       SELECT id
-      FROM osm_data.osm_pbf_blob_chunks
+      FROM osm_pbf_blob_chunks
       WHERE file_id = ?1
     )
   ";
@@ -96,14 +96,14 @@ pub fn relation_coords_chunk(
     "
     WITH way_members AS (
       SELECT
-        osm_data.osm_relations.id AS relation_id,
+        osm_relations.id AS relation_id,
         CAST(mem.key AS INTEGER) AS way_order,
         CAST(JSON_EXTRACT(mem.value, '$.id') AS INTEGER) AS way_id,
         {name_selects}
         {postal_code_select} AS post_code
-      FROM osm_data.osm_relations,
-        JSON_EACH(JSON_EXTRACT(osm_data.osm_relations.payload, '$.members')) AS mem
-      WHERE osm_data.osm_relations.id IN ({placeholders})
+      FROM osm_relations,
+        JSON_EACH(JSON_EXTRACT(osm_relations.payload, '$.members')) AS mem
+      WHERE osm_relations.id IN ({placeholders})
         AND JSON_EXTRACT(mem.value, '$.type') = 'w'
     )
     SELECT
@@ -112,12 +112,12 @@ pub fn relation_coords_chunk(
       way_members.post_code,
       way_members.way_order,
       way_members.way_id,
-      CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lon') AS REAL) AS lon,
-      CAST(JSON_EXTRACT(osm_data.osm_nodes.payload, '$.lat') AS REAL) AS lat
-    FROM osm_data.osm_ways,
-      JSON_EACH(JSON_EXTRACT(osm_data.osm_ways.payload, '$.refs')) AS node_refs
-    INNER JOIN way_members ON way_members.way_id = osm_data.osm_ways.id
-    INNER JOIN osm_data.osm_nodes ON osm_data.osm_nodes.id = CAST(node_refs.value AS INTEGER)
+      CAST(JSON_EXTRACT(osm_nodes.payload, '$.lon') AS REAL) AS lon,
+      CAST(JSON_EXTRACT(osm_nodes.payload, '$.lat') AS REAL) AS lat
+    FROM osm_ways,
+      JSON_EACH(JSON_EXTRACT(osm_ways.payload, '$.refs')) AS node_refs
+    INNER JOIN way_members ON way_members.way_id = osm_ways.id
+    INNER JOIN osm_nodes ON osm_nodes.id = CAST(node_refs.value AS INTEGER)
     ORDER BY way_members.relation_id ASC, way_members.way_order ASC, node_refs.key ASC
     "
   );
@@ -139,7 +139,7 @@ pub fn relation_coords_chunk(
 
 pub fn insert_rows(conn: &Connection, rows: &[osm_relation_row]) {
   const SQL_INSERT_HEAD: &str = "
-    INSERT OR IGNORE INTO osm_data.osm_relations (
+    INSERT OR IGNORE INTO osm_relations (
       id,
       osm_pbf_chunk_id,
       payload

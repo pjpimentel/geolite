@@ -257,7 +257,7 @@ impl world {
       .unwrap_or_else(|e| panic!("query {args:?} printed invalid json: {e}\n{}", out.stdout))
   }
 
-  // the world read as one database: its base with the catalogue attached
+  // the world read as one database: its base, the osm_data gone with the build
   pub fn open_sqlite(&self) -> rusqlite::Connection {
     open_scratch(&self.data_path)
   }
@@ -587,27 +587,27 @@ pub fn relabel_country(data_path: &Path, iso: Option<&str>) {
   relabel_base(&data_path.join("br/data.sqlite3"), iso);
 }
 
-// a scratch read as one database: its brazilian base, or the catalogue when no base was written
-// yet, with the catalogue attached and its ledger reachable as `osm_pbf_files`
+// a scratch read as one database: its brazilian base, or the osm_data when no base was written
+// yet, with the osm_data attached and its ledger reachable as `osm_pbf_files`
 pub fn open_scratch(dir: &Path) -> rusqlite::Connection {
   const SQL_LEDGER_VIEW: &str = "
     CREATE TEMP VIEW osm_pbf_files AS
     SELECT *
-    FROM catalog.osm_pbf_files
+    FROM osm_data.osm_pbf_files
   ";
 
   let base = dir.join("br/data.sqlite3");
-  let catalog = dir.join("catalog.sqlite3");
-  let main = if base.exists() { &base } else { &catalog };
+  let osm_data = dir.join("osm_data.sqlite3");
+  let main = if base.exists() { &base } else { &osm_data };
   let conn = rusqlite::Connection::open(main)
     .unwrap_or_else(|e| panic!("failed to open {}: {e}", main.display()));
-  if base.exists() && catalog.exists() {
+  if base.exists() && osm_data.exists() {
     conn
       .execute(
-        "ATTACH DATABASE ?1 AS catalog",
-        [catalog.to_string_lossy().as_ref()],
+        "ATTACH DATABASE ?1 AS osm_data",
+        [osm_data.to_string_lossy().as_ref()],
       )
-      .expect("failed to attach the catalogue");
+      .expect("failed to attach the osm_data");
     conn
       .execute_batch(SQL_LEDGER_VIEW)
       .expect("failed to view the ledger");

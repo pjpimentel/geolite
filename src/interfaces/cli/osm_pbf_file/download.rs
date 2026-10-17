@@ -17,7 +17,7 @@ pub fn command_handler_osm_pbf_file_download(
       println!();
     }
 
-    let conn = crate::database::store::open_catalog(data_path);
+    let conn = crate::database::store::open_ledger(data_path);
     let file = osm_pbf_file::open(Some(&conn), data_path);
     let resolved = match input_kind::of(input) {
       input_kind::url => Some(origin::url(input.clone())),

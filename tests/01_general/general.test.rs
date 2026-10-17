@@ -258,7 +258,7 @@ fn _00_10_the_build_reports_the_house_numbers_it_linked_and_the_optimize_steps()
     "deleted 1 tables in",
     "optimizing sqlite file...",
     "optimized sqlite in",
-    "after   catalog:",
+    "after   osm_data:",
   ] {
     let found = stdout[at..]
       .find(line)
@@ -1618,7 +1618,7 @@ fn _02_23_the_readers_leave_no_wal_or_shm_beside_the_bases() {
 }
 
 // 02.24. what a build leaves behind is read-only at the os level: the base and its index carry no
-// write bit but tantivy's locks, the catalogue keeps its own, and the build said so
+// write bit but tantivy's locks, nothing else is left beside them, and the build said so
 #[test]
 #[ignore]
 fn _02_24_the_build_seals_what_it_leaves_in_the_data_path() {
@@ -1648,9 +1648,10 @@ fn _02_24_the_build_seals_what_it_leaves_in_the_data_path() {
     let mode = mode_of(&path);
     assert_eq!(mode & 0o222, 0, "{} is writable: {mode:o}", path.display());
   }
-  assert_ne!(
-    mode_of(&w.data_path.join("catalog.sqlite3")) & 0o200,
-    0,
-    "the catalogue is the ledger of every build and stays writable"
-  );
+  for gone in ["catalog.sqlite3", "osm_data.sqlite3"] {
+    assert!(
+      !w.data_path.join(gone).exists(),
+      "{gone} must not survive the build"
+    );
+  }
 }

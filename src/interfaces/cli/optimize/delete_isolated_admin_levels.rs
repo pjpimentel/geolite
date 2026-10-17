@@ -11,7 +11,7 @@ pub fn command_handler_optimize_delete_isolated_admin_levels(
   crate::interfaces::cli::require_sqlite(sqlite_path);
   let conn = store::open_base_write(sqlite_path);
   stage::optimize_delete_isolated_admin_levels.require(&stage_context {
-    catalog: None,
+    osm_data: None,
     file: None,
     bases: vec![&conn],
   });

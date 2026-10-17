@@ -2,9 +2,9 @@
 > `geolite exec <group>-<stage>`: one stage of the pipeline per call, refused before the stages it requires
 
 `stage` names the twelve stages, in the order `build` runs them. it is the value a handler asserts
-with: `stage::x.require(&stage_context { catalog, file, bases })` walks `x.requires()` and, for
+with: `stage::x.require(&stage_context { osm_data, file, bases })` walks `x.requires()` and, for
 the first one that did not run, exits 1 with `x requires y — run \`geolite exec y\` first`. the
-context is what the stage works on: the catalogue with the shared osm_data attached, the file when
+context is what the stage works on: the shared osm_data with its ledger, the file when
 it has a source, and the bases it reads or writes. a stage with a source asserts right after resolving
 it, so the ledger still records the file; a stage over bases asserts after each base opens. `build`
 calls the same handlers, so it carries the same asserts and always passes them.

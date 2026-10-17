@@ -58,9 +58,8 @@ fn files_size(path: &str) -> u64 {
   file_size(path) + file_size(&format!("{path}-wal")) + file_size(&format!("{path}-shm"))
 }
 
-// what the data path weighs: the catalogue, the osm_data, and every base with its index
+// what the data path weighs: the osm_data, and every base with its index
 pub(super) fn print_sizes(label: &str, data_path: &str) {
-  let catalog = files_size(&store::catalog_path(data_path));
   let osm_data = files_size(&store::osm_data_path(data_path));
   let (mut bases, mut indexes) = (0u64, 0u64);
   for base in store::bases(data_path) {
@@ -68,12 +67,11 @@ pub(super) fn print_sizes(label: &str, data_path: &str) {
     indexes += dir_size(&base.index);
   }
   println!(
-    "\x1b[1;32m{label}\x1b[0m  catalog: {}  osm_data: {}  bases: {}  indexes: {}  total: {}",
-    fmt_size(catalog),
+    "\x1b[1;32m{label}\x1b[0m  osm_data: {}  bases: {}  indexes: {}  total: {}",
     fmt_size(osm_data),
     fmt_size(bases),
     fmt_size(indexes),
-    fmt_size(catalog + osm_data + bases + indexes),
+    fmt_size(osm_data + bases + indexes),
   );
 }
 
