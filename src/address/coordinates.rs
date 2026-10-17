@@ -71,7 +71,7 @@ pub(super) fn run(
   candidates.truncate(filter::MAX_RESULTS as usize);
   crate::debug!("debug: candidates={}", candidates.len());
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
-  let mut sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);
+  let mut sources = match_sources::load(conn, &candidate_ids);
   sources.load_leaf_boxes(conn);
   let numbers =
     house_number::at_point(conn, input_pt, &candidates, |id| sources.house_number_policy_of(id));

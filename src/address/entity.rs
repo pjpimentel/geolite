@@ -59,6 +59,8 @@ pub struct query_match {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub house_number: Option<query_house_number>,
   pub id: String,
+  #[serde(skip)]
+  pub(super) ladder_ids: Vec<i64>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -93,6 +95,23 @@ pub struct query_output {
   pub matches: Vec<query_match>,
 }
 
+pub(super) fn attach_wkt(conn: &Connection, matches: &mut [&mut query_match]) {
+  let mut ids: Vec<i64> = matches.iter().flat_map(|m| m.ladder_ids.iter().copied()).collect();
+  ids.sort_unstable();
+  ids.dedup();
+  let wkt = crate::admin_level::repository::wkt_by_ids(conn, &ids);
+  for m in matches.iter_mut() {
+    let query_match {
+      admin_levels,
+      ladder_ids,
+      ..
+    } = &mut **m;
+    for (level, id) in admin_levels.iter_mut().zip(ladder_ids.iter()) {
+      level.wkt = wkt.get(id).cloned();
+    }
+  }
+}
+
 pub(super) fn round5(v: f64) -> f64 {
   (v * 100_000.0).round() / 100_000.0
 }
@@ -125,12 +144,11 @@ pub(super) struct match_sources {
   paths: HashMap<i64, Vec<Vec<i64>>>,
   pub(super) meta: HashMap<i64, admin_meta_row>,
   merged_way_ids: HashMap<i64, crate::admin_level::geometry::merged_way_ids>,
-  wkt: HashMap<i64, String>,
   boxes: HashMap<i64, bounding_box>,
 }
 
 impl match_sources {
-  pub(super) fn load(conn: &Connection, ids: &[i64], include_wkt: bool) -> Self {
+  pub(super) fn load(conn: &Connection, ids: &[i64]) -> Self {
     let edges = crate::admin_level_hierarchy::repository::ancestry_of(conn, ids);
     let paths: HashMap<i64, Vec<Vec<i64>>> =
       ids.iter().map(|&id| (id, paths_of(id, &edges))).collect();
@@ -140,17 +158,10 @@ impl match_sources {
     meta_ids.dedup();
     let meta = crate::admin_level::repository::load_metadata_by_ids(conn, &meta_ids);
     let merged_way_ids = crate::admin_level::repository::merged_way_ids_by_ids(conn, &meta_ids);
-    // the polygons of countries and states are megabytes of wkt: nothing loads them unless asked
-    let wkt = if include_wkt {
-      crate::admin_level::repository::wkt_by_ids(conn, &meta_ids)
-    } else {
-      HashMap::new()
-    };
     match_sources {
       paths,
       meta,
       merged_way_ids,
-      wkt,
       boxes: HashMap::new(),
     }
   }
@@ -256,7 +267,7 @@ impl match_sources {
       .find_map(|m| m.post_code.clone())
   }
 
-  fn level_ladder(&self, ancestors: &[&admin_meta_row], leaf: &leaf) -> Vec<admin_level> {
+  fn level_ladder(&self, ancestors: &[&admin_meta_row], leaf: &leaf) -> (Vec<admin_level>, Vec<i64>) {
     let mut admin_levels: Vec<admin_level> = ancestors
       .iter()
       .map(|a| admin_level {
@@ -266,7 +277,7 @@ impl match_sources {
         osm_relation_id: a.relation_id,
         osm_way_id: a.way_id,
         osm_merged_way_ids: self.merged_way_ids_of(a.id),
-        wkt: self.wkt.get(&a.id).cloned(),
+        wkt: None,
       })
       .collect();
     admin_levels.push(admin_level {
@@ -276,9 +287,10 @@ impl match_sources {
       osm_relation_id: leaf.relation_id,
       osm_way_id: leaf.way_id,
       osm_merged_way_ids: self.merged_way_ids_of(leaf.id),
-      wkt: self.wkt.get(&leaf.id).cloned(),
+      wkt: None,
     });
-    admin_levels
+    let ids = ancestors.iter().map(|a| a.id).chain(std::iter::once(leaf.id)).collect();
+    (admin_levels, ids)
   }
 
   pub(super) fn match_at(
@@ -290,7 +302,7 @@ impl match_sources {
     house_number: Option<&query_house_number>,
     format: Option<&str>,
   ) -> query_match {
-    let admin_levels = self.level_ladder(ancestors, leaf);
+    let (admin_levels, ladder_ids) = self.level_ladder(ancestors, leaf);
     let number = house_number.map(|house_number| house_number.number.as_str());
     let friendly_name = friendly_name_of(
       format,
@@ -315,6 +327,7 @@ impl match_sources {
       },
       house_number: house_number.cloned(),
       id: path_id(leaf.id, path),
+      ladder_ids,
     }
   }
 }
