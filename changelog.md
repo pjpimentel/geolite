@@ -13,27 +13,20 @@
 1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
 1. ADDED a study of the presets as toml files instead of rust consts, the readability gained against the crates and the binary size it costs, so the format of a preset is decided by numbers.
 1. ADDED the boundary of a country to its preset, the wkt of `boundaries/<iso>.wkt` carried by `<iso>.rs`, so a country is one file holding its outline and its policy.
+1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
 
 
 ## **planned** - 0.0.17
 
-1. REMOVED the `--preset` flag and the preset inferred from the source name, a row extracted, indexed and answered under the preset of the country whose boundary holds it (not backward compatible), so a base of many countries answers each one under its own preset.
-1. ADDED the boundary of every country the geofabrik index names, the outline of its extract compiled into the binary, so the country of a row is decided against it, with or without a preset of its own, and never against what the extract happens to hold.
-1. REMOVED `admin_levels_rules`, `number_tags` and `street_tags` from the presets, the defaults the only rules, so a preset holds only what varies by country.
-1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
-1. MODIFIED the storage to one base per country, a folder `<iso>` in the data path holding `data.sqlite3` and `index.tantivy`, the rows of a source routed by the boundary that holds them (not backward compatible), so a data path holds the world one country at a time.
-1. MODIFIED `build` to write every country a source holds, `build south-america` one base per country and `build sudeste` a part of `br.sqlite3`, so a continent, a country and a region are built by the same command.
-1. REMOVED `merge`, a second build into the same data path writing the countries it has no base for and leaving the sealed ones as they are, so a data path grows country by country without a step of its own.
-1. MODIFIED `query` and `http-server` to answer over every base of the data path, a coordinate merged by distance and a text by similarity, with `countries` to narrow, so one server answers a continent.
-1. MODIFIED the tui to open every base of the data path, one folder per country at the root, so the terminal browses what the api answers.
+1. REMOVED the `--preset` flag and the preset inferred from the source name, every row extracted, indexed and answered under the preset of the country whose boundary holds it (not backward compatible), so a base of many countries answers each one under its own preset.
+1. ADDED the boundary of every country of the geofabrik index, compiled into the binary, so the country of a row is decided against it and never against what the extract happens to hold.
+1. MODIFIED the presets to what varies by country, one file per country named by its iso code like its boundary, so a preset is a data table beside its outline.
+1. MODIFIED the storage to one base per country, `<iso>/data.sqlite3` and `<iso>/index.tantivy` in the data path, sealed read-only by `build`, taking no row from a later source and removed when no area is left in it (not backward compatible), so a data path holds the world one country at a time and a base built once is final.
+1. MODIFIED `build` to take several sources, decoded into one `osm_data.sqlite3` holding the ledger and gone at the end, and to write every country they hold, with `merge` and the catalog file removed (not backward compatible), so a continent, a country and a region are built by the same command and a data path grows country by country.
+1. MODIFIED `query`, `http-server` and the tui to answer over every base of the data path, a coordinate merged by distance and a text by similarity, narrowed by `countries`, the bases asked named in `databases` and the tui rooted on one folder per country, so one server answers a continent and a client knows which countries answered.
+1. MODIFIED the readers to open a base immutable, to answer a coordinate without the search index and to load the polygons only for the final matches, so a base on read-only media answers, no `-wal` or `-shm` appears beside it and a query never reads the megabytes of a country it discards.
 1. MODIFIED the street rules to leave out the ways tagged `boundary` or `location=underwater`, so a border line and a submarine cable are never streets.
-1. MODIFIED `query`, `http-server` and the tui to open a base immutable, so a reader creates no `-wal` or `-shm` beside it and a base on read-only media answers.
-1. MODIFIED `build` to seal the base of each country it writes, read-only at the os level and taking no row from a later source, so a base built once is final.
-1. MODIFIED the osm data to one `osm_data.sqlite3` shared by every source, the ledger of the sources inside it and gone with it at the end of a build, `extract-osm-admin-levels`, `extract-osm-house-numbers` and `optimize-delete-intermediary-data` taking no source and `build` taking several (not backward compatible), so several extracts are downloaded and decoded before one extraction writes the bases.
-1. ADDED `databases` to the answer of `query` and `/geocode`, the bases asked with the services each one offers as `/status` reports them, so a client knows which countries answered.
-1. MODIFIED the e2e fixture of brazil to `brazil.osm.pbf`, named after its country and not after the city it was cut around, so other brazilian data joins it under one name.
-1. ADDED a synthetic south-america fixture to the e2e battery, one closed country boundary and one street for each of its thirteen countries, with a scenario asserting that `build` writes one base per country, so the routing by boundary is homologated over a continent without a continent of data.
-1. MODIFIED the presets to one file per country in `src/presets/`, named by its iso code like its boundary and holding only what differs from `default.rs`, so the policy of a country sits beside its outline under the same name.
+1. MODIFIED the e2e battery to a `brazil.osm.pbf` fixture named after its country and a synthetic south-america fixture of thirteen countries with a scenario asserting one base per country, so the routing by boundary is homologated over a continent.
 
 ## **2026-10-12** - 0.0.16
 
