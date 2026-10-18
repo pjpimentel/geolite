@@ -92,7 +92,7 @@ itself. `from_osm_data` is a stored number, equal to the typed one on the text p
 offers: `presumed_from_multiple_references_from_street` when it stores two or more distinct
 numbers, `presumed_from_one_ref_from_street` when it stores one, and `presumed_from_constants`
 when it stores none. a presumed number is an estimate, and the word is how far to trust it;
-measured against the 473 numbers of the santos fixture, leaving each one out in turn, the median
+measured against the 473 numbers of the brazil fixture, leaving each one out in turn, the median
 error is 15 m between two references, 17 m from one, and 160 to 250 m from the constants, against
 the 267 m of the point of the street that answered before. the word is only the name of the
 scenario: what the number was actually read from is `house_number_origin`, in `resolution`, and

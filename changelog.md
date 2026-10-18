@@ -29,6 +29,8 @@
 1. MODIFIED `build` to seal the base of each country it writes, read-only at the os level and taking no row from a later source, so a base built once is final.
 1. MODIFIED the osm data to one `osm_data.sqlite3` shared by every source, the ledger of the sources inside it and gone with it at the end of a build, `extract-osm-admin-levels`, `extract-osm-house-numbers` and `optimize-delete-intermediary-data` taking no source and `build` taking several (not backward compatible), so several extracts are downloaded and decoded before one extraction writes the bases.
 1. ADDED `databases` to the answer of `query` and `/geocode`, the bases asked with the services each one offers as `/status` reports them, so a client knows which countries answered.
+1. MODIFIED the e2e fixture of brazil to `brazil.osm.pbf`, named after its country and not after the city it was cut around, so other brazilian data joins it under one name.
+1. ADDED a synthetic south-america fixture to the e2e battery, one closed country boundary and one street for each of its thirteen countries, with a scenario asserting that `build` writes one base per country, so the routing by boundary is homologated over a continent without a continent of data.
 
 ## **2026-10-12** - 0.0.16
 

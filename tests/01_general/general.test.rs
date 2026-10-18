@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 pub static SCENARIO: scenario = scenario {
   region: "01_general",
   fixture_dir: "02_preset_brazil",
-  pbf: "santos.osm.pbf",
+  pbf: "brazil.osm.pbf",
 };
 
 pub(crate) static WORLD: world_cell = world_cell::new();

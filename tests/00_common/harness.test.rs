@@ -139,8 +139,8 @@ fn build_world(scenario: &'static scenario) -> Result<world, String> {
 
   let bytes = std::fs::read(&pbf_src).map_err(|e| format!("failed to read the fixture: {e}"))?;
   let digest = format!("{:x}", md5::compute(&bytes));
-  // keyed on city + content, not on the target: 01_general and 02_preset_brazil build the same
-  // santos extract, and must share one workspace.
+  // keyed on the fixture name + content, not on the target: 01_general and 02_preset_brazil build
+  // the same brazil extract, and must share one workspace.
   let tag = format!("{}-{}", scenario.city(), &digest[..8]);
   drop(bytes);
 

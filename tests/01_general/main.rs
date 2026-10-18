@@ -35,3 +35,6 @@ mod tui;
 
 #[path = "etag.test.rs"]
 mod etag;
+
+#[path = "south_america.test.rs"]
+mod south_america;

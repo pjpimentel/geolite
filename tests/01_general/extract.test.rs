@@ -38,7 +38,7 @@ impl scratch {
   fn pbf(&self) -> String {
     self
       .dir
-      .join("santos.osm.pbf")
+      .join("brazil.osm.pbf")
       .to_string_lossy()
       .into_owned()
   }
@@ -93,7 +93,7 @@ fn osm_data(w: &world, dir: &Path, threads: &str, data_args: &[&str], inputs: &[
 // the three stages of the file in a scratch of its own, keeping the osm-data stdout
 pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]) -> scratch {
   let dir = w.scratch(name);
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
   stage(w, &dir, &["exec", "extract-osm-pbf-header", &pbf]);
   let stdout = osm_data(w, &dir, threads, data_args, &[&pbf]).stdout;
@@ -210,7 +210,7 @@ fn _00_the_osm_data_stage_writes_the_fixture_exactly() {
   assert_full_fixture(&s);
   for line in [
     "done (94 chunks)",
-    "santos.osm.pbf  nodes: 683.3K  ways: 41.3K  relations: 1.3K",
+    "brazil.osm.pbf  nodes: 683.3K  ways: 41.3K  relations: 1.3K",
     " osm_nodes in ",
   ] {
     assert!(
@@ -507,7 +507,7 @@ fn _19_a_way_tagged_boundary_is_not_a_street() {
 fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
   let w = world();
   let dir = w.scratch("extract_without_chunks");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let out = w.geolite_in(
     &dir,
     &["--threads", "2", "exec", "extract-osm-pbf-data", &pbf],
@@ -567,7 +567,7 @@ fn _08_a_one_megabyte_buffer_gives_the_same_result() {
   assert!(
     tight
       .stdout
-      .contains("santos.osm.pbf  nodes: 683.3K  ways: 41.3K  relations: 1.3K"),
+      .contains("brazil.osm.pbf  nodes: 683.3K  ways: 41.3K  relations: 1.3K"),
     "stdout: {}",
     tight.stdout
   );
@@ -580,14 +580,14 @@ fn _08_a_one_megabyte_buffer_gives_the_same_result() {
 fn _09_two_inputs_in_one_run_get_their_own_chunks_and_share_the_elements() {
   let w = world();
   let dir = w.scratch("extract_two_inputs");
-  let santos = copy_fixture(w, &dir, "santos.osm.pbf");
+  let brazil = copy_fixture(w, &dir, "brazil.osm.pbf");
   let alpha = copy_fixture(w, &dir, "alpha.osm.pbf");
   stage(
     w,
     &dir,
-    &["exec", "extract-osm-pbf-blob-chunks", &santos, &alpha],
+    &["exec", "extract-osm-pbf-blob-chunks", &brazil, &alpha],
   );
-  osm_data(w, &dir, "2", &[], &[&santos, &alpha]);
+  osm_data(w, &dir, "2", &[], &[&brazil, &alpha]);
   let rows = ledger(&open_scratch(&dir));
   assert_eq!(rows.len(), 2, "one ledger row per input");
   let data = open_sqlite_at(&dir.join("osm_data.sqlite3"));
@@ -782,12 +782,12 @@ fn _14_level_10_runs_the_relation_and_the_way_stages() {
 fn _15_the_header_stage_refuses_to_run_before_the_chunk_index() {
   let w = world();
   let dir = w.scratch("extract_header_without_chunks");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let out = w.geolite_in(&dir, &["exec", "extract-osm-pbf-header", &pbf]);
   assert_eq!(out.status, 1, "stderr: {}", out.stderr);
   assert!(
     out.stderr.contains(
-      "extract-osm-pbf-header requires extract-osm-pbf-blob-chunks — run `geolite exec extract-osm-pbf-blob-chunks santos.osm.pbf` first"
+      "extract-osm-pbf-header requires extract-osm-pbf-blob-chunks — run `geolite exec extract-osm-pbf-blob-chunks brazil.osm.pbf` first"
     ),
     "stderr: {}",
     out.stderr
@@ -832,7 +832,7 @@ fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
   let w = world();
 
   let dir = w.scratch("extract_unsupported_compression");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let mut bytes = std::fs::read(&pbf).expect("failed to read the copy");
   assert_eq!(
     bytes[19], 0x1a,
@@ -850,7 +850,7 @@ fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
   );
 
   let dir = w.scratch("extract_truncated_pbf");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let mut bytes = std::fs::read(&pbf).expect("failed to read the copy");
   bytes.truncate(bytes.len() - 1_000);
   std::fs::write(&pbf, &bytes).expect("failed to write the copy");
@@ -867,7 +867,7 @@ fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
   );
 
   let dir = w.scratch("extract_missing_pbf");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
   std::fs::remove_file(&pbf).expect("failed to delete the copy");
   let out = w.geolite_in(

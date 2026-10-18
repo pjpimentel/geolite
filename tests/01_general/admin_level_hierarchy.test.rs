@@ -95,7 +95,7 @@ pub(crate) fn resolved_at(w: &world, name: &str, rows: &[row]) -> PathBuf {
 
   // the base and its schema come from the extraction of the cheapest level, emptied afterwards
   let dir = w.scratch(name);
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
   stage(w, &dir, &["exec", "extract-osm-pbf-header", &pbf]);
   stage(

@@ -48,7 +48,7 @@ fn brought(w: &world, dir: &Path, levels: &str) {
 // the fixture a second time under another name, through its three pbf stages: a second source in
 // the same osm_data
 fn second_source(w: &world, dir: &Path) {
-  let pbf = copy_fixture(w, dir, "santos-again.osm.pbf");
+  let pbf = copy_fixture(w, dir, "brazil-again.osm.pbf");
   stage(w, dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
   stage(w, dir, &["exec", "extract-osm-pbf-header", &pbf]);
   stage(
@@ -89,18 +89,18 @@ fn _00_00_two_sources_into_one_data_path_match_a_single_build() {
 
   assert_eq!(signature(&dir), signature(&single), "{REGENERATE}");
   assert_eq!(
-    ledger_count_of(&dir, "admin_levels_count", "santos.osm.pbf"),
+    ledger_count_of(&dir, "admin_levels_count", "brazil.osm.pbf"),
     1 + 27 + 12 + 63 + STREETS
   );
   assert_eq!(
-    ledger_count_of(&dir, "house_numbers_count", "santos.osm.pbf"),
+    ledger_count_of(&dir, "house_numbers_count", "brazil.osm.pbf"),
     HOUSE_NUMBERS
   );
   assert_eq!(
     ledger_count_of(
       &dir,
       "admin_levels_count + house_numbers_count",
-      "santos-again.osm.pbf"
+      "brazil-again.osm.pbf"
     ),
     0,
     "the second source repeats the first: stored once, credited to the first"
@@ -152,7 +152,7 @@ fn _00_01_bringing_the_same_source_twice_changes_nothing() {
 fn _00_02_a_sealed_base_takes_no_row_from_a_later_source() {
   let w = world();
   let dir = w.scratch("build_sealed");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let built = w.geolite_in(&dir, &["--threads", "2", "build", &pbf]);
   assert_eq!(built.status, 0, "{}", built.stderr);
   assert!(
@@ -205,18 +205,18 @@ fn _00_02_a_sealed_base_takes_no_row_from_a_later_source() {
 fn _00_03_a_build_of_two_sources_runs_the_pbf_stages_per_source_and_the_rest_once() {
   let w = world();
   let dir = w.scratch("build_two_sources_at_once");
-  let santos = copy_fixture(w, &dir, "santos.osm.pbf");
-  let again = copy_fixture(w, &dir, "santos-again.osm.pbf");
-  let out = w.geolite_in(&dir, &["--threads", "2", "build", &santos, &again]);
+  let brazil = copy_fixture(w, &dir, "brazil.osm.pbf");
+  let again = copy_fixture(w, &dir, "brazil-again.osm.pbf");
+  let out = w.geolite_in(&dir, &["--threads", "2", "build", &brazil, &again]);
   assert_eq!(out.status, 0, "{}", out.stderr);
   let stdout = plain(&out.stdout);
   for line in [
-    "extracted 94 chunks from santos.osm.pbf",
-    "extracted 94 chunks from santos-again.osm.pbf",
-    "santos.osm.pbf  nodes: 683.3K",
-    "santos-again.osm.pbf  nodes: 683.3K",
-    "deleted santos.osm.pbf",
-    "deleted santos-again.osm.pbf",
+    "extracted 94 chunks from brazil.osm.pbf",
+    "extracted 94 chunks from brazil-again.osm.pbf",
+    "brazil.osm.pbf  nodes: 683.3K",
+    "brazil-again.osm.pbf  nodes: 683.3K",
+    "deleted brazil.osm.pbf",
+    "deleted brazil-again.osm.pbf",
     "deleted osm_data.sqlite3",
     "deleted 3 tables in",
     "sealed br/data.sqlite3, br/index.tantivy — read-only",

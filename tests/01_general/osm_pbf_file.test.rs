@@ -140,11 +140,11 @@ fn _00_the_ledger_row_of_a_local_build_has_a_local_path_origin() {
   let file = &rows[0];
   assert_eq!(file.origin, 0);
   assert_eq!(file.origin_id, None);
-  assert_eq!(file.origin_name.as_deref(), Some("santos.osm.pbf"));
+  assert_eq!(file.origin_name.as_deref(), Some("brazil.osm.pbf"));
   assert_eq!(file.url, None);
   assert_eq!(
     file.path.as_deref(),
-    Some(s.dir.join("santos.osm.pbf").to_string_lossy().as_ref())
+    Some(s.dir.join("brazil.osm.pbf").to_string_lossy().as_ref())
   );
 
   let (program, nodes, ways, relations, houses): (Option<String>, i64, i64, i64, i64) = conn
@@ -248,13 +248,13 @@ fn _02_query_still_answers_on_a_database_stamped_with_another_schema_version() {
 fn _03_ls_local_lists_the_pbf_files_without_creating_a_database() {
   let w = world();
   let dir = w.scratch("ls_local");
-  std::fs::copy(&w.pbf, dir.join("santos.osm.pbf")).expect("failed to copy the fixture");
+  std::fs::copy(&w.pbf, dir.join("brazil.osm.pbf")).expect("failed to copy the fixture");
   let size = std::fs::metadata(&w.pbf).expect("fixture metadata").len();
 
   let out = w.geolite_in(&dir, &["osm-pbf-file", "ls", "local"]);
   assert_eq!(out.status, 0, "stderr: {}", out.stderr);
   assert!(
-    out.stdout.contains("santos.osm.pbf"),
+    out.stdout.contains("brazil.osm.pbf"),
     "stdout: {}",
     out.stdout
   );
@@ -272,7 +272,7 @@ fn _03_ls_local_lists_the_pbf_files_without_creating_a_database() {
   left.sort();
   assert_eq!(
     left,
-    vec!["santos.osm.pbf".to_string()],
+    vec!["brazil.osm.pbf".to_string()],
     "ls local must not create a database"
   );
 }
@@ -583,13 +583,13 @@ fn _10_build_from_a_url_downloads_and_runs_every_stage() {
 fn _11_re_running_a_stage_without_recreate_keeps_one_ledger_row_and_one_chunk_set() {
   let w = world();
   let dir = w.scratch("rerun_blob_chunks");
-  std::fs::copy(&w.pbf, dir.join("santos.osm.pbf")).expect("failed to copy the fixture");
+  std::fs::copy(&w.pbf, dir.join("brazil.osm.pbf")).expect("failed to copy the fixture");
 
   let mut seen = Vec::new();
   for _ in 0..2 {
     let out = w.geolite_in(
       &dir,
-      &["exec", "extract-osm-pbf-blob-chunks", "santos.osm.pbf"],
+      &["exec", "extract-osm-pbf-blob-chunks", "brazil.osm.pbf"],
     );
     assert_eq!(out.status, 0, "stderr: {}", out.stderr);
     let rows = ledger(&database(&dir));
@@ -787,7 +787,7 @@ fn _18_extract_resolves_a_ledger_id_and_names_an_unknown_one() {
   let out = plain(&stage(w, &s.dir, &["exec", "extract-osm-pbf-header", "1"]).stdout);
   for line in [
     "resolving '1'... done",
-    "extracting header from santos.osm.pbf... done",
+    "extracting header from brazil.osm.pbf... done",
   ] {
     assert!(out.contains(line), "missing {line:?} in:\n{out}");
   }
@@ -807,8 +807,8 @@ fn _18_extract_resolves_a_ledger_id_and_names_an_unknown_one() {
 fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it() {
   let w = world();
   let dir = w.scratch("build_inside_data_path");
-  std::fs::copy(&w.pbf, dir.join("santos.osm.pbf")).expect("failed to copy the fixture");
-  let out = w.geolite_in(&dir, &["--threads", "2", "build", "santos.osm.pbf"]);
+  std::fs::copy(&w.pbf, dir.join("brazil.osm.pbf")).expect("failed to copy the fixture");
+  let out = w.geolite_in(&dir, &["--threads", "2", "build", "brazil.osm.pbf"]);
   assert_eq!(
     out.status, 0,
     "build failed:\n{}\n{}",
@@ -817,14 +817,14 @@ fn _19_a_build_from_a_file_inside_data_path_deletes_it_and_the_ledger_forgets_it
   let stdout = plain(&out.stdout);
   assert!(stdout.contains("skipping download"), "{stdout}");
   let pbf = stdout
-    .find("deleted santos.osm.pbf")
+    .find("deleted brazil.osm.pbf")
     .unwrap_or_else(|| panic!("the pbf inside data_path must be deleted:\n{stdout}"));
   let sibling = stdout
     .find("deleted osm_data.sqlite3")
     .unwrap_or_else(|| panic!("the osm_data sibling must be deleted:\n{stdout}"));
   assert!(pbf < sibling, "the pbf is reported before the sibling");
   assert!(stdout.contains("deleted 2 tables"), "{stdout}");
-  assert!(!dir.join("santos.osm.pbf").exists());
+  assert!(!dir.join("brazil.osm.pbf").exists());
   assert!(!dir.join("osm_data.sqlite3").exists());
   let listing = plain(&w.geolite_in(&dir, &["osm-pbf-file", "ls", "local"]).stdout);
   assert!(listing.contains("no pbf files found"), "{listing}");
