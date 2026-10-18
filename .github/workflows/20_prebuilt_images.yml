@@ -8,28 +8,17 @@ on:
         required: false
         default: latest
         type: string
-      country:
-        description: country to build
+      region:
+        description: region to build, a continent or a country of the geofabrik index
         required: true
         type: choice
         options:
-          - brazil
+          - south-america
           - portugal
-          - argentina
-          - bolivia
-          - chile
-          - colombia
-          - ecuador
-          - guyana
-          - paraguay
-          - peru
-          - suriname
-          - uruguay
-          - venezuela
           - netherlands
           - switzerland
   schedule:
-    - cron: '0 6 * * 5'
+    - cron: '0 6 1,15 * *'
 
 permissions:
   contents: read
@@ -41,39 +30,39 @@ jobs:
     permissions:
       contents: read
     outputs:
-      countries: ${{ steps.matrix.outputs.countries }}
+      regions: ${{ steps.matrix.outputs.regions }}
       version: ${{ steps.matrix.outputs.version }}
     steps:
-      - name: resolve countries and version
+      - name: resolve regions and version
         id: matrix
         env:
-          COUNTRY: ${{ inputs.country }}
+          REGION: ${{ inputs.region }}
           VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "$COUNTRY" ]; then
-            echo "countries=[\"$COUNTRY\"]" >> "$GITHUB_OUTPUT"
+          if [ -n "$REGION" ]; then
+            echo "regions=[\"$REGION\"]" >> "$GITHUB_OUTPUT"
           else
-            echo 'countries=["brazil","portugal","argentina","bolivia","chile","colombia","ecuador","guyana","paraguay","peru","suriname","uruguay","venezuela","netherlands","switzerland"]' >> "$GITHUB_OUTPUT"
+            echo 'regions=["south-america","portugal","netherlands","switzerland"]' >> "$GITHUB_OUTPUT"
           fi
           echo "version=${VERSION:-latest}" >> "$GITHUB_OUTPUT"
 
   build:
-    name: prebuilt ${{ matrix.country }}
+    name: prebuilt ${{ matrix.region }}
     needs: setup
     runs-on: ubuntu-latest
     permissions:
       contents: read
     concurrency:
-      group: prebuilt-${{ matrix.country }}
+      group: prebuilt-${{ matrix.region }}
       cancel-in-progress: true
     strategy:
       fail-fast: false
       max-parallel: 3
       matrix:
-        country: ${{ fromJSON(needs.setup.outputs.countries) }}
+        region: ${{ fromJSON(needs.setup.outputs.regions) }}
     env:
       VERSION: ${{ needs.setup.outputs.version }}
-      COUNTRY: ${{ matrix.country }}
+      REGION: ${{ matrix.region }}
     steps:
       - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,10 +89,10 @@ jobs:
           username: pjpimentel
           password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: inject country into dockerfile
+      - name: inject region into dockerfile
         run: |
-          test -n "$COUNTRY" || { echo "::error::COUNTRY is empty"; exit 1; }
-          sed "s/__COUNTRY__/$COUNTRY/" Dockerfile.prebuilt > Dockerfile.prebuilt.generated
+          test -n "$REGION" || { echo "::error::REGION is empty"; exit 1; }
+          sed "s/__REGION__/$REGION/" Dockerfile.prebuilt > Dockerfile.prebuilt.generated
 
       - name: buildx multi-arch build and push
         run: |
@@ -112,6 +101,6 @@ jobs:
             --file Dockerfile.prebuilt.generated \
             --build-arg VERSION="$VERSION" \
             --platform linux/amd64,linux/arm64 \
-            --tag "pjpimentel/geolite:prebuilt-$COUNTRY" \
-            --tag "pjpimentel/geolite:prebuilt-$COUNTRY-$TS" \
+            --tag "pjpimentel/geolite:prebuilt-$REGION" \
+            --tag "pjpimentel/geolite:prebuilt-$REGION-$TS" \
             --push .

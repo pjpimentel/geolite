@@ -27,6 +27,7 @@
 1. MODIFIED the readers to open a base immutable, to answer a coordinate without the search index and to load the polygons only for the final matches, so a base on read-only media answers, no `-wal` or `-shm` appears beside it and a query never reads the megabytes of a country it discards.
 1. MODIFIED the street rules to leave out the ways tagged `boundary` or `location=underwater`, so a border line and a submarine cable are never streets.
 1. MODIFIED the e2e battery to a `brazil.osm.pbf` fixture named after its country and a synthetic south-america fixture of thirteen countries with a scenario asserting one base per country, so the routing by boundary is homologated over a continent.
+1. MODIFIED the prebuilt images to one of south america in place of one per country of it, rebuilt on the 1st and the 15th of every month, so a continent is one image to run, refreshed twice a month.
 
 ## **2026-10-12** - 0.0.16
 
