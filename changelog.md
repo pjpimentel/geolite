@@ -11,6 +11,8 @@
 1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
 1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
+1. ADDED a study of the presets as toml files instead of rust consts, the readability gained against the crates and the binary size it costs, so the format of a preset is decided by numbers.
+1. ADDED the boundary of a country to its preset, the wkt of `boundaries/<iso>.wkt` carried by `<iso>.rs`, so a country is one file holding its outline and its policy.
 
 
 ## **planned** - 0.0.17
@@ -31,6 +33,7 @@
 1. ADDED `databases` to the answer of `query` and `/geocode`, the bases asked with the services each one offers as `/status` reports them, so a client knows which countries answered.
 1. MODIFIED the e2e fixture of brazil to `brazil.osm.pbf`, named after its country and not after the city it was cut around, so other brazilian data joins it under one name.
 1. ADDED a synthetic south-america fixture to the e2e battery, one closed country boundary and one street for each of its thirteen countries, with a scenario asserting that `build` writes one base per country, so the routing by boundary is homologated over a continent without a continent of data.
+1. MODIFIED the presets to one file per country in `src/presets/`, named by its iso code like its boundary and holding only what differs from `default.rs`, so the policy of a country sits beside its outline under the same name.
 
 ## **2026-10-12** - 0.0.16
 
