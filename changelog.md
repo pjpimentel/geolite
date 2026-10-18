@@ -16,7 +16,7 @@
 1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
 
 
-## **planned** - 0.0.17
+## **2026-10-18** - 0.0.17
 
 1. REMOVED the `--preset` flag and the preset inferred from the source name, every row extracted, indexed and answered under the preset of the country whose boundary holds it (not backward compatible), so a base of many countries answers each one under its own preset.
 1. ADDED the boundary of every country of the geofabrik index, compiled into the binary, so the country of a row is decided against it and never against what the extract happens to hold.
