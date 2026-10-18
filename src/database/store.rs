@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::Path;
 
 use rusqlite::Connection;
@@ -46,7 +47,7 @@ impl base_files {
     let iso = iso_of_base(sqlite).unwrap_or_else(|| {
       Path::new(sqlite)
         .file_stem()
-        .and_then(|stem| stem.to_str())
+        .and_then(OsStr::to_str)
         .unwrap_or("base")
         .to_string()
     });
@@ -205,7 +206,7 @@ pub fn seal_bases(bases: &[base_files]) {
 pub fn file_name_of(path: &str) -> String {
   Path::new(path)
     .file_name()
-    .and_then(|name| name.to_str())
+    .and_then(OsStr::to_str)
     .unwrap_or(path)
     .to_string()
 }

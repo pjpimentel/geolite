@@ -14,6 +14,7 @@
 1. ADDED a study of the presets as toml files instead of rust consts, the readability gained against the crates and the binary size it costs, so the format of a preset is decided by numbers.
 1. ADDED the boundary of a country to its preset, the wkt of `boundaries/<iso>.wkt` carried by `<iso>.rs`, so a country is one file holding its outline and its policy.
 1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
+1. MODIFIED the abbreviations of a preset to be replaced in the name when the row is written, `r.` stored as `rua`, instead of expanded as aliases on indexing and on query, so a name is persisted once in its full form and the index holds one token per word.
 
 
 ## **2026-10-18** - 0.0.17
