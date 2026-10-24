@@ -87,7 +87,7 @@ the dated tag keeps each build.
 
 | # | region | docker cmd |
 |---|--------|------------|
-| 1 | [south-america](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-south-america), one base per country, thirteen in all | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-south-america` |
+| 1 | [south-america](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-south-america) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-south-america` |
 | 2 | [portugal](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-portugal) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-portugal` |
 | 3 | [netherlands](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-netherlands) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-netherlands` |
 | 4 | [switzerland](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-switzerland) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-switzerland` |
@@ -134,15 +134,6 @@ $ geolite exec optimize-merge-admin-levels
 $ geolite exec optimize-delete-intermediary-data
 $ geolite exec optimize-sqlite-file
 ```
-
-`geolite exec` runs one stage per call and refuses a stage whose requirements did not run, naming
-the one to run first; `geolite exec --help` lists the stages in the order the pipeline runs. a stage
-that reads a pbf names it (`extract-osm-pbf-data brazil`); the two extraction stages read everything
-the osm data holds; a stage that works on the bases runs over every base of the data path, or over
-the countries named (`index-addresses br ar`).
-`geolite build` runs `optimize-delete-isolated-admin-levels`, which removes a base it leaves empty,
-and `optimize-merge-admin-levels` right after `index-admin-levels-hierarchy`, so the two other
-indexes are built once, over the rows that stay. no index stage deletes or folds on its own.
 
 ### query
 ```bash
