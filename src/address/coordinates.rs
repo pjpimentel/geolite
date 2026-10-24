@@ -1,13 +1,12 @@
 use geo::{Intersects, Point};
 use rusqlite::Connection;
 
-use super::entity::{leaf, match_sources, query_match, query_output, query_service};
+use super::entity::{leaf, match_sources, query_match};
 use super::filter;
 use super::{house_number, query_opts};
 use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::repository as admin_level_repository;
 use crate::admin_level::spatial_index;
-use crate::house_number::house_number_policy;
 
 const WORLD_BOUNDING_BOX: bounding_box = bounding_box {
   min_lat: -90.0,
@@ -49,11 +48,10 @@ fn paths_at<'a>(
 
 pub(super) fn run(
   conn: &Connection,
-  house_numbers: &house_number_policy,
   latitude: f64,
   longitude: f64,
   opts: &query_opts,
-) -> query_output {
+) -> Vec<query_match> {
   let input_pt = Point::new(longitude, latitude);
 
   let envelope = opts.bounding.as_ref().map(|b| b.envelope).unwrap_or(WORLD_BOUNDING_BOX);
@@ -73,9 +71,10 @@ pub(super) fn run(
   candidates.truncate(filter::MAX_RESULTS as usize);
   crate::debug!("debug: candidates={}", candidates.len());
   let candidate_ids: Vec<i64> = candidates.iter().map(|c| c.id).collect();
-  let mut sources = match_sources::load(conn, &candidate_ids, opts.include_wkt);
+  let mut sources = match_sources::load(conn, &candidate_ids);
   sources.load_leaf_boxes(conn);
-  let numbers = house_number::at_point(conn, input_pt, &candidates, house_numbers);
+  let numbers =
+    house_number::at_point(conn, input_pt, &candidates, |id| sources.house_number_policy_of(id));
 
   let mut matches: Vec<query_match> = Vec::new();
   for c in &candidates {
@@ -109,9 +108,5 @@ pub(super) fn run(
   }
 
   filter::apply_filters_and_truncate(&mut matches, opts);
-
-  query_output {
-    service: query_service::coordinates_to_address,
-    matches,
-  }
+  matches
 }

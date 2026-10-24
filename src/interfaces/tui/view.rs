@@ -4,7 +4,6 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Cell, Row, Table, TableState};
 use ratatui::{DefaultTerminal, Frame};
-use rusqlite::Connection;
 
 use super::fields::sheet;
 use super::filter::filter;
@@ -22,8 +21,7 @@ const MAP_ROWS_KEPT: u16 = 8;
 const PROMPT: &str = "  / ";
 const PLACEHOLDER: &str = "filter";
 
-struct view<'a> {
-  conn: &'a Connection,
+struct view {
   tree: tree,
   folder: folder,
   leaf: Option<Box<leaf>>,
@@ -35,13 +33,12 @@ struct view<'a> {
   page: u16,
 }
 
-pub fn run(conn: &Connection, tree: tree, opened: opened) {
+pub fn run(tree: tree, opened: opened) {
   let (folder, leaf) = match opened {
     opened::folder(folder) => (folder, None),
     opened::leaf(folder, leaf) => (folder, Some(leaf)),
   };
   let mut view = view {
-    conn,
     tree,
     filter: filter::over(&folder),
     folder,
@@ -65,7 +62,7 @@ fn head_rows(folder: &folder) -> usize {
   if folder.path.is_empty() { 1 } else { 2 }
 }
 
-impl view<'_> {
+impl view {
   fn run(&mut self, terminal: &mut DefaultTerminal) -> std::io::Result<()> {
     loop {
       terminal.draw(|frame| self.draw(frame))?;
@@ -212,7 +209,7 @@ impl view<'_> {
 
   fn dot_row(&self) -> Row<'static> {
     match self.folder.current() {
-      Some(item) => cells(item.entry.level().name(), Some(item.inside), "."),
+      Some(item) => cells(item.entry.level_name(), Some(item.inside), "."),
       None => cells("", Some(self.folder.items.len()), "."),
     }
   }
@@ -222,7 +219,7 @@ impl view<'_> {
       return None;
     }
     Some(match self.folder.above() {
-      Some(item) => cells(item.entry.level().name(), Some(item.inside), ".."),
+      Some(item) => cells(item.entry.level_name(), Some(item.inside), ".."),
       None => cells("", Some(self.tree.root_count), ".."),
     })
   }
@@ -310,13 +307,14 @@ impl view<'_> {
     let Some(&index) = self.filter.shown.get(row - head) else {
       return;
     };
-    match self.tree.enter(self.conn, &self.folder, index) {
+    match self.tree.enter(&self.folder, index) {
       Some(entered) => {
         self.list(entered);
         self.select_first_item();
       }
       None => {
-        self.leaf = super::leaf::open(self.conn, &self.folder, index).map(Box::new);
+        let conn = self.tree.conn_of(&self.folder.items[index]);
+        self.leaf = super::leaf::open(conn, &self.folder, index).map(Box::new);
         self.zoom = zoom::default();
         self.scroll = 0;
       }
@@ -325,7 +323,7 @@ impl view<'_> {
 
   // going up selects the folder just left, as a file manager does
   fn up(&mut self) {
-    let Some(parent) = self.tree.parent(self.conn, &self.folder) else {
+    let Some(parent) = self.tree.parent(&self.folder) else {
       return;
     };
     let left = self.folder.current().cloned();
@@ -384,7 +382,7 @@ impl view<'_> {
 
 fn item_row(item: &item) -> Row<'static> {
   let inside = item.is_folder.then_some(item.inside);
-  let row = cells(item.entry.level().name(), inside, &item.entry.name());
+  let row = cells(item.entry.level_name(), inside, &item.entry.name());
   if item.entry.is_missing() {
     row.style(Style::default().add_modifier(Modifier::DIM))
   } else {

@@ -1,7 +1,6 @@
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet};
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tantivy::{
   DocId, Index, IndexReader, Score, Searcher, SegmentReader, TantivyDocument, Term,
   collector::TopDocs,
@@ -127,6 +126,21 @@ pub struct search_hit {
   pub score: f32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum search_tier {
+  every_token,
+  without_optional,
+  loose,
+}
+
+impl search_tier {
+  pub const WALK: [search_tier; 3] = [
+    search_tier::every_token,
+    search_tier::without_optional,
+    search_tier::loose,
+  ];
+}
+
 pub struct tantivy_index {
   reader: IndexReader,
   id_field: Field,
@@ -138,16 +152,6 @@ pub struct tantivy_index {
   name_lower_field: Field,
   hier_lower_field: Field,
   boosts: tantivy_boosts,
-}
-
-pub fn default_path_for(sqlite_path: &str) -> Option<PathBuf> {
-  if sqlite_path.is_empty() || sqlite_path == ":memory:" {
-    return None;
-  }
-  let p = Path::new(sqlite_path);
-  let stem = p.file_stem().and_then(OsStr::to_str).unwrap_or("database");
-  let parent = p.parent().unwrap_or(Path::new(""));
-  Some(parent.join(format!("{stem}.tantivy")))
 }
 
 pub fn destroy(index_path: &Path) {
@@ -177,7 +181,6 @@ fn expand_abbreviations(text: &str, abbreviations: &[(&str, &str)]) -> String {
 pub fn run(
   conn: &Connection,
   index_path: &Path,
-  preset: &crate::presets::index_addresses_preset,
   progress: impl Fn(progress_report),
 ) -> tantivy_index {
   let total = repository::count(conn) as u64;
@@ -185,7 +188,7 @@ pub fn run(
     total: Some(total),
     processed: 0,
   });
-  let index = build(conn, index_path, preset.boosts, preset.abbreviations);
+  let index = build(conn, index_path);
   progress(progress_report {
     total: Some(total),
     processed: total,
@@ -193,13 +196,15 @@ pub fn run(
   index
 }
 
-pub fn build(
-  conn: &Connection,
-  index_path: &Path,
-  boosts: tantivy_boosts,
-  abbreviations: &[(&str, &str)],
-) -> tantivy_index {
-  let _ = std::fs::remove_dir_all(index_path);
+type abbreviations = &'static [(&'static str, &'static str)];
+
+fn abbreviations_of(iso: Option<&str>) -> abbreviations {
+  crate::presets::for_country(iso).index_addresses.abbreviations
+}
+
+pub fn build(conn: &Connection, index_path: &Path) -> tantivy_index {
+  let boosts = crate::presets::DEFAULT.index_addresses.boosts;
+  destroy(index_path);
   std::fs::create_dir_all(index_path).expect("failed to create tantivy index dir");
 
   let (
@@ -223,9 +228,20 @@ pub fn build(
   // giving ["01310", "100"], while the digits-only form stays one token
   let mut names_map: HashMap<i64, String> = HashMap::new();
   let mut levels_map: HashMap<i64, u64> = HashMap::new();
+  // the abbreviations of a row are its country's; a row written before the country reached every
+  // row borrows the one of the country on its path
+  let mut abbreviations_map: HashMap<i64, abbreviations> = HashMap::new();
+  let mut country_rows: HashMap<i64, abbreviations> = HashMap::new();
   for row in crate::admin_level::repository::load_all_names(conn) {
     names_map.insert(row.id, build_entity_text(&row.name, row.post_code.as_deref()));
     levels_map.insert(row.id, row.admin_level.value() as u64);
+    if let Some(iso) = row.country_iso_code.as_deref() {
+      let abbreviations = abbreviations_of(Some(iso));
+      abbreviations_map.insert(row.id, abbreviations);
+      if row.admin_level == level::country {
+        country_rows.insert(row.id, abbreviations);
+      }
+    }
   }
 
   let mut writer = index
@@ -238,9 +254,14 @@ pub fn build(
   ids.sort_unstable();
   for id in ids {
     let own_name = names_map.get(&id).cloned().unwrap_or_default();
-    let own_name_folded = expand_abbreviations(&own_name, abbreviations);
     let admin_level = levels_map.get(&id).copied().unwrap_or(0);
     for (ordinal, path) in paths::paths_of(id, &edges).iter().enumerate() {
+      let abbreviations = abbreviations_map
+        .get(&id)
+        .or_else(|| path.iter().find_map(|aid| country_rows.get(aid)))
+        .copied()
+        .unwrap_or_else(|| abbreviations_of(None));
+      let own_name_folded = expand_abbreviations(&own_name, abbreviations);
       let hier_text: String = path
         .iter()
         .filter_map(|aid| names_map.get(aid).cloned())
@@ -445,16 +466,13 @@ fn run_query(searcher: &Searcher, query: BooleanQuery, limit: usize) -> Vec<sear
 }
 
 impl tantivy_index {
-  // three queries, each one running only when the one before is empty. the strict one demands
-  // every token exactly, in the name or in the ancestry: only documents covering the whole query
-  // come back. the second one is the strict one with the tokens of `optional_words` no longer
-  // demanded: a house number is a word no document holds, and without this step it would send
-  // the whole query to the loose one, where a document repeating half of the query outranks the
-  // one covering everything but the number. the loose one takes exact and fuzzy terms as Should
-  // clauses, which covers a typo, an extra word or partial coverage. the score is the raw bm25
-  // of whichever query found the document, in the order tantivy delivered.
+  // one of the three queries, walked by the caller in the order of `search_tier::WALK`, the next
+  // one only when the one before answered nothing. a house number is a word no document holds:
+  // without the middle one the whole query would go to the loose one, where a document repeating
+  // half of the query outranks the one covering everything but the number
   pub fn search(
     &self,
+    tier: search_tier,
     query: &str,
     optional_words: &[&str],
     limit: usize,
@@ -465,32 +483,25 @@ impl tantivy_index {
     if tokens.is_empty() {
       return vec![];
     }
-    let searcher = self.reader.searcher();
-    let run = |mut clauses: Vec<clause>| {
-      clauses.extend(self.filter_clauses(last_admin_levels, allowed_ids));
-      run_query(&searcher, BooleanQuery::new(clauses), limit)
-    };
-
-    let strict_hits = run(self.strict_clauses(query, &tokens, &HashSet::new()));
-    if !strict_hits.is_empty() {
-      return strict_hits;
-    }
-
-    let optional: HashSet<String> = optional_words
-      .iter()
-      .flat_map(|word| tokenize(word))
-      .collect();
-    // with no token left to demand, the filters would be the only Must clauses and every document
-    // they let through would come back, scored or not
-    let demands_a_token = tokens.iter().any(|token| !optional.contains(token));
-    if !optional.is_empty() && demands_a_token {
-      let hits = run(self.strict_clauses(query, &tokens, &optional));
-      if !hits.is_empty() {
-        return hits;
+    let mut clauses = match tier {
+      search_tier::every_token => self.strict_clauses(query, &tokens, &HashSet::new()),
+      search_tier::without_optional => {
+        let optional: HashSet<String> = optional_words
+          .iter()
+          .flat_map(|word| tokenize(word))
+          .collect();
+        // with no token left to demand, the filters would be the only Must clauses and every
+        // document they let through would come back, scored or not
+        let demands_a_token = tokens.iter().any(|token| !optional.contains(token));
+        if optional.is_empty() || !demands_a_token {
+          return vec![];
+        }
+        self.strict_clauses(query, &tokens, &optional)
       }
-    }
-
-    run(self.loose_clauses(&tokens))
+      search_tier::loose => self.loose_clauses(&tokens),
+    };
+    clauses.extend(self.filter_clauses(last_admin_levels, allowed_ids));
+    run_query(&self.reader.searcher(), BooleanQuery::new(clauses), limit)
   }
 
   fn strict_clauses(

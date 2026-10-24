@@ -1,7 +1,7 @@
-# the santos fixture
+# the brazil fixture
 
-`santos.osm.pbf` is the map every e2e scenario runs on: santos, são vicente, guarujá and cubatão,
-cut from a geofabrik `brazil-latest.osm.pbf` by `santos.build-fixture.sh`.
+`brazil.osm.pbf` is the map every e2e scenario runs on: santos, são vicente, guarujá and cubatão,
+cut from a geofabrik `brazil-latest.osm.pbf` by `brazil.build-fixture.sh`.
 
 ## provenance
 
@@ -10,18 +10,18 @@ cut from a geofabrik `brazil-latest.osm.pbf` by `santos.build-fixture.sh`.
   last step of the script rewrites the header with the fixed generator `geolite-e2e-fixture/1`, so
   the header assertion of the suite is machine-independent.
 - cut: the bounding box `-46.45,-24.06,-46.16,-23.72` with complete ways, merged with the
-  administrative boundaries of `santos.boundary-ids.txt` and everything they reference (a clipped
+  administrative boundaries of `brazil.boundary-ids.txt` and everything they reference (a clipped
   boundary never closes a ring and could not become an ancestor), sorted, and stripped of the edit
   metadata (`version`, `timestamp`, `changeset`, `uid`, `user`) the build ignores anyway.
 - identity: md5 `44ba55e5d242559e6709418427ae9168`, 5,100,204 bytes; 683,313 nodes, 41,335 ways
-  and 1,274 relations; 12,981 admin levels before `optimize-merge-admin-levels` folds the ways of
-  each street, 7,298 after, and 473 house numbers, after a build with `--preset brazil`. the e2e
-  harness keys its shared world on the preset, the city and this md5, so a regenerated file rebuilds
-  the world on its own.
+  and 1,274 relations; 12,714 admin levels before `optimize-merge-admin-levels` folds the ways of
+  each street, 7,252 after, and 473 house numbers, every row under the preset of the country whose
+  boundary holds it. the e2e harness keys its shared world on the fixture name and this md5, so a
+  regenerated file rebuilds the world on its own.
 
 ## regenerating
 
-`./santos.build-fixture.sh /path/to/brazil-latest.osm.pbf` (osmium-tool 1.14 or newer, about 4 GB
+`./brazil.build-fixture.sh /path/to/brazil-latest.osm.pbf` (osmium-tool 1.14 or newer, about 4 GB
 of ram, about 10 minutes). a newer source changes the map, and with it the counts, ids and names
 the scenarios pin: every assertion that can move carries a `REGENERATE` note saying what to
 re-read.

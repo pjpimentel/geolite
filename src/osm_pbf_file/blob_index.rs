@@ -34,7 +34,7 @@ pub struct osm_pbf_blob_chunk {
 }
 
 const SQL_CREATE: &str = "
-  CREATE TABLE IF NOT EXISTS osm_data.osm_pbf_blob_chunks (
+  CREATE TABLE IF NOT EXISTS osm_pbf_blob_chunks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     file_id INTEGER NOT NULL,
     first_byte INTEGER NOT NULL,
@@ -47,7 +47,7 @@ const SQL_CREATE: &str = "
 ";
 
 const SQL_CREATE_INDEXES: &str = "
-  CREATE INDEX IF NOT EXISTS osm_data.osm_pbf_blob_chunks_search_by_file_and_type
+  CREATE INDEX IF NOT EXISTS osm_pbf_blob_chunks_search_by_file_and_type
     ON osm_pbf_blob_chunks(file_id, chunk_type);
 ";
 
@@ -61,7 +61,7 @@ impl table for osm_pbf_blob_chunks {
 pub fn count_by_file_id(conn: &Connection, file_id: u32) -> i64 {
   const SQL_COUNT_BY_FILE_ID: &str = "
     SELECT COUNT(*)
-    FROM osm_data.osm_pbf_blob_chunks
+    FROM osm_pbf_blob_chunks
     WHERE file_id = ?1
   ";
 
@@ -72,9 +72,26 @@ pub fn count_by_file_id(conn: &Connection, file_id: u32) -> i64 {
     .expect("failed to count blob chunks")
 }
 
+pub fn file_ids(conn: &Connection) -> Vec<u32> {
+  const SQL_FILE_IDS: &str = "
+    SELECT DISTINCT file_id
+    FROM osm_pbf_blob_chunks
+    ORDER BY file_id
+  ";
+
+  let mut stmt = conn
+    .prepare(SQL_FILE_IDS)
+    .expect("failed to prepare the files of the osm_data");
+  stmt
+    .query_map([], |row| row.get(0))
+    .expect("failed to list the files of the osm_data")
+    .map(|row| row.expect("failed to read a file id"))
+    .collect()
+}
+
 pub fn delete_by_file_id(conn: &Connection, file_id: u32) {
   const SQL_DELETE_BY_FILE_ID: &str = "
-    DELETE FROM osm_data.osm_pbf_blob_chunks
+    DELETE FROM osm_pbf_blob_chunks
     WHERE file_id = ?1
   ";
 
@@ -92,7 +109,7 @@ pub fn get_header_chunk(conn: &Connection, file_id: u32) -> Option<osm_pbf_blob_
       data_first_byte,
       data_size,
       chunk_type
-    FROM osm_data.osm_pbf_blob_chunks
+    FROM osm_pbf_blob_chunks
     WHERE chunk_type = 0
     AND file_id = ?1
     LIMIT 1
@@ -126,7 +143,7 @@ pub fn get_data_chunks(conn: &Connection, file_id: u32) -> Vec<osm_pbf_blob_chun
       data_first_byte,
       data_size,
       chunk_type
-    FROM osm_data.osm_pbf_blob_chunks
+    FROM osm_pbf_blob_chunks
     WHERE file_id = ?1
     ORDER BY first_byte ASC
   ";
@@ -154,7 +171,7 @@ pub fn get_data_chunks(conn: &Connection, file_id: u32) -> Vec<osm_pbf_blob_chun
 
 pub fn batch_insert(conn: &Connection, chunks: &[osm_pbf_blob_chunk]) {
   const SQL_INSERT: &str = "
-    INSERT INTO osm_data.osm_pbf_blob_chunks (
+    INSERT INTO osm_pbf_blob_chunks (
       file_id,
       first_byte,
       chunk_size,

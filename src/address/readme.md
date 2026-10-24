@@ -17,17 +17,50 @@ wins. the domain has no dispatcher on purpose: the cli and the http server call 
 and pick the service, because "a text without an index" is their decision — the cli exits, the http
 server answers 503 and keeps answering coordinates.
 
+## one question, every base — `fan_out`
+
+a data path holds one base per country (`base`: a label, an iso code, a connection held alone
+while the question runs, and its optional index; `query_by_text_across`,
+`query_by_coordinates_across`), and the two services take different roads through it.
+
+a text is asked of every indexed base at once, one thread per base (`in_parallel`), and the three
+queries of the index walk across the bases rather than inside each one: the exact query runs
+everywhere, the next one only when no base answered it, the loose one last. a street one base
+holds exactly costs the time of that base alone, and the fuzzy query of the others never runs, so
+a `rua castro alves` of santos never comes beside a `rua rodrigues alves` of paraguay at half
+coverage; a typo is answered by every base through the loose query, as one base answers it. the
+rows of sqlite are read only for the bases that answered, in parallel too. one base answering
+keeps its own order, score then similarity, so a data path of many countries answers byte for byte
+what that base answers alone; several answering are joined by `similarity`, the coverage of the
+tokens, because the bm25 of two indexes scoring with their own statistics does not compare, and
+the score only breaks the tie; the join cuts at ten.
+
+a coordinate is asked of one base, the one of the country whose boundary holds the point
+(`country_index::shared`, the same rule that decided where every row was written), so a street is
+looked for in the base it was written to, and a point no base of the data path covers, or whose
+country `countries` leaves out, answers nothing. the answer names in `databases`
+(`database_status`: the label and the two services it offers, the shape `/status` reports) the
+bases it asked: every base selected for a text, a base without an index included though a text
+skips it, and the one base of the point for a coordinate, none when none holds it.
+
 ## the two services — `text` and `coordinates`
 
-`address::open(conn, index, house_numbers)` holds the connection, the optional tantivy index and
-the house-number policy of the preset; `query_opts` carries what the flags carry
-(`friendly_name_format`, `min_quality`, `bounding`, `last_admin_levels`, `include_wkt`) in place
-of the five positional arguments the old dispatcher took.
+`base` holds the connection and the optional tantivy index; the house-number policy is the one
+of the country of each street, read from its row (`match_sources::house_number_policy_of`);
+`query_opts` carries what the flags carry (`friendly_name_format`, `min_quality`, `bounding`,
+`last_admin_levels`, `include_wkt`).
 
-`query_by_text` runs the fts on the whole text — a number can be part of a street name (`25` in
+`text` is three steps the fan-out calls apart, so the index of every base is asked before the
+rows of any: `region_of`, the ids of the region's envelope when a region was asked; `hits_at`,
+one query of the index (`search_tier`); `matches_of`, the hits of a base read into matches.
+the fts runs on the whole text — a number can be part of a street name (`25` in
 `rua 25 de marco`), so nothing is stripped before the search; the words that read as a house
 number (`token::house_number_words`) are handed to the index as optional, so a number no document
-holds does not cost the street covering every other word its place. with a region, the ranking is
+holds does not cost the street covering every other word its place. they are read under
+`EVERY_SHAPE`, since no street and so no country is known before the search: a token only one
+country reads as a number, a compound `82-52` or a postcode without a leading zero, is optional in
+the second query of the search, which widens the tail of the ranking and never its top. with a
+region, the ranking is
 restricted inside tantivy to the ids of the region's envelope instead of being filtered after the
 fts cut, so a match of the region ranked below the global cap of fifty is not lost. each hit becomes
 one match: the level ladder from `match_sources`, the point of the number when one was typed and
@@ -37,20 +70,21 @@ counting as uncovered, so `rua x 100` scores below 1.0. the house number of each
 before its matches are built, then comes the sort by score with similarity breaking the tie, then
 the filters.
 
-`query_by_coordinates` asks the rtree for the streets around the point (`RTREE_DELTA_DEG`), keeps
+`coordinates` asks the rtree for the streets around the point (`RTREE_DELTA_DEG`), keeps
 the lines only, projects the point onto each one (`ClosestPoint`, haversine) and sorts by level and
 distance. there is no distance cap on streets: the region, `min_quality` and `last_admin_levels`
 run on the candidates, whose leaf is the street itself, and the cut at ten happens before the
 loads. the match carries the closest point and the distance in metres, and every street answers a
 number: the stored one within 50 m of the point, else the one read at the closest point from the
-street's own numbers or from the preset's metres per number, answered in `house_number` and named
+street's own numbers or from the metres per number of the street's country, answered in
+`house_number` and named
 by `house_number.kind`.
 
 ## the address of a path — `path`
 
 `address::at_path(conn, id, path)` answers the one match of an area under a path already known,
 the areas from the nearest one outward, without a search: it is what the tui opens at the end of
-the folders walked. it holds neither the index nor the policy of the preset, so it is a function
+the folders walked. it holds no index, so it is a function
 and not a method of `address`. the match is the one the text service builds — the same ladder,
 label, attributes and id, and the point of `resting_point` — without a score, a similarity or a
 house number, which belong to a question asked.
@@ -95,7 +129,7 @@ the key is absent everywhere else, and it is read on every query rather than und
 `query_house_number` is the number and where it came from: `kind` the word, `osm_node_ids` the
 osm nodes the number was read from — the one node of a stored number, every reference of a street
 that presumed it from several, the one reference it was presumed from, none from the constants —
-and `meters_per_number` the preset's metres behind a number presumed from one reference or from
+and `meters_per_number` the metres of the street's country behind a number presumed from one reference or from
 the constants, `null` for the other two. every key is always present, so a client reads the
 object by its shape and not by its kind.
 

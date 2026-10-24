@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::common::harness::{open_sqlite_at, output, world};
+use crate::admin_level::admin_levels_at;
+use crate::common::harness::{open_scratch, open_sqlite_at, output, plain, world};
 use crate::general::world;
 use serde_json::{Value, json};
 
@@ -27,20 +28,28 @@ pub(crate) struct scratch {
 
 impl scratch {
   pub(crate) fn ledger(&self) -> rusqlite::Connection {
-    open_sqlite_at(&self.dir.join("database.sqlite3"))
+    open_scratch(&self.dir)
   }
 
   pub(crate) fn osm_data(&self) -> rusqlite::Connection {
-    open_sqlite_at(&self.dir.join("database.osm_data.sqlite3"))
+    open_sqlite_at(&self.dir.join("osm_data.sqlite3"))
   }
 
   fn pbf(&self) -> String {
     self
       .dir
-      .join("santos.osm.pbf")
+      .join("brazil.osm.pbf")
       .to_string_lossy()
       .into_owned()
   }
+}
+
+// the rows a scratch holds: none before its first base is written
+pub(crate) fn admin_levels_rows(s: &scratch) -> i64 {
+  if !s.dir.join("br/data.sqlite3").exists() {
+    return 0;
+  }
+  count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels")
 }
 
 struct ledger_row {
@@ -84,7 +93,7 @@ fn osm_data(w: &world, dir: &Path, threads: &str, data_args: &[&str], inputs: &[
 // the three stages of the file in a scratch of its own, keeping the osm-data stdout
 pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]) -> scratch {
   let dir = w.scratch(name);
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
   stage(w, &dir, &["exec", "extract-osm-pbf-header", &pbf]);
   let stdout = osm_data(w, &dir, threads, data_args, &[&pbf]).stdout;
@@ -92,14 +101,7 @@ pub(crate) fn extracted(w: &world, name: &str, threads: &str, data_args: &[&str]
 }
 
 fn admin_levels(w: &world, dir: &Path, extra: &[&str]) {
-  let mut args = vec![
-    "--preset",
-    "brazil",
-    "exec",
-    "extract-osm-admin-levels",
-    "--admin-level",
-    "2,4,8",
-  ];
+  let mut args = vec!["exec", "extract-osm-admin-levels", "--admin-level", "2,4,8"];
   args.extend_from_slice(extra);
   stage(w, dir, &args);
 }
@@ -208,7 +210,7 @@ fn _00_the_osm_data_stage_writes_the_fixture_exactly() {
   assert_full_fixture(&s);
   for line in [
     "done (94 chunks)",
-    "santos.osm.pbf  nodes: 683.3K  ways: 41.3K  relations: 1.3K",
+    "brazil.osm.pbf  nodes: 683.3K  ways: 41.3K  relations: 1.3K",
     " osm_nodes in ",
   ] {
     assert!(
@@ -355,11 +357,19 @@ fn _03_a_tag_include_list_keeps_only_the_listed_keys() {
   );
   admin_levels(w, &s.dir, &[]);
   let conn = s.ledger();
-  assert_eq!(boundary(&conn, COUNTRY), (2, "Brasil".to_string(), None));
-  assert_eq!(boundary(&conn, STATE), (4, "São Paulo".to_string(), None));
+  let brazil = Some("BR".to_string());
+  assert_eq!(
+    boundary(&conn, COUNTRY),
+    (2, "Brasil".to_string(), brazil.clone()),
+    "the code comes from the boundary of the preset, which no include list drops"
+  );
+  assert_eq!(
+    boundary(&conn, STATE),
+    (4, "São Paulo".to_string(), brazil.clone())
+  );
   assert_eq!(
     boundary(&conn, MUNICIPALITY),
-    (8, "Santos".to_string(), None)
+    (8, "Santos".to_string(), brazil)
   );
 }
 
@@ -383,7 +393,7 @@ fn _04_a_tag_ignore_list_dropping_name_starves_the_admin_level_stage() {
   );
   admin_levels(w, &s.dir, &[]);
   assert_eq!(
-    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels"),
+    admin_levels_rows(&s),
     0,
     "without names there is no candidate at any level"
   );
@@ -401,12 +411,94 @@ fn _05_name_priority_falls_back_key_by_key() {
     boundary(&conn, COUNTRY),
     (2, "Brazil".to_string(), Some("BR".to_string()))
   );
-  assert_eq!(boundary(&conn, STATE), (4, "São Paulo".to_string(), None));
+  assert_eq!(
+    boundary(&conn, STATE),
+    (4, "São Paulo".to_string(), Some("BR".to_string()))
+  );
   assert_eq!(
     boundary(&conn, MUNICIPALITY),
-    (8, "Santos".to_string(), None),
+    (8, "Santos".to_string(), Some("BR".to_string())),
     "no name:en on the municipality, so the priority falls back to name"
   );
+}
+
+// 18. every row is written with the country whose boundary holds it, the boundary the preset
+// carries and not the relation of the extract: the states, the cities and the streets of the
+// fixture are all brazilian, with no country relation extracted at all
+#[test]
+#[ignore]
+fn _18_every_row_carries_the_country_whose_boundary_holds_it() {
+  const SQL_ROWS_OUTSIDE_BRAZIL: &str = "
+    SELECT admin_level, COUNT(*)
+    FROM admin_levels
+    WHERE COALESCE(country_iso_code, '') <> 'BR'
+    GROUP BY admin_level
+  ";
+  const SQL_ROWS_PER_LEVEL: &str = "
+    SELECT admin_level, COUNT(*)
+    FROM admin_levels
+    GROUP BY admin_level
+  ";
+
+  let w = world();
+  let s = extracted(w, "extract_country_of_every_row", "2", &[]);
+  admin_levels_at(w, &s.dir, "4,8", &[]);
+  admin_levels_at(w, &s.dir, "12", &[]);
+  let conn = s.ledger();
+  let per_level = |sql: &str| -> Vec<(u8, i64)> {
+    conn
+      .prepare(sql)
+      .expect("failed to prepare")
+      .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+      .expect("failed to query")
+      .map(|r| r.expect("failed to read a row"))
+      .collect()
+  };
+  assert_eq!(
+    per_level(SQL_ROWS_PER_LEVEL)
+      .iter()
+      .map(|(level, _)| *level)
+      .collect::<Vec<u8>>(),
+    vec![4, 8, 12],
+    "the three levels, and no country relation"
+  );
+  assert_eq!(
+    per_level(SQL_ROWS_OUTSIDE_BRAZIL),
+    vec![],
+    "every state, city and street is brazilian; {REGENERATE}"
+  );
+  assert!(
+    !s.dir.join("ve/data.sqlite3").exists(),
+    "no row fell on the venezuelan side of the border, so no base of venezuela was written"
+  );
+}
+
+// 19. a way tagged `boundary` is a border drawn on the map, never a street: the fixture carries
+// the ways of the brazilian border, named in portuguese and spanish, and none of them is a row
+#[test]
+#[ignore]
+fn _19_a_way_tagged_boundary_is_not_a_street() {
+  const SQL_NAMED_BOUNDARY_WAYS: &str = "
+    SELECT COUNT(*)
+    FROM osm_ways
+    WHERE JSON_EXTRACT(payload, '$.tags.boundary') IS NOT NULL
+      AND JSON_EXTRACT(payload, '$.tags.name') IS NOT NULL
+  ";
+  const SQL_BORDER_STREETS: &str = "
+    SELECT COUNT(*)
+    FROM admin_levels
+    WHERE admin_level = 12
+      AND (name LIKE 'Frontera %' OR name LIKE 'Fronteira %' OR name LIKE 'Border %')
+  ";
+
+  let w = world();
+  let s = extracted(w, "extract_boundary_ways", "2", &[]);
+  admin_levels_at(w, &s.dir, "12", &[]);
+  assert!(
+    count(&s.osm_data(), SQL_NAMED_BOUNDARY_WAYS) > 0,
+    "{REGENERATE}"
+  );
+  assert_eq!(count(&s.ledger(), SQL_BORDER_STREETS), 0);
 }
 
 // 06. the stage refuses to run before the chunk index and leaves the ledger untouched
@@ -415,7 +507,7 @@ fn _05_name_priority_falls_back_key_by_key() {
 fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
   let w = world();
   let dir = w.scratch("extract_without_chunks");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let out = w.geolite_in(
     &dir,
     &["--threads", "2", "exec", "extract-osm-pbf-data", &pbf],
@@ -428,7 +520,7 @@ fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
     "stderr: {}",
     out.stderr
   );
-  let rows = ledger(&open_sqlite_at(&dir.join("database.sqlite3")));
+  let rows = ledger(&open_scratch(&dir));
   assert_eq!(rows.len(), 1, "resolving the input records the file");
   assert_eq!(rows[0].origin, 0);
   assert_eq!(
@@ -437,7 +529,7 @@ fn _06_the_stage_before_the_chunk_index_stamps_nothing() {
     "nothing decoded, nothing stamped"
   );
   assert_eq!(
-    table_counts(&open_sqlite_at(&dir.join("database.osm_data.sqlite3"))),
+    table_counts(&open_sqlite_at(&dir.join("osm_data.sqlite3"))),
     (0, 0, 0)
   );
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
@@ -475,29 +567,30 @@ fn _08_a_one_megabyte_buffer_gives_the_same_result() {
   assert!(
     tight
       .stdout
-      .contains("santos.osm.pbf  nodes: 683.3K  ways: 41.3K  relations: 1.3K"),
+      .contains("brazil.osm.pbf  nodes: 683.3K  ways: 41.3K  relations: 1.3K"),
     "stdout: {}",
     tight.stdout
   );
 }
 
-// 09. one invocation, two files
+// 09. two inputs in one run get their own ledger rows and their own chunks, and share the
+// elements: the osm ids they repeat are stored once, pointing at a chunk of the first file
 #[test]
 #[ignore]
-fn _09_two_inputs_in_one_run_get_their_own_ledger_rows_and_chunks() {
+fn _09_two_inputs_in_one_run_get_their_own_chunks_and_share_the_elements() {
   let w = world();
   let dir = w.scratch("extract_two_inputs");
-  let santos = copy_fixture(w, &dir, "santos.osm.pbf");
+  let brazil = copy_fixture(w, &dir, "brazil.osm.pbf");
   let alpha = copy_fixture(w, &dir, "alpha.osm.pbf");
   stage(
     w,
     &dir,
-    &["exec", "extract-osm-pbf-blob-chunks", &santos, &alpha],
+    &["exec", "extract-osm-pbf-blob-chunks", &brazil, &alpha],
   );
-  osm_data(w, &dir, "2", &[], &[&santos, &alpha]);
-  let rows = ledger(&open_sqlite_at(&dir.join("database.sqlite3")));
+  osm_data(w, &dir, "2", &[], &[&brazil, &alpha]);
+  let rows = ledger(&open_scratch(&dir));
   assert_eq!(rows.len(), 2, "one ledger row per input");
-  let data = open_sqlite_at(&dir.join("database.osm_data.sqlite3"));
+  let data = open_sqlite_at(&dir.join("osm_data.sqlite3"));
   for row in &rows {
     assert_eq!(
       row.counts(),
@@ -513,26 +606,29 @@ fn _09_two_inputs_in_one_run_get_their_own_ledger_rows_and_chunks() {
           row.id
         )
       ),
-      CHUNKS
+      CHUNKS,
+      "each file has its own chunks"
     );
   }
   assert_eq!(
     table_counts(&data),
     (NODES, WAYS, RELATIONS),
-    "the second file's ids are already there and are ignored"
+    "the fixture is stored once"
   );
-  assert_eq!(
-    count(
-      &data,
-      &format!(
-        "SELECT COUNT(*) FROM osm_nodes n JOIN osm_pbf_blob_chunks c ON c.id = n.osm_pbf_chunk_id \
-         WHERE c.file_id != {}",
-        rows[0].id
-      )
-    ),
-    0,
-    "every row belongs to the chunks of the first file"
-  );
+  for table in ["osm_nodes", "osm_ways", "osm_relations"] {
+    assert_eq!(
+      count(
+        &data,
+        &format!(
+          "SELECT COUNT(*) FROM {table} e JOIN osm_pbf_blob_chunks c ON c.id = e.osm_pbf_chunk_id \
+           WHERE c.file_id != {}",
+          rows[0].id
+        )
+      ),
+      0,
+      "every {table} row points at a chunk of the first file"
+    );
+  }
 }
 
 // 10. the stage is idempotent and the stamp is a clock
@@ -597,7 +693,7 @@ fn _12_recreate_rebuilds_the_element_tables_without_touching_the_chunk_index() {
     "the chunk index must survive --recreate:\n{}",
     out.stdout
   );
-  assert!(s.dir.join("database.osm_data.sqlite3").exists());
+  assert!(s.dir.join("osm_data.sqlite3").exists());
   assert_eq!(
     count(&s.osm_data(), "SELECT COUNT(*) FROM osm_pbf_blob_chunks"),
     CHUNKS
@@ -613,14 +709,7 @@ fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
   let s = extracted(w, "extract_unknown_level", "2", &[]);
   let out = w.geolite_in(
     &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "exec",
-      "extract-osm-admin-levels",
-      "--admin-level",
-      "2,11",
-    ],
+    &["exec", "extract-osm-admin-levels", "--admin-level", "2,11"],
   );
   assert_eq!(
     out.status, 1,
@@ -635,7 +724,7 @@ fn _13_a_level_outside_the_scale_is_refused_by_the_cli() {
     out.stderr
   );
   assert_eq!(
-    count(&s.ledger(), "SELECT COUNT(*) FROM admin_levels"),
+    admin_levels_rows(&s),
     0,
     "nothing is extracted when the list is refused"
   );
@@ -650,14 +739,7 @@ fn _14_level_10_runs_the_relation_and_the_way_stages() {
   let out = stage(
     w,
     &s.dir,
-    &[
-      "--preset",
-      "brazil",
-      "exec",
-      "extract-osm-admin-levels",
-      "--admin-level",
-      "10",
-    ],
+    &["exec", "extract-osm-admin-levels", "--admin-level", "10"],
   );
   for line in [
     "stage 1/2: relations",
@@ -700,12 +782,12 @@ fn _14_level_10_runs_the_relation_and_the_way_stages() {
 fn _15_the_header_stage_refuses_to_run_before_the_chunk_index() {
   let w = world();
   let dir = w.scratch("extract_header_without_chunks");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let out = w.geolite_in(&dir, &["exec", "extract-osm-pbf-header", &pbf]);
   assert_eq!(out.status, 1, "stderr: {}", out.stderr);
   assert!(
     out.stderr.contains(
-      "extract-osm-pbf-header requires extract-osm-pbf-blob-chunks — run `geolite exec extract-osm-pbf-blob-chunks santos.osm.pbf` first"
+      "extract-osm-pbf-header requires extract-osm-pbf-blob-chunks — run `geolite exec extract-osm-pbf-blob-chunks brazil.osm.pbf` first"
     ),
     "stderr: {}",
     out.stderr
@@ -729,14 +811,7 @@ fn _16_a_level_list_is_refused_with_its_reason() {
   ] {
     let out = w.geolite_in(
       &dir,
-      &[
-        "--preset",
-        "brazil",
-        "exec",
-        "extract-osm-admin-levels",
-        "--admin-level",
-        levels,
-      ],
+      &["exec", "extract-osm-admin-levels", "--admin-level", levels],
     );
     assert_eq!(out.status, 1, "{levels:?}: stderr: {}", out.stderr);
     assert!(
@@ -757,7 +832,7 @@ fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
   let w = world();
 
   let dir = w.scratch("extract_unsupported_compression");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let mut bytes = std::fs::read(&pbf).expect("failed to read the copy");
   assert_eq!(
     bytes[19], 0x1a,
@@ -775,7 +850,7 @@ fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
   );
 
   let dir = w.scratch("extract_truncated_pbf");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   let mut bytes = std::fs::read(&pbf).expect("failed to read the copy");
   bytes.truncate(bytes.len() - 1_000);
   std::fs::write(&pbf, &bytes).expect("failed to write the copy");
@@ -792,7 +867,7 @@ fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
   );
 
   let dir = w.scratch("extract_missing_pbf");
-  let pbf = copy_fixture(w, &dir, "santos.osm.pbf");
+  let pbf = copy_fixture(w, &dir, "brazil.osm.pbf");
   stage(w, &dir, &["exec", "extract-osm-pbf-blob-chunks", &pbf]);
   std::fs::remove_file(&pbf).expect("failed to delete the copy");
   let out = w.geolite_in(
@@ -805,4 +880,34 @@ fn _17_a_pbf_a_stage_cannot_read_fails_aloud() {
     "stderr: {}",
     out.stderr
   );
+}
+
+// 20. one process at a time writes the osm_data: a second writer is refused aloud, and runs once
+// the first is done
+#[test]
+#[ignore]
+fn _20_a_second_writer_of_the_osm_data_is_refused_aloud() {
+  let w = world();
+  let s = extracted(w, "extract_second_writer", "2", &[]);
+  let holder = rusqlite::Connection::open(s.dir.join("osm_data.sqlite3"))
+    .expect("failed to open the osm_data");
+  holder
+    .execute_batch("BEGIN IMMEDIATE")
+    .expect("failed to take the write lock");
+  let refused = w.geolite_in(
+    &s.dir,
+    &["--threads", "2", "exec", "extract-osm-pbf-data", &s.pbf()],
+  );
+  assert_eq!(refused.status, 1, "stderr: {}", refused.stderr);
+  assert!(
+    plain(&refused.stderr).contains("osm_data.sqlite3 is being written by another geolite process"),
+    "{}",
+    refused.stderr
+  );
+  holder
+    .execute_batch("ROLLBACK")
+    .expect("failed to release the write lock");
+  drop(holder);
+  let stdout = osm_data(w, &s.dir, "2", &[], &[&s.pbf()]).stdout;
+  assert_full_fixture(&scratch { dir: s.dir, stdout });
 }

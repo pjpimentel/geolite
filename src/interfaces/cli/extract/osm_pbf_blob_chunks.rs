@@ -3,28 +3,22 @@ use crate::database::table;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
 
-pub fn command_handler_extract_osm_pbf_blob_chunks(
-  data_path: &str,
-  sqlite_path: &str,
-  inputs: &[String],
-  recreate: bool,
-) {
-  if recreate {
-    crate::database::destroy_data(sqlite_path, true, true, true, true);
-  }
-
-  let conn = crate::database::open_write(sqlite_path);
-  let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
+pub fn command_handler_extract_osm_pbf_blob_chunks(data_path: &str, inputs: &[String], recreate: bool) {
+  let conn = crate::database::store::open_osm_data_write(data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved_input {
       path: osm_pbf_file_path,
       name: fname,
-      id: _,
+      id,
     }) = super::resolve_input(&conn, data_path, i, input)
     else {
       continue;
     };
+    if recreate {
+      crate::database::store::destroy_source(&conn, id, true);
+    }
+    let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
 
     let bar = ProgressBar::new_spinner();
     bar.set_draw_target(crate::interfaces::cli::progress_draw_target());
@@ -51,7 +45,6 @@ pub fn command_handler_extract_osm_pbf_blob_chunks(
 
     let elapsed = start.elapsed().as_secs_f64();
     println!("\x1b[1;32mextracted\x1b[0m {count} chunks from {fname} in {elapsed:.1}s");
+    crate::osm_pbf_file::osm_pbf_blob_chunks::create_indexes(&conn);
   }
-
-  crate::osm_pbf_file::osm_pbf_blob_chunks::create_indexes(&conn);
 }

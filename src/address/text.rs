@@ -3,58 +3,63 @@ use std::collections::HashMap;
 use geo::{Centroid, Closest, ClosestPoint, Geometry, Point};
 use rusqlite::Connection;
 
-use super::entity::{leaf, match_sources, query_match, query_output, query_service, round5};
+use super::entity::{leaf, match_sources, query_match, round5};
 use super::house_number;
 use super::{filter, query_opts};
 use crate::admin_level::level;
 use crate::admin_level::repository::admin_area_row;
-use crate::admin_level_hierarchy::search_index::{self, search_hit, tantivy_index, tokenize};
-use crate::house_number::{
-  house_number_policy, house_number_resolution, house_number_scenario, token,
+use crate::admin_level_hierarchy::search_index::{
+  self, search_hit, search_tier, tantivy_index, tokenize,
 };
+use crate::house_number::{house_number_resolution, house_number_scenario, policy, token};
 
 const MAX_FTS_HITS: u8 = 50;
 
-pub(super) fn run(
-  conn: &Connection,
-  house_numbers: &house_number_policy,
-  index: &tantivy_index,
-  text: &str,
-  opts: &query_opts,
-) -> query_output {
-  let empty = || query_output {
-    service: query_service::text_to_address,
-    matches: vec![],
-  };
-  // a region restricts the ranking inside tantivy rather than filtering after the fts cut, so
-  // a match of the region ranked below the global cap is not lost; the exact containment of the
-  // polygon runs in the filters
-  let region_ids = opts
+// a region restricts the ranking inside tantivy rather than filtering after the fts cut, so a
+// match of the region ranked below the global cap is not lost; the exact containment of the
+// polygon runs in the filters
+pub(super) fn region_of(conn: &Connection, opts: &query_opts) -> Option<Vec<i64>> {
+  opts
     .bounding
     .as_ref()
-    .map(|b| crate::admin_level::spatial_index::ids_in_bounding_box(conn, b.envelope));
-  if region_ids.as_ref().is_some_and(|r| r.is_empty()) {
-    return empty();
+    .map(|b| crate::admin_level::spatial_index::ids_in_bounding_box(conn, b.envelope))
+}
+
+// the fts runs on the full text: a number can be part of the street name ("25" in
+// "rua 25 de marco"), so stripping it would break the match; the house number is resolved per
+// candidate afterwards, under the policy of the candidate's country, which is not known here:
+// the words are read under every shape, and they only mark optional tokens
+pub(super) fn hits_at(
+  index: &tantivy_index,
+  tier: search_tier,
+  text: &str,
+  opts: &query_opts,
+  region: Option<&[i64]>,
+) -> Vec<search_hit> {
+  if region.is_some_and(|ids| ids.is_empty()) {
+    return vec![];
   }
-  // the fts runs on the full text: a number can be part of the street name ("25" in
-  // "rua 25 de marco"), so stripping it would break the match; the house number is resolved
-  // per candidate afterwards
-  let hits = index.search(
+  index.search(
+    tier,
     text,
-    &token::house_number_words(text, house_numbers),
+    &token::house_number_words(text, &policy::EVERY_SHAPE),
     MAX_FTS_HITS as usize,
     opts.last_admin_levels.as_deref(),
-    region_ids.as_deref(),
-  );
-  if hits.is_empty() {
-    return empty();
-  }
+    region,
+  )
+}
 
+pub(super) fn matches_of(
+  conn: &Connection,
+  text: &str,
+  hits: &[search_hit],
+  opts: &query_opts,
+) -> Vec<query_match> {
   let query_tokens = tokenize(text);
   let mut ids: Vec<i64> = hits.iter().map(|hit| hit.admin_level_id).collect();
   ids.sort_unstable();
   ids.dedup();
-  let mut sources = match_sources::load(conn, &ids, opts.include_wkt);
+  let mut sources = match_sources::load(conn, &ids);
   sources.load_leaf_boxes(conn);
   let records = crate::admin_level::repository::load_full_by_ids(conn, &ids);
   let record_map: HashMap<i64, &admin_area_row> = records.iter().map(|r| (r.id, r)).collect();
@@ -62,7 +67,8 @@ pub(super) fn run(
     .iter()
     .filter(|r| r.admin_level == level::street)
     .collect();
-  let numbers = house_number::from_query(conn, text, &streets, house_numbers);
+  let numbers =
+    house_number::from_query(conn, text, &streets, |id| sources.house_number_policy_of(id));
 
   // one match per hit: a hit is one path of an area, and its ordinal names the path
   let mut matches: Vec<query_match> = hits
@@ -96,11 +102,7 @@ pub(super) fn run(
   });
 
   filter::apply_filters_and_truncate(&mut matches, opts);
-
-  query_output {
-    service: query_service::text_to_address,
-    matches,
-  }
+  matches
 }
 
 pub(super) fn resting_point(

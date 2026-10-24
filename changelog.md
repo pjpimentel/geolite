@@ -2,15 +2,33 @@
 
 ## **planned** - 0.0.x
 
-1. MODIFIED the storage to a single file, without the split between `database.sqlite3` and `database.tantivy`, so a base is one file to copy, publish and merge.
+1. REMOVED the web ui served at `/` by `http-server`, so the server serves only the api.
+1. MODIFIED the storage of a base to one file, the `data.sqlite3` and the `index.tantivy` of its folder packed together, so a base is one file to copy, publish and merge.
+1. MODIFIED the abbreviations of a preset to be replaced in the name when the row is written, `r.` stored as `rua`, instead of expanded as aliases on indexing and on query, so a name is persisted once in its full form and the index holds one token per word.
 1. ADDED a repository of prebuilt data per region and schema version, with a `geolite fetch <region>` that downloads instead of building, so a user queries without the build.
 1. ADDED a study of a geofabrik proxy that mirrors, caches and versions the extracts, so a build is reproducible and survives the origin being down.
 1. ADDED a layer compatible with the google geocoding and places sdk (`/maps/api/geocode/json`, `/maps/api/place/*`), so a client of the sdk changes only the endpoint.
 1. ADDED a feasibility study of vector tiles built from the pbf and served at `/tiles/{z}/{x}/{y}.pbf`, so it is decided whether geolite serves the map besides the geocode.
-1. REMOVED the web ui served at `/` by `http-server`, so the server serves only the api.
 1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
 1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
 1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
+1. ADDED a study of the presets as toml files instead of rust consts, the readability gained against the crates and the binary size it costs, so the format of a preset is decided by numbers.
+1. ADDED the boundary of a country to its preset, the wkt of `boundaries/<iso>.wkt` carried by `<iso>.rs`, so a country is one file holding its outline and its policy.
+1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
+1. ADDED e2e scenarios over south america asking the landmarks and the official addresses of each of its countries, on real data cut around each one, so the answers over a continent are checked on the places a user actually types.
+
+## **2026-10-23** - 0.0.17
+
+1. REMOVED the `--preset` flag and the preset inferred from the source name, every row extracted, indexed and answered under the preset of the country whose boundary holds it (not backward compatible), so a base of many countries answers each one under its own preset.
+1. MODIFIED the presets to what varies by country, one file per country named by its iso code like its boundary, so a preset is a data table beside its outline.
+1. MODIFIED the storage to one base per country, `<iso>/data.sqlite3` and `<iso>/index.tantivy` in the data path, sealed read-only by `build`, taking no row from a later source and removed when no area is left in it (not backward compatible), so a data path holds the world one country at a time and a base built once is final.
+1. MODIFIED `build` to take several sources, decoded into one `osm_data.sqlite3` holding the ledger and gone at the end, and to write every country they hold, with `merge` and the catalog file removed (not backward compatible), so a continent, a country and a region are built by the same command and a data path grows country by country.
+1. MODIFIED `query`, `http-server` and the tui to answer over every base of the data path, a text asked of every base at once with the three queries of the index walked across them and a coordinate asked of the base of the country whose boundary holds the point, narrowed by `countries`, the bases asked named in `databases` and the tui rooted on one folder per country, so one server answers a continent in the time of one base, a street one country holds never beside the fuzzy answers of the others, and a client knows which countries answered.
+1. MODIFIED the readers to open a base immutable, to open for a question only the bases it asks and all of them at once, and to load the polygons only for the final matches, so a base on read-only media answers, no `-wal` or `-shm` appears beside it and a query never reads a country it discards.
+1. MODIFIED the street rules to leave out the ways tagged `boundary` or `location=underwater`, so a border line and a submarine cable are never streets.
+1. MODIFIED the e2e battery to a `brazil.osm.pbf` fixture named after its country and a synthetic south-america fixture of thirteen countries with scenarios asserting one base per country and the answers over them, so the routing by boundary is homologated over a continent.
+1. MODIFIED the prebuilt images to one of south america in place of one per country of it, rebuilt on the 1st and the 15th of every month, so a continent is one image to run, refreshed twice a month.
+1. ADDED the boundary of every country of the geofabrik index, compiled into the binary, so the country of a row, and of a point asked, is decided against it and never against what the extract happens to hold.
 
 ## **2026-10-12** - 0.0.16
 
@@ -30,7 +48,7 @@
 1. ADDED the `optimize-delete-isolated-admin-levels` stage, deleting a country without children and a street without parents, so the indexes hold only areas an address can name.
 1. ADDED the leaf to `geolite tui`, the deepest level opening its address, its admin levels one per line with every osm id a link, and a zoomable map, so an address is read and seen from the terminal.
 
-## **2026-09-26** - - 0.0.14
+## **2026-09-26** - 0.0.14
 
 1. REMOVED the unit tests that were left, with the code that served only them, so one regression battery is left.
 1. MODIFIED the cli to run one stage as `geolite exec <group>-<stage>` in place of the `extract`, `index` and `optimize` subcommands (not backward compatible), each stage refusing to run before the ones it requires, so a stage is addressed by its name and cannot run out of order.

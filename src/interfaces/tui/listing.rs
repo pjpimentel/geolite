@@ -12,7 +12,7 @@ pub fn print(folder: &folder) {
       } else {
         String::new()
       };
-      (item.entry.level().name(), inside, item.entry.name())
+      (item.entry.level_name(), inside, item.entry.name())
     })
     .collect();
   if entries.is_empty() {

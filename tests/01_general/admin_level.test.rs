@@ -9,24 +9,17 @@ use crate::general::world;
 const SANTOS_RELATION: u64 = 298_442;
 const SANTOS_ID: i64 = 596_885;
 const COUNTRY_STATE_CITY: i64 = 40;
-const EVERY_EDGE: i64 = 13_643;
+const EVERY_EDGE: i64 = 13_353;
 
 pub(crate) fn admin_levels_at(w: &world, dir: &Path, levels: &str, extra: &[&str]) -> output {
-  let mut args = vec![
-    "--preset",
-    "brazil",
-    "exec",
-    "extract-osm-admin-levels",
-    "--admin-level",
-    levels,
-  ];
+  let mut args = vec!["exec", "extract-osm-admin-levels", "--admin-level", levels];
   args.extend_from_slice(extra);
   stage(w, dir, &args)
 }
 
 pub(crate) fn index_at(w: &world, dir: &Path, index: &str) -> output {
   let name = format!("index-{index}");
-  stage(w, dir, &["--preset", "brazil", "exec", &name])
+  stage(w, dir, &["exec", &name])
 }
 
 // the three index stages in order, with their stdout joined
@@ -213,7 +206,7 @@ fn _00_03_recreate_empties_the_hierarchy_and_the_rtree() {
   indexed(w, &s.dir);
   assert_eq!(hierarchy_count(&s), COUNTRY_STATE_CITY, "{REGENERATE}");
   assert_eq!(rtree_count(&s), COUNTRY_STATE_CITY);
-  assert!(s.dir.join("database.tantivy").is_dir());
+  assert!(s.dir.join("br/index.tantivy").is_dir());
 
   admin_levels_at(w, &s.dir, "8", &["--recreate"]);
   assert_eq!(
@@ -275,7 +268,7 @@ fn _00_05_a_row_outside_the_scale_is_skipped_with_a_warning() {
   let s = extracted(w, "admin_level_off_the_scale", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
   {
-    let conn = rusqlite::Connection::open(s.dir.join("database.sqlite3"))
+    let conn = rusqlite::Connection::open(s.dir.join("br/data.sqlite3"))
       .expect("failed to open the scratch database for writing");
     let changed = conn
       .execute(
@@ -323,15 +316,18 @@ fn _00_06_level_10_takes_exactly_the_named_place_neighbourhood_and_suburb_ways()
 }
 
 // 00.07. the default exclude of level 12 leaves every named way but the place ways of level 10,
-// the parks, the buildings and the waterways, and each exclude bites on the fixture
+// the parks, the buildings, the waterways, the border lines and the ways under water, and each
+// exclude bites on the fixture
 #[test]
 #[ignore]
 fn _00_07_level_12_takes_every_named_way_but_the_excluded_ones() {
-  const EXCLUDED: [&str; 4] = [
+  const EXCLUDED: [&str; 6] = [
     "JSON_EXTRACT(payload, '$.tags.place') IN ('neighbourhood', 'suburb')",
     "JSON_EXTRACT(payload, '$.tags.leisure') = 'park'",
     "JSON_EXTRACT(payload, '$.tags.building') IS NOT NULL",
     "JSON_EXTRACT(payload, '$.tags.waterway') IS NOT NULL",
+    "JSON_EXTRACT(payload, '$.tags.boundary') IS NOT NULL",
+    "JSON_EXTRACT(payload, '$.tags.location') = 'underwater'",
   ];
 
   let w = world();
@@ -422,7 +418,7 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
   let s = extracted(w, "admin_level_search_source", "2", &[]);
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
 
-  let refused = w.geolite_in(&s.dir, &["--preset", "brazil", "exec", "index-addresses"]);
+  let refused = w.geolite_in(&s.dir, &["exec", "index-addresses"]);
   assert_eq!(refused.status, 1, "stderr: {}", refused.stderr);
   assert!(
     refused
@@ -434,7 +430,7 @@ fn _02_01_the_search_index_is_built_from_the_hierarchy_rows() {
 
   index_at(w, &s.dir, "admin-levels-hierarchy");
   index_at(w, &s.dir, "addresses");
-  let found = query_at(w, &s.dir, "brazil", "santos");
+  let found = query_at(w, &s.dir, "santos");
   let top = first(&found);
   assert_eq!(levels_of(top).last(), Some(&8));
   assert_eq!(name_at(top, 8).as_deref(), Some("Santos"));
@@ -450,7 +446,7 @@ fn _03_00_an_unreadable_geometry_warns_and_drops_the_row() {
   admin_levels_at(w, &s.dir, "2,4,8", &[]);
   indexed(w, &s.dir);
   {
-    let conn = rusqlite::Connection::open(s.dir.join("database.sqlite3"))
+    let conn = rusqlite::Connection::open(s.dir.join("br/data.sqlite3"))
       .expect("failed to open the scratch database for writing");
     conn
       .execute(
@@ -470,17 +466,7 @@ fn _03_00_an_unreadable_geometry_warns_and_drops_the_row() {
     ("santos", "Santos", "blob too short"),
     ("sao paulo", "São Paulo", "WKB parse failed"),
   ] {
-    let out = w.geolite_in(
-      &s.dir,
-      &[
-        "--preset",
-        "brazil",
-        "query",
-        query,
-        "--include-wkt",
-        "false",
-      ],
-    );
+    let out = w.geolite_in(&s.dir, &["query", query, "--include-wkt", "false"]);
     assert_eq!(out.status, 0, "the query must answer: {}", out.stderr);
     assert!(
       out.stderr.contains(warning),

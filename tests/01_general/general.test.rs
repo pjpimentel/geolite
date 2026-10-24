@@ -1,8 +1,8 @@
 use crate::common::ask::ask;
 use crate::common::harness::{
-  assert_in_order, encode, get, plain, request, scenario, world, world_cell,
+  assert_in_order, encode, get, plain, relabel_country, request, scenario, world, world_cell,
 };
-use crate::common::query::{first, kind_of, matches, number_of};
+use crate::common::query::{countries_of, files_of, first, kind_of, matches, number_of};
 use crate::extract::{REGENERATE, extracted};
 use crate::house_number::{HOUSE_NUMBERS, NODE_OF_197};
 use crate::isolated_admin_levels::NOTHING_ISOLATED;
@@ -12,8 +12,7 @@ use serde_json::{Value, json};
 pub static SCENARIO: scenario = scenario {
   region: "01_general",
   fixture_dir: "02_preset_brazil",
-  pbf: "santos.osm.pbf",
-  preset: "brazil",
+  pbf: "brazil.osm.pbf",
 };
 
 pub(crate) static WORLD: world_cell = world_cell::new();
@@ -112,7 +111,7 @@ fn _00_03_sqlite_and_tantivy_artifacts_exist() {
 fn _00_04_optimize_deletes_the_osm_data_sibling() {
   let w = world();
   assert!(
-    !w.data_path.join("database.osm_data.sqlite3").exists(),
+    !w.data_path.join("osm_data.sqlite3").exists(),
     "the intermediary osm_data database must be deleted by the optimize stage"
   );
 }
@@ -141,7 +140,7 @@ fn _00_05_optimize_leaves_every_pbf_outside_data_path_alone() {
 // 00.06. pipeline integrity
 #[test]
 #[ignore]
-fn _00_06_extracted_admin_levels_cover_only_the_preset_levels() {
+fn _00_06_extracted_admin_levels_cover_only_the_levels_of_the_country() {
   let w = world();
   let conn = w.open_sqlite();
   let mut stmt = conn
@@ -160,8 +159,8 @@ fn _00_06_extracted_admin_levels_cover_only_the_preset_levels() {
   assert_eq!(
     levels,
     vec![2, 4, 8, 10, 12],
-    "the preset decides which levels are extracted; the discarded ones are present in the \
-     fixture and must have been filtered out. got {rows:?}"
+    "the country of each element decides which levels are extracted; the discarded ones are \
+     present in the fixture and must have been left out. got {rows:?}"
   );
   for discarded in [3, 5, 6, 7, 9] {
     assert!(
@@ -259,7 +258,7 @@ fn _00_10_the_build_reports_the_house_numbers_it_linked_and_the_optimize_steps()
     "deleted 1 tables in",
     "optimizing sqlite file...",
     "optimized sqlite in",
-    "after   main:",
+    "after   osm_data:",
   ] {
     let found = stdout[at..]
       .find(line)
@@ -306,7 +305,8 @@ fn _01_00_coordinates_query_prints_pretty_printed_json() {
   assert!(
     out
       .stdout
-      .starts_with("{\n  \"service\": \"coordinates_to_address\",\n  \"matches\": ["),
+      .starts_with("{\n  \"service\": \"coordinates_to_address\",\n  \"databases\": [")
+      && out.stdout.contains("\n  ],\n  \"matches\": ["),
     "unexpected output shape: {}",
     &out.stdout[..out.stdout.len().min(120)]
   );
@@ -408,7 +408,6 @@ fn _01_07_help_lists_every_subcommand() {
     "query",
     "http-server",
     "build",
-    "merge",
     "tui",
   ] {
     assert!(
@@ -461,7 +460,7 @@ fn _01_10_status_reports_both_services_available() {
     body["databases"][0]["file"]
       .as_str()
       .expect("file must be a string")
-      .ends_with("database.sqlite3"),
+      .ends_with("br/data.sqlite3"),
     "status must name the database it opened"
   );
 }
@@ -789,17 +788,20 @@ fn _01_23_the_response_schemas_document_the_post_code() {
   }
 }
 
-// 01.24. contract: the preset the server was started with is the policy its queries read
+// 01.24. contract: the policy a server reads is the one of the country of each row, so a copy of
+// the base relabelled as colombia reads the `#` prefix and the brazilian base does not
 #[test]
 #[ignore]
-fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
+fn _01_24_the_http_server_reads_the_house_number_policy_of_the_country_of_the_row() {
   let w = world();
   let path = format!(
     "/geocode?query={}",
     encode("rua januario dos santos, santos #197")
   );
 
-  let colombia = w.start_server_with_preset("colombia");
+  let relabelled = w.world_copy("http_server_colombia");
+  relabel_country(&relabelled, Some("CO"));
+  let colombia = w.start_server_at(&relabelled);
   let read = get(colombia.port, &path).json();
   assert_eq!(
     first(&read)["house_number"],
@@ -811,7 +813,7 @@ fn _01_24_the_http_server_reads_the_house_number_policy_of_its_preset() {
     }),
   );
 
-  let brazil = w.start_server_with_preset("brazil");
+  let brazil = w.start_server();
   let unread = get(brazil.port, &path).json();
   assert!(
     first(&unread).get("house_number").is_none(),
@@ -861,6 +863,122 @@ fn _01_26_exec_help_lists_the_stages_in_pipeline_order() {
       "optimize-delete-intermediary-data",
       "optimize-sqlite-file",
     ],
+  );
+}
+
+// 01.28. contract: a data path of two bases is answered as one: a text answers both countries,
+// a coordinate answers the base of the country whose boundary holds the point and names it
+// alone, `countries` narrows to one, a country without a base is refused, `/status` lists every
+// base and the answer the bases it asked
+#[test]
+#[ignore]
+fn _01_28_the_http_server_answers_over_every_base_of_the_data_path() {
+  let w = world();
+  let dir = w.world_copy("http_two_bases");
+  w.copy_base_into(&dir, "ar");
+  let s = w.start_server_at(&dir);
+
+  let status = get(s.port, "/status").json();
+  assert_eq!(status["is_ok"], true);
+  assert_eq!(files_of(&status), ["ar/data.sqlite3", "br/data.sqlite3"]);
+
+  let text = format!(
+    "/geocode?query={}&include_wkt=false",
+    encode("rua castro alves, embare, santos")
+  );
+  let answer = get(s.port, &text).json();
+  assert_eq!(
+    answer["databases"],
+    json!([
+      { "file": "ar/data.sqlite3", "text_to_address": true, "coordinates_to_address": true },
+      { "file": "br/data.sqlite3", "text_to_address": true, "coordinates_to_address": true },
+    ]),
+    "the answer names every base it asked"
+  );
+  let both = countries_of(&answer);
+  assert!(
+    both.contains(&"AR".to_string()) && both.contains(&"BR".to_string()),
+    "a text answers both countries: {both:?}"
+  );
+  let point = format!("/geocode?query={}&include_wkt=false", encode(ANY_POINT));
+  let by_country = get(s.port, &point).json();
+  assert_eq!(
+    by_country["databases"],
+    json!([{ "file": "br/data.sqlite3", "text_to_address": true, "coordinates_to_address": true }]),
+    "a coordinate asks the base of its country alone"
+  );
+  let in_brazil = countries_of(&by_country);
+  assert!(
+    !in_brazil.is_empty() && in_brazil.iter().all(|iso| iso == "BR"),
+    "a coordinate in brazil answers brazil alone: {in_brazil:?}"
+  );
+  let elsewhere = get(s.port, &format!("{point}&countries=ar")).json();
+  assert_eq!(
+    elsewhere["databases"],
+    json!([]),
+    "`countries=ar` holds no base for a point in brazil"
+  );
+  assert!(matches(&elsewhere).is_empty(), "{elsewhere}");
+  let narrowed_answer = get(s.port, &format!("{text}&countries=ar")).json();
+  assert_eq!(
+    narrowed_answer["databases"],
+    json!([{ "file": "ar/data.sqlite3", "text_to_address": true, "coordinates_to_address": true }]),
+    "`countries=ar` asks argentina alone"
+  );
+  let narrowed = countries_of(&narrowed_answer);
+  assert!(
+    !narrowed.is_empty() && narrowed.iter().all(|iso| iso == "AR"),
+    "`countries=ar` answers argentina alone: {narrowed:?}"
+  );
+  let refused = get(s.port, &format!("{text}&countries=xx"));
+  assert_eq!(refused.status, 400);
+  assert!(
+    refused.text().contains("no base for 'xx'"),
+    "{}",
+    refused.text()
+  );
+}
+
+// 01.30. contract: the cli narrows a question of a data path of two bases with `--countries`, its
+// answer names the bases it asked, and a country without a base exits non-zero
+#[test]
+#[ignore]
+fn _01_30_query_countries_narrows_the_cli_to_the_bases_named() {
+  let w = world();
+  let dir = w.world_copy("cli_two_bases");
+  w.copy_base_into(&dir, "ar");
+  let text = "rua castro alves, embare, santos";
+
+  let both = w.geolite_in(&dir, &["query", "--include-wkt", "false", text]);
+  assert_eq!(both.status, 0, "{}", both.stderr);
+  let both: Value = serde_json::from_str(&both.stdout).expect("the query must print json");
+  assert_eq!(files_of(&both), ["ar/data.sqlite3", "br/data.sqlite3"]);
+
+  let narrowed = w.geolite_in(
+    &dir,
+    &["query", "--include-wkt", "false", "--countries", "ar", text],
+  );
+  assert_eq!(narrowed.status, 0, "{}", narrowed.stderr);
+  let narrowed: Value = serde_json::from_str(&narrowed.stdout).expect("the query must print json");
+  assert_eq!(
+    narrowed["databases"],
+    json!([{ "file": "ar/data.sqlite3", "text_to_address": true, "coordinates_to_address": true }]),
+  );
+  let isos: Vec<&str> = matches(&narrowed)
+    .iter()
+    .filter_map(|m| m["attributes"]["country_iso_3166_1_alpha_2_code"].as_str())
+    .collect();
+  assert!(
+    !isos.is_empty() && isos.iter().all(|iso| *iso == "AR"),
+    "`--countries ar` answers argentina alone: {isos:?}"
+  );
+
+  let refused = w.geolite_in(&dir, &["query", "--countries", "xx", text]);
+  assert_ne!(refused.status, 0);
+  assert!(
+    refused.stderr.contains("no base for 'xx'"),
+    "{}",
+    refused.stderr
   );
 }
 
@@ -956,18 +1074,26 @@ fn _02_02_query_without_a_sqlite_exits_one() {
   );
 }
 
-// 02.03. dead case: the cli loads the index before it reads the input, so a coordinate is refused
-// too, where the http api keeps answering coordinates (03.02)
+// 02.03. dead case: without the index a text is refused and a coordinate still answers, as the
+// http api does (03.02)
 #[test]
 #[ignore]
-fn _02_03_query_without_a_tantivy_index_exits_one_for_text_and_for_coordinates() {
+fn _02_03_query_without_a_tantivy_index_exits_one_for_text_and_answers_coordinates() {
   let w = world();
   let missing = w.root.join("absent.tantivy");
-  for input in [ANY_TEXT, ANY_POINT] {
-    let out = w.geolite(&["--index-path", &missing.to_string_lossy(), "query", input]);
-    assert_eq!(out.status, 1, "input {input:?}");
-    assert!(
+  for (input, status) in [(ANY_TEXT, 1), (ANY_POINT, 0)] {
+    let out = w.geolite(&[
+      "--sqlite-path",
+      &w.sqlite_path.to_string_lossy(),
+      "--index-path",
+      &missing.to_string_lossy(),
+      "query",
+      input,
+    ]);
+    assert_eq!(out.status, status, "input {input:?}: {}", out.stderr);
+    assert_eq!(
       out.stderr.contains("tantivy index not found"),
+      status == 1,
       "input {input:?}, stderr: {}",
       out.stderr
     );
@@ -1289,7 +1415,7 @@ fn _03_05_an_out_of_range_coordinate_is_a_text_query_and_is_unavailable_without_
 #[test]
 #[ignore]
 fn _04_00_distant_coordinates_still_resolve_because_streets_have_no_distance_cap() {
-  let far = world().run(&["-25.5,-45.0"]);
+  let far = world().run(&["-24.14,-46.33"]);
   let distance = first(&far)["coordinates_distance_in_meters"]
     .as_u64()
     .expect("a coordinate match must report a distance");
@@ -1299,7 +1425,7 @@ fn _04_00_distant_coordinates_still_resolve_because_streets_have_no_distance_cap
     "expected a very distant way, got {distance} m"
   );
 
-  let filtered = world().run(&["-25.5,-45.0", "--min-quality", "0.5"]);
+  let filtered = world().run(&["-24.14,-46.33", "--min-quality", "0.5"]);
   assert!(
     matches(&filtered).is_empty(),
     "a quality floor must drop matches that far away"
@@ -1431,10 +1557,12 @@ fn _02_21_the_stage_name_before_the_rename_is_refused() {
 #[test]
 #[ignore]
 fn _02_22_a_missing_index_names_the_stage_that_builds_it() {
-  let stage = "`geolite exec index-addresses`";
+  let stage = "`geolite exec index-addresses";
   let w = world();
   let missing = w.root.join("absent.tantivy");
   let out = w.geolite(&[
+    "--sqlite-path",
+    &w.sqlite_path.to_string_lossy(),
     "--index-path",
     &missing.to_string_lossy(),
     "query",
@@ -1445,4 +1573,76 @@ fn _02_22_a_missing_index_names_the_stage_that_builds_it() {
   let s = w.start_degraded_server();
   let _ = get(s.port, "/status"); // make sure the warning is flushed before reading
   assert!(s.stderr().contains(stage), "stderr: {}", s.stderr());
+}
+
+// 02.23. a reader never writes beside a base: the server, the tui and a query open it immutable,
+// and no `-wal` or `-shm` appears in the data path
+#[test]
+#[ignore]
+fn _02_23_the_readers_leave_no_wal_or_shm_beside_the_bases() {
+  let w = world();
+  let dir = w.world_copy("immutable_readers");
+  {
+    let s = w.start_server_at(&dir);
+    assert_eq!(get(s.port, "/status").status, 200);
+    let answered = get(
+      s.port,
+      &format!("/geocode?query={}", encode("rua euclides da cunha")),
+    );
+    assert_eq!(answered.status, 200);
+  }
+  let listed = w.geolite_in(&dir, &["tui"]);
+  assert_eq!(listed.status, 0, "{}", listed.stderr);
+  let queried = w.geolite_in(&dir, &["query", "rua euclides da cunha"]);
+  assert_eq!(queried.status, 0, "{}", queried.stderr);
+
+  let journals: Vec<String> = std::fs::read_dir(&dir)
+    .expect("failed to list the data path")
+    .flatten()
+    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+    .filter(|name| name.ends_with("-wal") || name.ends_with("-shm"))
+    .collect();
+  assert!(
+    journals.is_empty(),
+    "a reader wrote beside the base: {journals:?}"
+  );
+}
+
+// 02.24. what a build leaves behind is read-only at the os level: the base and its index carry no
+// write bit but tantivy's locks, nothing else is left beside them, and the build said so
+#[test]
+#[ignore]
+fn _02_24_the_build_seals_what_it_leaves_in_the_data_path() {
+  use std::os::unix::fs::PermissionsExt;
+
+  let w = world();
+  assert!(
+    plain(&w.build_stdout).contains("sealed br/data.sqlite3, br/index.tantivy — read-only"),
+    "{}",
+    w.build_stdout
+  );
+  let mode_of = |path: &std::path::Path| {
+    std::fs::metadata(path)
+      .unwrap_or_else(|e| panic!("failed to stat {}: {e}", path.display()))
+      .permissions()
+      .mode()
+  };
+  let mut sealed: Vec<std::path::PathBuf> = vec![w.sqlite_path.clone(), w.index_path.clone()];
+  sealed.extend(
+    std::fs::read_dir(&w.index_path)
+      .expect("failed to list the index")
+      .flatten()
+      .map(|entry| entry.path())
+      .filter(|path| path.extension().is_none_or(|ext| ext != "lock")),
+  );
+  for path in sealed {
+    let mode = mode_of(&path);
+    assert_eq!(mode & 0o222, 0, "{} is writable: {mode:o}", path.display());
+  }
+  for gone in ["catalog.sqlite3", "osm_data.sqlite3"] {
+    assert!(
+      !w.data_path.join(gone).exists(),
+      "{gone} must not survive the build"
+    );
+  }
 }

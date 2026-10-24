@@ -25,8 +25,8 @@ $ geolite http-server # open http://localhost:8080
 ```bash
 # command line
 $ docker run pjpimentel/geolite:latest --version
-# pre-built countries geocodes
-$ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
+# pre-built geocoder of a continent
+$ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-south-america
 # open http://localhost:8080
 ```
 
@@ -57,7 +57,6 @@ $ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
     1. [optimize data](#optimize-data)
     1. [query](#query)
     1. [explore](#explore)
-    1. [merge separately-built databases](#merge-separately-built-databases)
     1. [run the end-to-end suite](#run-the-end-to-end-suite)
 
 ---
@@ -73,33 +72,25 @@ $ docker run -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest build braz
 
 ### pre-built images
 
-_size matters: once a country's data grows too large for a docker image, its pre-built image stops being updated and may be dropped._
+_size matters: once a region's data grows too large for a docker image, its pre-built image stops being updated and may be dropped._
 
 ```bash
-docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil
-docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil-YYYYMMDDHHMM
+docker run -p 8080:8080 pjpimentel/geolite:prebuilt-south-america
+docker run -p 8080:8080 pjpimentel/geolite:prebuilt-south-america-YYYYMMDDHHMM
 # open http://localhost:8080
 ```
 
-#### available country list
+#### available images
 
-| # | country | docker cmd |
-|---|---------|------------|
-| 1 | [brazil](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-brazil) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil` |
+the images are rebuilt on the 1st and the 15th of every month from the latest geofabrik extracts;
+the dated tag keeps each build.
+
+| # | region | docker cmd |
+|---|--------|------------|
+| 1 | [south-america](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-south-america), one base per country, thirteen in all | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-south-america` |
 | 2 | [portugal](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-portugal) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-portugal` |
-| 3 | [argentina](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-argentina) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-argentina` |
-| 4 | [bolivia](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-bolivia) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-bolivia` |
-| 5 | [chile](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-chile) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-chile` |
-| 6 | [colombia](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-colombia) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-colombia` |
-| 7 | [ecuador](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-ecuador) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-ecuador` |
-| 8 | [guyana](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-guyana) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-guyana` |
-| 9 | [paraguay](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-paraguay) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-paraguay` |
-| 10 | [peru](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-peru) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-peru` |
-| 11 | [suriname](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-suriname) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-suriname` |
-| 12 | [uruguay](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-uruguay) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-uruguay` |
-| 13 | [venezuela](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-venezuela) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-venezuela` |
-| 14 | [netherlands](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-netherlands) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-netherlands` |
-| 15 | [switzerland](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-switzerland) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-switzerland` |
+| 3 | [netherlands](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-netherlands) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-netherlands` |
+| 4 | [switzerland](https://hub.docker.com/layers/pjpimentel/geolite/prebuilt-switzerland) | `docker run -p 8080:8080 pjpimentel/geolite:prebuilt-switzerland` |
 
 ---
 
@@ -107,7 +98,8 @@ docker run -p 8080:8080 pjpimentel/geolite:prebuilt-brazil-YYYYMMDDHHMM
 
 ### execute all necessary steps
 ```bash
-$ geolite build brazil
+$ geolite build brazil          # br/data.sqlite3 and br/index.tantivy, sealed
+$ geolite build south-america   # one base per country, thirteen in all
 # or with docker
 $ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest build brazil
 $ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:latest http-server
@@ -119,14 +111,16 @@ $ geolite osm-pbf-file download brazil
 $ geolite exec extract-osm-pbf-blob-chunks brazil
 $ geolite exec extract-osm-pbf-header brazil
 $ geolite exec extract-osm-pbf-data brazil
-$ geolite --preset brazil exec extract-osm-admin-levels
-$ geolite --preset brazil exec extract-osm-house-numbers
+# the two extraction stages read everything the osm data holds, every pbf decoded so far
+$ geolite exec extract-osm-admin-levels
+$ geolite exec extract-osm-house-numbers
 ```
 
 ### index extracted data
 ```bash
+# every base of the data path, or the ones named: `geolite exec index-addresses br`
 $ geolite exec index-admin-levels-hierarchy
-$ geolite --preset brazil exec index-addresses
+$ geolite exec index-addresses
 $ geolite exec index-coordinates
 ```
 
@@ -142,37 +136,25 @@ $ geolite exec optimize-sqlite-file
 ```
 
 `geolite exec` runs one stage per call and refuses a stage whose requirements did not run, naming
-the one to run first; `geolite exec --help` lists the stages in the order the pipeline runs.
-`geolite build` and `geolite merge` run `optimize-delete-isolated-admin-levels` and
-`optimize-merge-admin-levels` right after `index-admin-levels-hierarchy`, so the two other indexes
-are built once, over the rows that stay. no index stage deletes or folds on its own.
+the one to run first; `geolite exec --help` lists the stages in the order the pipeline runs. a stage
+that reads a pbf names it (`extract-osm-pbf-data brazil`); the two extraction stages read everything
+the osm data holds; a stage that works on the bases runs over every base of the data path, or over
+the countries named (`index-addresses br ar`).
+`geolite build` runs `optimize-delete-isolated-admin-levels`, which removes a base it leaves empty,
+and `optimize-merge-admin-levels` right after `index-admin-levels-hierarchy`, so the two other
+indexes are built once, over the rows that stay. no index stage deletes or folds on its own.
 
 ### query
 ```bash
-$ geolite query "-23.970949,-46.318730"
-$ geolite query "rua castro alves, embare, santos, sao paulo"
+$ geolite query "-23.970949,-46.318730"                                         # the base of the country whose boundary holds the point
+$ geolite query "rua castro alves, embare, santos, sao paulo"                   # every base of the data path at once
+$ geolite query "rua castro alves, embare, santos, sao paulo" --countries br   # the bases named
 ```
 
 ### explore
 ```bash
-$ geolite http-server
-```
-
-### merge separately-built databases
-```bash
-# machine 1
-$ geolite --sqlite-path sudeste.sqlite3 build sudeste
-# machine 2
-$ geolite --sqlite-path nordeste.sqlite3 build nordeste
-
-# merge all builds into a new combined database (created fresh)
-$ geolite --preset brazil merge brazil.sqlite3 sudeste.sqlite3 nordeste.sqlite3 ...
-
-# or with docker 
-$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/sudeste.sqlite3 build sudeste
-$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/nordeste.sqlite3 build nordeste
-$ docker run --rm -t -v ./geolite-data:/.geolite pjpimentel/geolite:latest --preset brazil merge /.geolite/brazil.sqlite3 /.geolite/sudeste.sqlite3 /.geolite/nordeste.sqlite3
-$ docker run --rm -p 8080:8080 -v ./geolite-data:/.geolite pjpimentel/geolite:latest --sqlite-path /.geolite/brazil.sqlite3 http-server
+$ geolite http-server   # open http://localhost:8080
+$ geolite tui           # the admin levels walked like folders, one per country at the root
 ```
 
 ### run the end-to-end suite

@@ -18,6 +18,14 @@ pub enum stage {
   optimize_sqlite_file,
 }
 
+// what a stage asserts against: the osm_data with its ledger, the file when the
+// stage has a source, and the bases it reads or writes
+pub(in crate::interfaces::cli) struct stage_context<'a> {
+  pub osm_data: Option<&'a Connection>,
+  pub file: Option<&'a resolved_input>,
+  pub bases: Vec<&'a Connection>,
+}
+
 impl stage {
   pub const fn name(self) -> &'static str {
     match self {
@@ -56,33 +64,45 @@ impl stage {
     }
   }
 
-  fn ran(self, conn: &Connection, file: Option<&resolved_input>) -> bool {
+  fn ran(self, ctx: &stage_context) -> bool {
     match self {
-      stage::extract_osm_pbf_blob_chunks => {
-        file.is_some_and(|f| crate::osm_pbf_file::blob_index::count_by_file_id(conn, f.id) > 0)
-      }
-      stage::extract_osm_pbf_data => crate::osm_pbf_file::repository::any_osm_data_extracted(conn),
-      stage::extract_osm_admin_levels => crate::admin_level::repository::count_with_geometry(conn) > 0,
+      stage::extract_osm_pbf_blob_chunks => match (ctx.osm_data, ctx.file) {
+        (Some(conn), Some(f)) => crate::osm_pbf_file::blob_index::count_by_file_id(conn, f.id) > 0,
+        _ => false,
+      },
+      stage::extract_osm_pbf_data => match (ctx.osm_data, ctx.file) {
+        (Some(conn), Some(f)) => crate::osm_pbf_file::repository::osm_data_extracted(conn, f.id),
+        (Some(conn), None) => crate::osm_pbf_file::repository::any_osm_data_extracted(conn),
+        (None, _) => false,
+      },
+      stage::extract_osm_admin_levels => ctx
+        .bases
+        .iter()
+        .any(|base| crate::admin_level::repository::count_with_geometry(base) > 0),
       stage::extract_osm_house_numbers => {
-        crate::house_number::repository::any(conn)
-          || crate::osm_pbf_file::repository::any_house_numbers_counted(conn)
+        ctx
+          .bases
+          .iter()
+          .any(|base| crate::house_number::repository::any(base))
+          || ctx
+            .osm_data
+            .is_some_and(crate::osm_pbf_file::repository::any_house_numbers_counted)
       }
       stage::index_admin_levels_hierarchy => {
-        crate::admin_level_hierarchy::repository::count(conn) > 0
-          && crate::admin_level_hierarchy::repository::pending_total(conn) == 0
+        !ctx.bases.is_empty()
+          && ctx.bases.iter().all(|base| {
+            crate::admin_level_hierarchy::repository::count(base) > 0
+              && crate::admin_level_hierarchy::repository::pending_total(base) == 0
+          })
       }
       other => unreachable!("{} is required by no stage", other.name()),
     }
   }
 
-  pub(in crate::interfaces::cli) fn require(
-    self,
-    conn: &Connection,
-    file: Option<&resolved_input>,
-  ) {
+  pub(in crate::interfaces::cli) fn require(self, ctx: &stage_context) {
     for needed in self.requires() {
-      if !needed.ran(conn, file) {
-        let input = file.map(|f| format!(" {}", f.name)).unwrap_or_default();
+      if !needed.ran(ctx) {
+        let input = ctx.file.map(|f| format!(" {}", f.name)).unwrap_or_default();
         eprintln!(
           "\x1b[1;31merror\x1b[0m: {} requires {} — run `geolite exec {}{input}` first",
           self.name(),

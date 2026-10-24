@@ -18,8 +18,10 @@ data between the database and this folder on the query path is `address::house_n
 | `comparison_key` | aggressively canonical: no `#`, upper case, `-` between compound parts | equality, and only equality |
 
 `normalize` is the writing side, a port of the sql `CASE` that ran at extraction: spaces trimmed,
-the empty value and the preset's non-values (`s/n`) dropped, a lone trailing letter joined to the
-digits in upper case (`12 a`, `12-a`, `12a` → `12A`), everything else kept as written. `recognize`
+the empty value dropped, a lone trailing letter joined to the digits in upper case (`12 a`,
+`12-a`, `12a` → `12A`), everything else kept as written; the non-values of a country (`s/n`) are
+dropped after the link (`is_dropped`), under the policy of the country of the street the node was
+linked to, because a node has no country before it has a street. `recognize`
 is the reading side, what the query path asks of every token: a single trailing comma tolerated,
 the shape checked against the policy, the digits capped at `max_digits` so a postcode never reads
 as a number. `from_stored` is the third way in, for what the table hands back. the two forms are
@@ -32,25 +34,32 @@ written "16i56"  → stored_form "16i56"  → key "16I-56"
 typed   "16I56"  →                        key "16I-56"   → same number
 ```
 
-## written forms are a regional policy — `policy`
+## written forms are a policy of the country — `policy`
 
 `82-52` is a compound number in colombia and a range in brazil. nothing in the string tells them
-apart — only the region does, so recognition is opt-in per preset:
+apart — only the country does, so recognition is opt-in per country, through the preset
+`presets::for_country` answers for the country of the street:
 
 | form | example | enabled by |
 |---|---|---|
-| `simple` | `123` | every preset |
-| `suffixed` | `123A` (from `12 a`, `12-a`, `12a`) | every preset |
+| `simple` | `123` | every country |
+| `suffixed` | `123A` (from `12 a`, `12-a`, `12a`) | every country |
 | `compound` | `82-52`, `25B-48`, `16i56` | `COMPOUND_SHAPES` — colombia |
 | `#` prefix | `#82`, `# 52-48` | `allow_hash_prefix` — colombia |
 
 a compound split across several tokens (`82 - 52`) is not recognised; only a lone `#` gets a
 one-token lookahead. a hyphenated pair whose first part carries a leading zero is never compound,
-which is what keeps a postcode (`01310-100`) out. the policy also names which tags carry the
-number and the street (`number_tags`, `street_tags`, the first non-null wins), the values that
-mean "no number" (`drop_values`) and the metres one number takes along a street
-(`meters_per_number`: 3 by default, 1 under `brazil`, where the fixture measures a metre a number);
-the preset is where a region fills it in.
+which is what keeps a postcode (`01310-100`) out. the policy also names the values that mean "no
+number" (`drop_values`) and the metres one number takes along a street (`meters_per_number`: 3 by
+default, 1 in brazil, where the fixture measures a metre a number); the preset of a country is
+where it fills them in. the tags that carry the number and the street (`NUMBER_TAGS`,
+`STREET_TAGS`, the first non-null wins) are constants of `policy`: they select the candidates in
+sql, before any node has a street or a country.
+
+before a street is known the query has no country either: the words of the text are read under
+`EVERY_SHAPE`, the policy that recognizes every shape any country does, and they only mark the
+optional tokens of the search; the number of each street is then read under the policy of the
+street's own country.
 
 ## the link — `entity` and `strategy`
 
@@ -83,7 +92,7 @@ itself. `from_osm_data` is a stored number, equal to the typed one on the text p
 offers: `presumed_from_multiple_references_from_street` when it stores two or more distinct
 numbers, `presumed_from_one_ref_from_street` when it stores one, and `presumed_from_constants`
 when it stores none. a presumed number is an estimate, and the word is how far to trust it;
-measured against the 473 numbers of the santos fixture, leaving each one out in turn, the median
+measured against the 473 numbers of the brazil fixture, leaving each one out in turn, the median
 error is 15 m between two references, 17 m from one, and 160 to 250 m from the constants, against
 the 267 m of the point of the street that answered before. the word is only the name of the
 scenario: what the number was actually read from is `house_number_origin`, in `resolution`, and
@@ -117,7 +126,7 @@ in node id order, read as (node, value, chainage). the **factor** of a street wi
 of them is the signed metres per number between the lowest and the highest; the **direction**
 of a street with one is read from the reference itself: the numbering grows from the end of the
 axis whose distance to the reference best matches the reference read as metres (`|c − v·m|`
-against `|(L − c) − v·m|`, `m` the preset's `meters_per_number`), which is right for 87 of the
+against `|(L − c) − v·m|`, `m` the `meters_per_number` of the street's country), which is right for 87 of the
 92 references on the clean streets of the fixture.
 
 `place` answers the text path with a typed number: equal to a stored one, the stored point
@@ -174,8 +183,9 @@ the ddl, the one index (`house_numbers_search_by_admin_level_id`, the read of ev
 candidate scan of `osm_data.osm_nodes` (`load_all_candidates`, where `normalize` runs), the
 numbers of a set of streets (`numbers_by_street`, one `stored_number` per row — the osm node, the
 number and its point — in node id order, the order the first-match rules of the resolution see,
-whatever the insertion order, where `from_stored` runs) and the insert. the streets come through
+whatever the insertion order, where `from_stored` runs) and the insert. the candidates come from
+the shared osm_data and the streets from every base of the data path, through
 `admin_level::repository` — `streets_with_centroid` for the tiles, `geometry_by_ids` for the
-linker — so only the owner writes sql over `admin_levels`.
-`osm_pbf_file::repository::update_house_numbers_count` reads the table the other way round, for
-the ledger.
+linker — so only the owner writes sql over `admin_levels`; each link lands in the base of its
+street. `osm_pbf_file::repository::count_house_numbers_of_file` reads the table the other way
+round, one base at a time, for the ledger.

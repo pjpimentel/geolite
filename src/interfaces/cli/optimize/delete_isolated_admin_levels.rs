@@ -1,15 +1,20 @@
 use std::time::Instant;
 
 use crate::admin_level_hierarchy::isolated;
-use crate::interfaces::cli::exec::stages::stage;
+use crate::database::store::{self, base_files};
+use crate::interfaces::cli::exec::stages::{stage, stage_context};
 
 pub fn command_handler_optimize_delete_isolated_admin_levels(
   sqlite_path: &str,
   index_path: &str,
 ) -> bool {
   crate::interfaces::cli::require_sqlite(sqlite_path);
-  let conn = crate::database::open_write(sqlite_path);
-  stage::optimize_delete_isolated_admin_levels.require(&conn, None);
+  let conn = store::open_base_write(sqlite_path);
+  stage::optimize_delete_isolated_admin_levels.require(&stage_context {
+    osm_data: None,
+    file: None,
+    bases: vec![&conn],
+  });
   let start = Instant::now();
 
   let found = isolated::find(&conn);
@@ -22,7 +27,6 @@ pub fn command_handler_optimize_delete_isolated_admin_levels(
 
   super::clear_indexes(&conn, index_path);
   let report = isolated::remove(&conn, &found);
-  super::update_ledger(&conn);
 
   let elapsed = start.elapsed().as_secs_f64();
   println!(
@@ -31,5 +35,15 @@ pub fn command_handler_optimize_delete_isolated_admin_levels(
     report.streets,
     report.house_numbers
   );
+  if crate::admin_level::repository::count(&conn) == 0 {
+    drop(conn);
+    let base = base_files::of(sqlite_path);
+    store::remove_base(&base);
+    println!(
+      "\x1b[1;33mdeleted\x1b[0m {} — no area left in it",
+      base.label()
+    );
+    return false;
+  }
   true
 }

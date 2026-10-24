@@ -1,13 +1,17 @@
 use std::time::Instant;
 
 use crate::admin_level_hierarchy::street_merge;
-use crate::interfaces::cli::exec::stages::stage;
+use crate::interfaces::cli::exec::stages::{stage, stage_context};
 use crate::interfaces::cli::progress;
 
 pub fn command_handler_optimize_merge_admin_levels(sqlite_path: &str, index_path: &str) -> bool {
   crate::interfaces::cli::require_sqlite(sqlite_path);
-  let conn = crate::database::open_write(sqlite_path);
-  stage::optimize_merge_admin_levels.require(&conn, None);
+  let conn = crate::database::store::open_base_write(sqlite_path);
+  stage::optimize_merge_admin_levels.require(&stage_context {
+    osm_data: None,
+    file: None,
+    bases: vec![&conn],
+  });
   let start = Instant::now();
 
   let bar = progress::bar("finding", "street pieces");
@@ -23,8 +27,6 @@ pub fn command_handler_optimize_merge_admin_levels(sqlite_path: &str, index_path
   let bar = progress::bar("merging", "streets");
   let report = street_merge::fold(&conn, &pieces, |p| progress::advance(&bar, &p));
   bar.finish();
-
-  super::update_ledger(&conn);
 
   let elapsed = start.elapsed().as_secs_f64();
   println!(

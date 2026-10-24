@@ -42,3 +42,8 @@ flate = "flate"
 # crate name a planned changelog item cites
 ratatui = "ratatui"
 
+# iso 3166-1 alpha-2 codes of the compiled boundaries that read as english misspellings: bosnia
+# and herzegovina and the faroe islands, in `src/presets/boundaries/mod.rs` and in the names of
+# their wkt files
+ba = "ba"
+fo = "fo"

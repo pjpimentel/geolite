@@ -1,13 +1,17 @@
 use std::io::Write;
 use std::time::Instant;
 
-use crate::interfaces::cli::exec::stages::stage;
+use crate::interfaces::cli::exec::stages::{stage, stage_context};
 use crate::interfaces::cli::progress;
 
 pub fn command_handler_index_coordinates(sqlite_path: &str) {
   crate::interfaces::cli::require_sqlite(sqlite_path);
-  let conn = crate::database::open_write(sqlite_path);
-  stage::index_coordinates.require(&conn, None);
+  let conn = crate::database::store::open_base_write(sqlite_path);
+  stage::index_coordinates.require(&stage_context {
+    osm_data: None,
+    file: None,
+    bases: vec![&conn],
+  });
   print!("\x1b[1;32mclearing\x1b[0m coordinates...");
   let _ = std::io::stdout().flush();
   crate::admin_level::spatial_index::recreate(&conn);

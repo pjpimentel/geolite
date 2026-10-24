@@ -8,6 +8,7 @@ use std::path::Path;
 
 use rusqlite::Connection;
 
+use crate::database::store::{self, base_files};
 use crate::interfaces::cli::exec::stages::stage;
 
 fn clear_indexes(conn: &Connection, index_path: &str) {
@@ -16,11 +17,6 @@ fn clear_indexes(conn: &Connection, index_path: &str) {
   crate::admin_level_hierarchy::search_index::destroy(Path::new(index_path));
   crate::admin_level::spatial_index::recreate(conn);
   println!(" done");
-}
-
-fn update_ledger(conn: &Connection) {
-  crate::osm_pbf_file::repository::update_admin_levels_count(conn);
-  crate::osm_pbf_file::repository::update_house_numbers_count(conn);
 }
 
 fn file_size(path: &str) -> u64 {
@@ -58,44 +54,46 @@ fn fmt_size(bytes: u64) -> String {
   }
 }
 
-fn print_sqlite_sizes(label: &str, sqlite_path: &str, index_path: &str) {
-  let main = file_size(sqlite_path)
-    + file_size(&format!("{sqlite_path}-wal"))
-    + file_size(&format!("{sqlite_path}-shm"));
-  let osm_path = crate::database::osm_data_path(sqlite_path);
-  let osm = file_size(&osm_path)
-    + file_size(&format!("{osm_path}-wal"))
-    + file_size(&format!("{osm_path}-shm"));
-  let index = dir_size(index_path);
+fn files_size(path: &str) -> u64 {
+  file_size(path) + file_size(&format!("{path}-wal")) + file_size(&format!("{path}-shm"))
+}
+
+// what the data path weighs: the osm_data, and every base with its index
+pub(super) fn print_sizes(label: &str, data_path: &str) {
+  let osm_data = files_size(&store::osm_data_path(data_path));
+  let (mut bases, mut indexes) = (0u64, 0u64);
+  for base in store::bases(data_path) {
+    bases += files_size(&base.sqlite);
+    indexes += dir_size(&base.index);
+  }
   println!(
-    "\x1b[1;32m{label}\x1b[0m  main: {}  osm_data: {}  index: {}  total: {}",
-    fmt_size(main),
-    fmt_size(osm),
-    fmt_size(index),
-    fmt_size(main + osm + index),
+    "\x1b[1;32m{label}\x1b[0m  osm_data: {}  bases: {}  indexes: {}  total: {}",
+    fmt_size(osm_data),
+    fmt_size(bases),
+    fmt_size(indexes),
+    fmt_size(osm_data + bases + indexes),
   );
 }
 
-pub(super) fn with_sqlite_sizes(sqlite_path: &str, index_path: &str, stage: impl FnOnce()) {
-  print_sqlite_sizes("before", sqlite_path, index_path);
+pub(super) fn with_sizes(data_path: &str, stage: impl FnOnce()) {
+  print_sizes("before", data_path);
   println!();
   stage();
   println!();
-  print_sqlite_sizes("after ", sqlite_path, index_path);
+  print_sizes("after ", data_path);
 }
 
-pub fn command_handler_optimize(data_path: &str, sqlite_path: &str, index_path: &str) {
-  print_sqlite_sizes("before", sqlite_path, index_path);
+pub fn command_handler_optimize(data_path: &str, bases: &[base_files]) {
+  print_sizes("before", data_path);
   println!();
-  if !delete_intermediary_data::command_handler_optimize_delete_intermediary_data(
-    data_path,
-    sqlite_path,
-  ) {
+  if !delete_intermediary_data::command_handler_optimize_delete_intermediary_data(data_path) {
     return;
   }
+  for base in bases {
+    println!();
+    println!("\x1b[2m── {} {}\x1b[0m", stage::optimize_sqlite_file.name(), base.label());
+    sqlite_file::command_handler_optimize_sqlite_file(&base.sqlite);
+  }
   println!();
-  println!("\x1b[2m── {}\x1b[0m", stage::optimize_sqlite_file.name());
-  sqlite_file::command_handler_optimize_sqlite_file(sqlite_path);
-  println!();
-  print_sqlite_sizes("after ", sqlite_path, index_path);
+  print_sizes("after ", data_path);
 }

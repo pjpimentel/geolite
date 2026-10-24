@@ -1,12 +1,14 @@
+use std::path::Path;
+
 use rusqlite::{Connection, OpenFlags};
 
-// bumped whenever the on-disk schema changes in a way that makes builds incompatible;
-// stamped into every writable database via PRAGMA user_version. open_write_main refuses a
-// database stamped with another version, and `geolite merge` refuses to combine one.
-pub const SCHEMA_VERSION: u32 = 3;
+// bumped whenever the on-disk schema or the layout of the data path changes in a way that makes
+// builds incompatible; stamped into every writable file via PRAGMA user_version, and refused on
+// open when another version is found
+pub const SCHEMA_VERSION: u32 = 4;
 
 pub mod jsonb;
-pub mod merge;
+pub mod store;
 
 pub(crate) trait table {
   const CREATE: &str;
@@ -89,35 +91,6 @@ fn multi_insert_sql(sql_head: &str, columns: usize, rows: usize) -> String {
   sql
 }
 
-pub fn osm_data_path(main_path: &str) -> String {
-  if main_path == ":memory:" {
-    return ":memory:".to_string();
-  }
-  let p = std::path::Path::new(main_path);
-  let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("database");
-  let parent = p.parent().unwrap_or(std::path::Path::new(""));
-  parent
-    .join(format!("{stem}.osm_data.sqlite3"))
-    .to_string_lossy()
-    .into_owned()
-}
-
-pub fn remove_osm_data_files(main_path: &str) -> u64 {
-  if main_path == ":memory:" {
-    return 0;
-  }
-  let sibling = osm_data_path(main_path);
-  let mut bytes = 0u64;
-  for suffix in ["", "-wal", "-shm"] {
-    let p = format!("{sibling}{suffix}");
-    if std::path::Path::new(&p).exists() {
-      bytes += std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-      std::fs::remove_file(&p).expect("failed to remove osm_data sibling");
-    }
-  }
-  bytes
-}
-
 pub fn compact(conn: &Connection) -> (u64, u64) {
   const SQL_PAGE_SIZE: &str = "PRAGMA page_size";
   const SQL_PAGE_COUNT: &str = "PRAGMA page_count";
@@ -143,37 +116,6 @@ pub fn compact(conn: &Connection) -> (u64, u64) {
   (page_size * pages_before, page_size * pages_after)
 }
 
-pub fn destroy_data(
-  path: &str,
-  osm_pbf_blob_chunks: bool,
-  osm_data: bool,
-  admin_levels: bool,
-  house_numbers: bool,
-) {
-  if osm_pbf_blob_chunks {
-    remove_osm_data_files(path);
-  }
-  let conn = if osm_data && !osm_pbf_blob_chunks {
-    let conn = open_write(path);
-    crate::osm_node::repository::drop_table(&conn);
-    crate::osm_way::repository::drop_table(&conn);
-    crate::osm_relation::repository::drop_table(&conn);
-    conn
-  } else {
-    open_write_main(path)
-  };
-  if house_numbers {
-    crate::house_number::repository::drop_table(&conn);
-  }
-  if admin_levels {
-    crate::admin_level_hierarchy::repository::drop_table(&conn);
-    crate::admin_level::spatial_index::drop_table(&conn);
-    crate::admin_level::repository::drop_table(&conn);
-    crate::house_number::repository::drop_table(&conn);
-  }
-  conn.execute_batch("VACUUM;").expect("failed to vacuum");
-}
-
 pub(crate) fn has_column(conn: &Connection, schema: &str, table: &str, column: &str) -> bool {
   const SQL_HAS_COLUMN: &str = "
     SELECT COUNT(*)
@@ -191,7 +133,9 @@ pub(crate) fn has_column(conn: &Connection, schema: &str, table: &str, column: &
     > 0
 }
 
-pub fn open_write_main(path: &str) -> Connection {
+// a writable file of the data path, the osm_data or a base: created on first open, stamped with
+// the schema version and refused when stamped with another
+pub(crate) fn open_writable(path: &str) -> Connection {
   // create_dir_all races between concurrent geolite processes sharing an ancestor directory:
   // std can return AlreadyExists spuriously, so a parent that already exists is success.
   if let Some(parent) = std::path::Path::new(path).parent()
@@ -201,8 +145,11 @@ pub fn open_write_main(path: &str) -> Connection {
   {
     panic!("failed to create sqlite parent dir: {error}");
   }
+  if is_sealed(path) {
+    panic!("{path} is sealed: a base built once is final \u{2014} remove it to build it again");
+  }
   let conn = Connection::open(path).expect("failed to open sqlite");
-  require_schema_version(&conn, path);
+  let stamped = require_schema_version(&conn, path);
   conn
     .execute_batch(
       "PRAGMA journal_mode=WAL;
@@ -211,40 +158,17 @@ pub fn open_write_main(path: &str) -> Connection {
        PRAGMA temp_store=MEMORY;",
     )
     .expect("failed to set pragmas");
-  conn
-    .pragma_update(None, "user_version", SCHEMA_VERSION)
-    .expect("failed to set user_version");
-  crate::osm_pbf_file::osm_pbf_files::create_table(&conn);
-  crate::osm_pbf_file::repository::add_origin_wkt(&conn);
-  crate::admin_level::admin_levels::create_table(&conn);
-  crate::admin_level::repository::add_merged_way_ids(&conn);
-  crate::admin_level_hierarchy::admin_levels_hierarchy::create_table(&conn);
-  crate::admin_level::spatial_index::create_table(&conn);
-  crate::house_number::house_numbers::create_table(&conn);
+  // a stamp already in place is not written again: the write would fail on the lock of a second
+  // process writing the file instead of letting that process be named
+  if stamped != SCHEMA_VERSION {
+    conn
+      .pragma_update(None, "user_version", SCHEMA_VERSION)
+      .expect("failed to set user_version");
+  }
   conn
 }
 
-pub fn open_write(path: &str) -> Connection {
-  let conn = open_write_main(path);
-  let osm_data = osm_data_path(path);
-  conn
-    .execute("ATTACH DATABASE ?1 AS osm_data", [&osm_data])
-    .expect("failed to attach osm_data");
-  conn
-    .execute_batch(
-      "PRAGMA osm_data.journal_mode=WAL;
-       PRAGMA osm_data.synchronous=NORMAL;
-       PRAGMA osm_data.cache_size=-32768;",
-    )
-    .expect("failed to set osm_data pragmas");
-  crate::osm_pbf_file::osm_pbf_blob_chunks::create_table(&conn);
-  crate::osm_node::osm_nodes::create_table(&conn);
-  crate::osm_way::osm_ways::create_table(&conn);
-  crate::osm_relation::osm_relations::create_table(&conn);
-  conn
-}
-
-fn require_schema_version(conn: &Connection, path: &str) {
+fn require_schema_version(conn: &Connection, path: &str) -> u32 {
   let stamped: u32 = conn
     .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
     .map(|v| v as u32)
@@ -254,14 +178,68 @@ fn require_schema_version(conn: &Connection, path: &str) {
       "incompatible schema version on {path}: found {stamped}, expected {SCHEMA_VERSION} \u{2014} rebuild required"
     );
   }
+  stamped
 }
 
+// what a build leaves behind is read-only at the os level as well, a file or a directory with
+// everything inside it, and stays so: nothing lifts it. tantivy takes its meta lock to read, so
+// the lock files keep their write bit
+pub fn seal_path(path: impl AsRef<Path>) {
+  seal(path.as_ref());
+}
+
+pub fn is_sealed(path: impl AsRef<Path>) -> bool {
+  std::fs::metadata(path).is_ok_and(|metadata| metadata.permissions().readonly())
+}
+
+#[cfg(unix)]
+fn seal(path: &Path) {
+  use std::os::unix::fs::PermissionsExt;
+
+  let Ok(metadata) = std::fs::metadata(path) else {
+    return;
+  };
+  if metadata.is_dir() {
+    for entry in std::fs::read_dir(path).into_iter().flatten().flatten() {
+      seal(&entry.path());
+    }
+  }
+  if path.extension().is_some_and(|ext| ext == "lock") {
+    return;
+  }
+  let mode = if metadata.is_dir() { 0o555 } else { 0o444 };
+  std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+    .unwrap_or_else(|e| panic!("failed to seal {}: {e}", path.display()));
+}
+
+#[cfg(not(unix))]
+fn seal(_path: &Path) {}
+
+// a read of a file another connection of the same process may be writing: it follows the wal
 pub fn open_readonly(path: &str) -> Connection {
   let conn = Connection::open_with_flags(
     path,
     OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
   )
   .expect("failed to open sqlite readonly");
+  set_reader_pragmas(&conn);
+  conn
+}
+
+// immutable skips the locks and the wal-index, so a reader never creates a `-wal` or a `-shm`
+// beside a base and a base on read-only media opens; a base written while it is read is seen as
+// it was until the reader opens it again
+pub fn open_immutable(path: &str) -> Connection {
+  let conn = Connection::open_with_flags(
+    immutable_uri(path),
+    OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX | OpenFlags::SQLITE_OPEN_URI,
+  )
+  .expect("failed to open sqlite immutable");
+  set_reader_pragmas(&conn);
+  conn
+}
+
+fn set_reader_pragmas(conn: &Connection) {
   conn
     .execute_batch(
       "PRAGMA cache_size=-262144;
@@ -270,25 +248,17 @@ pub fn open_readonly(path: &str) -> Connection {
        PRAGMA query_only=1;",
     )
     .expect("failed to set pragmas");
-  let osm_data = osm_data_path(path);
-  if std::path::Path::new(&osm_data).exists() {
-    let canonical = std::fs::canonicalize(&osm_data)
-      .map(|p| p.to_string_lossy().into_owned())
-      .unwrap_or(osm_data);
-    let uri = format!("file:{canonical}?mode=ro");
-    conn
-      .execute("ATTACH DATABASE ?1 AS osm_data", [&uri])
-      .expect("failed to attach osm_data readonly");
-  }
-  conn
 }
 
-// reads the schema version stamped into a database (PRAGMA user_version). databases built before
-// versioning existed return 0. used by `geolite merge` to reject incompatible builds before mutating.
-pub fn read_user_version(path: &str) -> u32 {
-  let conn = open_readonly(path);
-  conn
-    .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
-    .map(|v| v as u32)
-    .unwrap_or(0)
+fn immutable_uri(path: &str) -> String {
+  let mut escaped = String::with_capacity(path.len());
+  for c in path.chars() {
+    match c {
+      '%' => escaped.push_str("%25"),
+      '?' => escaped.push_str("%3F"),
+      '#' => escaped.push_str("%23"),
+      c => escaped.push(c),
+    }
+  }
+  format!("file:{escaped}?mode=ro&immutable=1")
 }

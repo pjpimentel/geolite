@@ -48,3 +48,16 @@ impl leisure_value {
     }
   }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum location_value {
+  underwater,
+}
+
+impl location_value {
+  pub fn value(self) -> &'static str {
+    match self {
+      location_value::underwater => "underwater",
+    }
+  }
+}

@@ -18,8 +18,8 @@ runs while decoding — an absent include list means "every tag" — and stays s
 the pipeline stores keys nobody here has heard of. `key::osm_tag` is the closed, typed set of the
 keys the code reasons about (`name`, `place`, `highway`, `leisure`, `building`, `waterway`, the
 postcode and country aliases), so that a misspelled key is a compile error rather than a query that
-quietly returns nothing; a tag chosen by a preset (`name_priority`, the house-number tags) stays a
-string and goes through `coalesce_of`. one key is deliberately missing: `admin_level`. the relation
+quietly returns nothing; a tag a preset names (`name_priority`) and the house-number tags stay
+strings and go through `each_of` or `coalesce_of`. one key is deliberately missing: `admin_level`. the relation
 repository filters on it through an expression index, and sqlite only takes such an index when the
 query spells the expression exactly as the index does — the bare `'$.tags.admin_level'` — so that
 predicate is written once, as a literal, next to the index that serves it.

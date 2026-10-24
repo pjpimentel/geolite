@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use super::entity::house_number_link;
 use super::linker::{self, street, tile_data};
-use super::policy::house_number_policy;
 use super::repository::{self, candidate_row};
 use crate::admin_level::repository::street_centre_row;
 use crate::progress_report;
@@ -15,37 +14,83 @@ const CHUNK_SIZE: usize = 500;
 
 type tile = (i64, i64);
 
+// the streets of every base a source may link to, each street remembering its base
+struct street_meta {
+  rows: Vec<street_centre_row>,
+  base_of: HashMap<i64, usize>,
+}
+
 impl house_number_link {
+  // the candidates come from the osm_data of the source, the streets from every base of the data
+  // path, and every link lands in the base of its street
   pub fn extract(
     conn: &Connection,
-    policy: &house_number_policy,
+    bases: &[&Connection],
     mut on_progress: impl FnMut(progress_report),
-  ) {
-    let candidates = repository::load_all_candidates(conn, policy);
+  ) -> u64 {
+    let candidates = repository::load_all_candidates(conn);
     let total = candidates.len() as u64;
     on_progress(progress_report {
       total: Some(total),
       processed: 0,
     });
     if total == 0 {
-      return;
+      return 0;
     }
 
-    let meta = crate::admin_level::repository::streets_with_centroid(conn);
+    let meta = load_meta(bases);
     let by_tile = tiles_of(candidates);
-    let streets = load_streets(conn, &meta, &by_tile);
-    let mut links = link_in_parallel(tiles_with_streets(by_tile, &meta, &streets));
-  links.sort_unstable_by_key(|link| link.node_id);
+    let streets = load_streets(bases, &meta, &by_tile);
+    let mut links = link_in_parallel(tiles_with_streets(by_tile, &meta.rows, &streets));
+    drop_non_values(&mut links, &meta.rows);
+    links.sort_unstable_by_key(|link| link.node_id);
 
+    let mut by_base: Vec<Vec<house_number_link>> = (0..bases.len()).map(|_| Vec::new()).collect();
+    for link in links {
+      let base = meta.base_of[&(link.street_id.raw() as i64)];
+      by_base[base].push(link);
+    }
     let mut processed: u64 = 0;
-    for chunk in links.chunks(CHUNK_SIZE) {
-      processed += repository::batch_insert_links(conn, chunk) as u64;
-      on_progress(progress_report {
-        total: Some(total),
-        processed,
-      });
+    for (base, links) in bases.iter().zip(by_base) {
+      for chunk in links.chunks(CHUNK_SIZE) {
+        processed += repository::batch_insert_links(base, chunk) as u64;
+        on_progress(progress_report {
+          total: Some(total),
+          processed,
+        });
+      }
+    }
+    processed
+  }
+}
+
+fn load_meta(bases: &[&Connection]) -> street_meta {
+  let mut rows: Vec<street_centre_row> = Vec::new();
+  let mut base_of: HashMap<i64, usize> = HashMap::new();
+  for (at, base) in bases.iter().enumerate() {
+    for row in crate::admin_level::repository::streets_with_centroid(base) {
+      base_of.insert(row.id, at);
+      rows.push(row);
     }
   }
+  street_meta { rows, base_of }
+}
+
+// a value that means "no number" is the country's to name (`s/n` in portuguese and spanish), and
+// the country of a node is the one of the street it was linked to
+fn drop_non_values(links: &mut Vec<house_number_link>, meta: &[street_centre_row]) {
+  let country_of: HashMap<i64, Option<&str>> = meta
+    .iter()
+    .map(|m| (m.id, m.country_iso_code.as_deref()))
+    .collect();
+  links.retain(|link| {
+    let iso = country_of
+      .get(&(link.street_id.raw() as i64))
+      .copied()
+      .flatten();
+    let policy = crate::presets::for_country(iso).house_numbers;
+    !link.number.is_dropped(policy.drop_values)
+  });
 }
 
 fn tile_of(lon: f64, lat: f64) -> tile {
@@ -72,26 +117,32 @@ fn tiles_of(candidates: Vec<candidate_row>) -> HashMap<tile, Vec<candidate_row>>
 }
 
 fn load_streets(
-  conn: &Connection,
-  meta: &[street_centre_row],
+  bases: &[&Connection],
+  meta: &street_meta,
   by_tile: &HashMap<tile, Vec<candidate_row>>,
 ) -> HashMap<i64, Arc<street>> {
   let mut needed: HashSet<i64> = HashSet::new();
   for &tile in by_tile.keys() {
     needed.extend(
       meta
+        .rows
         .iter()
         .filter(|m| covers(tile, m.cx, m.cy))
         .map(|m| m.id),
     );
   }
-  let names: HashMap<i64, &str> = meta.iter().map(|m| (m.id, m.name.as_str())).collect();
-  let ids: Vec<i64> = needed.into_iter().collect();
+  let names: HashMap<i64, &str> = meta.rows.iter().map(|m| (m.id, m.name.as_str())).collect();
+  let mut by_base: Vec<Vec<i64>> = (0..bases.len()).map(|_| Vec::new()).collect();
+  for id in needed {
+    by_base[meta.base_of[&id]].push(id);
+  }
   let mut streets: HashMap<i64, Arc<street>> = HashMap::new();
-  for chunk in ids.chunks(WKB_BATCH) {
-    for (id, wkb) in crate::admin_level::repository::geometry_by_ids(conn, chunk) {
-      if let Some(street) = street::from_geometry(id, names[&id].to_string(), wkb.geometry()) {
-        streets.insert(id, Arc::new(street));
+  for (base, ids) in bases.iter().zip(by_base) {
+    for chunk in ids.chunks(WKB_BATCH) {
+      for (id, wkb) in crate::admin_level::repository::geometry_by_ids(base, chunk) {
+        if let Some(street) = street::from_geometry(id, names[&id].to_string(), wkb.geometry()) {
+          streets.insert(id, Arc::new(street));
+        }
       }
     }
   }

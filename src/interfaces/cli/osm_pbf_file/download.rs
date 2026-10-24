@@ -8,7 +8,6 @@ use std::time::Instant;
 pub fn command_handler_osm_pbf_file_download(
   data_path: &str,
   threads: &u8,
-  sqlite_path: &str,
   inputs: &[String],
   ls_endpoint: Option<&str>,
   abort_on_any_error: bool,
@@ -18,7 +17,7 @@ pub fn command_handler_osm_pbf_file_download(
       println!();
     }
 
-    let conn = crate::database::open_write(sqlite_path);
+    let conn = crate::database::store::open_ledger(data_path);
     let file = osm_pbf_file::open(Some(&conn), data_path);
     let resolved = match input_kind::of(input) {
       input_kind::url => Some(origin::url(input.clone())),

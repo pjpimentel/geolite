@@ -23,7 +23,7 @@ fn areas_above(folder: &folder) -> Vec<i64> {
     .rev()
     .filter_map(|item| match &item.entry {
       entry::place(node) => Some(node.id),
-      entry::missing { .. } => None,
+      entry::missing { .. } | entry::base { .. } => None,
     })
     .collect()
 }

@@ -10,6 +10,7 @@ use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::level;
 use crate::admin_level::repository::admin_meta_row;
 use crate::admin_level_hierarchy::paths::paths_of;
+use crate::admin_level_hierarchy::tantivy_index;
 use crate::house_number::house_number_scenario;
 
 #[derive(Serialize, ToSchema)]
@@ -58,12 +59,57 @@ pub struct query_match {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub house_number: Option<query_house_number>,
   pub id: String,
+  #[serde(skip)]
+  pub(super) ladder_ids: Vec<i64>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct database_status {
+  pub file: String,
+  pub text_to_address: bool,
+  pub coordinates_to_address: bool,
+}
+
+impl database_status {
+  // structural probe: `prepare` compiles the table reference, so this is Ok iff admin_levels_rtree
+  // exists — the distinguishing dependency of the reverse-geocoding path. no row i/o.
+  pub fn of(file: &str, conn: &Connection, index: Option<&tantivy_index>) -> Self {
+    const SQL_COORDINATES_PROBE: &str = "
+      SELECT 1
+      FROM admin_levels_rtree
+      LIMIT 1
+    ";
+
+    database_status {
+      file: file.to_string(),
+      text_to_address: index.is_some(),
+      coordinates_to_address: conn.prepare(SQL_COORDINATES_PROBE).is_ok(),
+    }
+  }
 }
 
 #[derive(Serialize, ToSchema)]
 pub struct query_output {
   pub service: query_service,
+  pub databases: Vec<database_status>,
   pub matches: Vec<query_match>,
+}
+
+pub(super) fn attach_wkt(conn: &Connection, matches: &mut [&mut query_match]) {
+  let mut ids: Vec<i64> = matches.iter().flat_map(|m| m.ladder_ids.iter().copied()).collect();
+  ids.sort_unstable();
+  ids.dedup();
+  let wkt = crate::admin_level::repository::wkt_by_ids(conn, &ids);
+  for m in matches.iter_mut() {
+    let query_match {
+      admin_levels,
+      ladder_ids,
+      ..
+    } = &mut **m;
+    for (level, id) in admin_levels.iter_mut().zip(ladder_ids.iter()) {
+      level.wkt = wkt.get(id).cloned();
+    }
+  }
 }
 
 pub(super) fn round5(v: f64) -> f64 {
@@ -98,12 +144,11 @@ pub(super) struct match_sources {
   paths: HashMap<i64, Vec<Vec<i64>>>,
   pub(super) meta: HashMap<i64, admin_meta_row>,
   merged_way_ids: HashMap<i64, crate::admin_level::geometry::merged_way_ids>,
-  wkt: HashMap<i64, String>,
   boxes: HashMap<i64, bounding_box>,
 }
 
 impl match_sources {
-  pub(super) fn load(conn: &Connection, ids: &[i64], include_wkt: bool) -> Self {
+  pub(super) fn load(conn: &Connection, ids: &[i64]) -> Self {
     let edges = crate::admin_level_hierarchy::repository::ancestry_of(conn, ids);
     let paths: HashMap<i64, Vec<Vec<i64>>> =
       ids.iter().map(|&id| (id, paths_of(id, &edges))).collect();
@@ -113,17 +158,10 @@ impl match_sources {
     meta_ids.dedup();
     let meta = crate::admin_level::repository::load_metadata_by_ids(conn, &meta_ids);
     let merged_way_ids = crate::admin_level::repository::merged_way_ids_by_ids(conn, &meta_ids);
-    // the polygons of countries and states are megabytes of wkt: nothing loads them unless asked
-    let wkt = if include_wkt {
-      crate::admin_level::repository::wkt_by_ids(conn, &meta_ids)
-    } else {
-      HashMap::new()
-    };
     match_sources {
       paths,
       meta,
       merged_way_ids,
-      wkt,
       boxes: HashMap::new(),
     }
   }
@@ -201,6 +239,27 @@ impl match_sources {
     )
   }
 
+  // the country of a row is written on it; a row written before the country reached every row
+  // reads the one of the country on its path
+  pub(super) fn country_iso_of(&self, own_id: i64, chain: &[i64]) -> Option<&str> {
+    let own = self.meta.get(&own_id);
+    own
+      .and_then(|m| m.country_iso_code.as_deref())
+      .or_else(|| {
+        chain
+          .iter()
+          .filter_map(|id| self.meta.get(id))
+          .chain(own)
+          .find(|m| m.admin_level == level::country)
+          .and_then(|m| m.country_iso_code.as_deref())
+      })
+  }
+
+  pub(super) fn house_number_policy_of(&self, own_id: i64) -> crate::house_number::house_number_policy {
+    let first_path = self.paths_of(own_id).first().map(Vec::as_slice).unwrap_or(&[]);
+    crate::presets::for_country(self.country_iso_of(own_id, first_path)).house_numbers
+  }
+
   pub(super) fn post_code_of(&self, own_id: i64, chain: &[i64]) -> Option<String> {
     std::iter::once(&own_id)
       .chain(chain)
@@ -208,7 +267,7 @@ impl match_sources {
       .find_map(|m| m.post_code.clone())
   }
 
-  fn level_ladder(&self, ancestors: &[&admin_meta_row], leaf: &leaf) -> Vec<admin_level> {
+  fn level_ladder(&self, ancestors: &[&admin_meta_row], leaf: &leaf) -> (Vec<admin_level>, Vec<i64>) {
     let mut admin_levels: Vec<admin_level> = ancestors
       .iter()
       .map(|a| admin_level {
@@ -218,7 +277,7 @@ impl match_sources {
         osm_relation_id: a.relation_id,
         osm_way_id: a.way_id,
         osm_merged_way_ids: self.merged_way_ids_of(a.id),
-        wkt: self.wkt.get(&a.id).cloned(),
+        wkt: None,
       })
       .collect();
     admin_levels.push(admin_level {
@@ -228,9 +287,10 @@ impl match_sources {
       osm_relation_id: leaf.relation_id,
       osm_way_id: leaf.way_id,
       osm_merged_way_ids: self.merged_way_ids_of(leaf.id),
-      wkt: self.wkt.get(&leaf.id).cloned(),
+      wkt: None,
     });
-    admin_levels
+    let ids = ancestors.iter().map(|a| a.id).chain(std::iter::once(leaf.id)).collect();
+    (admin_levels, ids)
   }
 
   pub(super) fn match_at(
@@ -242,7 +302,7 @@ impl match_sources {
     house_number: Option<&query_house_number>,
     format: Option<&str>,
   ) -> query_match {
-    let admin_levels = self.level_ladder(ancestors, leaf);
+    let (admin_levels, ladder_ids) = self.level_ladder(ancestors, leaf);
     let number = house_number.map(|house_number| house_number.number.as_str());
     let friendly_name = friendly_name_of(
       format,
@@ -262,11 +322,12 @@ impl match_sources {
       score: None,
       friendly_name,
       attributes: query_match_attributes {
-        country_iso_3166_1_alpha_2_code: country_iso_of(ancestors, self.meta.get(&leaf.id)),
+        country_iso_3166_1_alpha_2_code: self.country_iso_of(leaf.id, path).map(str::to_owned),
         post_code: self.post_code_of(leaf.id, path),
       },
       house_number: house_number.cloned(),
       id: path_id(leaf.id, path),
+      ladder_ids,
     }
   }
 }
@@ -286,14 +347,3 @@ fn friendly_name_of(
   }
 }
 
-fn country_iso_of(
-  ancestors: &[&admin_meta_row],
-  leaf: Option<&admin_meta_row>,
-) -> Option<String> {
-  ancestors
-    .iter()
-    .copied()
-    .chain(leaf)
-    .find(|a| a.admin_level == level::country)
-    .and_then(|a| a.country_iso_code.clone())
-}

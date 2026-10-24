@@ -1,20 +1,20 @@
 use std::io::Write;
 
-use crate::interfaces::cli::exec::stages::stage;
+use crate::interfaces::cli::exec::stages::{stage, stage_context};
 
-pub fn command_handler_extract_osm_pbf_header(
-  data_path: &str,
-  sqlite_path: &str,
-  inputs: &[String],
-) {
-  let conn = crate::database::open_write(sqlite_path);
-  let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
+pub fn command_handler_extract_osm_pbf_header(data_path: &str, inputs: &[String]) {
+  let conn = crate::database::store::open_osm_data(data_path);
 
   for (i, input) in inputs.iter().enumerate() {
     let Some(resolved) = super::resolve_input(&conn, data_path, i, input) else {
       continue;
     };
-    stage::extract_osm_pbf_header.require(&conn, Some(&resolved));
+    let file = crate::osm_pbf_file::osm_pbf_file::open(Some(&conn), data_path);
+    stage::extract_osm_pbf_header.require(&stage_context {
+      osm_data: Some(&conn),
+      file: Some(&resolved),
+      bases: vec![],
+    });
     let fname = &resolved.name;
 
     print!("\x1b[1;32mextracting\x1b[0m header from {fname}...");

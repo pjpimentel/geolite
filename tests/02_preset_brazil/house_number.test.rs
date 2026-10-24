@@ -1,5 +1,5 @@
 use crate::common::ask::ask;
-use crate::common::harness::{decode_wkb, query_at};
+use crate::common::harness::{decode_wkb, query_at, relabel_country};
 use crate::common::query::{
   distances, first, kind_of, levels_of, matches, meters_per_number, name_at, number_of,
   osm_node_ids, point_of, street_way, wkt_at,
@@ -12,6 +12,8 @@ use geo::{
 };
 use geozero::{ToGeo, wkt::Wkt};
 use serde_json::{Value, json};
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
 pub(crate) const FROM_OSM_DATA: &str = "from_osm_data";
 pub(crate) const MULTIPLE_REFERENCES: &str = "presumed_from_multiple_references_from_street";
@@ -250,9 +252,27 @@ fn street_match<'a>(result: &'a Value, street: &str) -> &'a Value {
     .unwrap_or_else(|| panic!("{street} is not among the matches:\n{result:#}"))
 }
 
+// the world is brazilian, and its rows say so; "default" is a copy of it whose rows carry no
+// country, built once and shared by every scenario that asks for it
+fn base_of(preset: &str) -> PathBuf {
+  static WITHOUT_A_COUNTRY: OnceLock<PathBuf> = OnceLock::new();
+
+  let w = world();
+  match preset {
+    "default" => WITHOUT_A_COUNTRY
+      .get_or_init(|| {
+        let dir = w.world_copy("house_number_without_a_country");
+        relabel_country(&dir, None);
+        dir
+      })
+      .clone(),
+    _ => w.data_path.clone(),
+  }
+}
+
 fn text_answer(preset: &str, query: &str, number: u32, street: &str) -> Value {
   let w = world();
-  let result = query_at(w, &w.data_path, preset, &format!("{query} {number}"));
+  let result = query_at(w, &base_of(preset), &format!("{query} {number}"));
   let top = first(&result);
   assert_eq!(
     name_at(top, 12).as_deref(),
@@ -264,12 +284,7 @@ fn text_answer(preset: &str, query: &str, number: u32, street: &str) -> Value {
 
 fn coordinate_answer(preset: &str, line: &LineString<f64>, metres: f64, street: &str) -> Value {
   let w = world();
-  let result = query_at(
-    w,
-    &w.data_path,
-    preset,
-    &lat_lon(point_at_metres(line, metres)),
-  );
+  let result = query_at(w, &base_of(preset), &lat_lon(point_at_metres(line, metres)));
   let m = street_match(&result, street);
   assert_eq!(
     m["coordinates_distance_in_meters"], 0,
@@ -441,11 +456,11 @@ fn _00_02_a_number_beyond_every_reference_extrapolates_from_the_nearest_extreme(
   }
 }
 
-// 00.03. result quality: with one stored number the street walks the preset's metres per number
-// from it, towards the end its numbering grows to
+// 00.03. result quality: with one stored number the street walks the metres per number of its
+// country from it, towards the end its numbering grows to
 #[test]
 #[ignore]
-fn _00_03_a_number_with_one_reference_walks_the_preset_metres_in_the_numbering_direction() {
+fn _00_03_a_number_with_one_reference_walks_the_country_metres_in_the_numbering_direction() {
   let (line, reference, direction) = one_reference_axis(BRAZIL_METERS_PER_NUMBER);
   for typed in [400, 300] {
     let context = format!("{typed} from {ONE_REFERENCE_NUMBER}");
@@ -471,8 +486,8 @@ fn _00_03_a_number_with_one_reference_walks_the_preset_metres_in_the_numbering_d
   }
 }
 
-// 00.04. result quality: with no stored number the street counts the preset's metres per number
-// from the start of its line
+// 00.04. result quality: with no stored number the street counts the metres per number of its
+// country from the start of its line
 #[test]
 #[ignore]
 fn _00_04_a_number_on_a_street_without_references_walks_from_the_start_of_the_line() {
@@ -599,11 +614,11 @@ fn _00_06_typed_numbers_land_monotonically_along_the_street() {
   }
 }
 
-// 00.07. result quality: the metres per number are the preset's — three by default, one under
-// brazil — and the scenario is the same under both
+// 00.07. result quality: the metres per number are the country's — one in brazil, read from the
+// row with no flag, three for a row without a country — and the scenario is the same under both
 #[test]
 #[ignore]
-fn _00_07_the_metres_per_number_come_from_the_preset() {
+fn _00_07_the_metres_per_number_come_from_the_country_of_the_row() {
   let line = street_line(BARE_STREET_ID);
   for (preset, meters) in [
     ("brazil", BRAZIL_METERS_PER_NUMBER),
@@ -730,7 +745,7 @@ fn _01_03_a_point_with_one_reference_counts_metres_from_it_in_the_numbering_dire
 }
 
 // 01.04. result quality: a point on a street without stored numbers reads the metres from the
-// start of its line, at the preset's metres per number
+// start of its line, at the metres per number of the country of the street
 #[test]
 #[ignore]
 fn _01_04_a_point_on_a_street_without_references_counts_metres_from_the_start_of_the_line() {
@@ -824,7 +839,7 @@ fn _02_00_a_typed_number_read_back_from_its_point_is_the_same_number() {
     let placed = text_answer("brazil", query, typed, street);
     assert_eq!(kind_of(&placed), Some(kind), "{context}");
     let w = world();
-    let back = query_at(w, &w.data_path, "brazil", &lat_lon(answered_point(&placed)));
+    let back = query_at(w, &w.data_path, &lat_lon(answered_point(&placed)));
     let m = street_match(&back, street);
     // the placed point comes back rounded to five decimals: up to a metre off the street
     assert!(

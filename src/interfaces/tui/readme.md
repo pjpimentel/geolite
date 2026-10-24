@@ -9,10 +9,16 @@ name. entering a folder replaces the listing with its own, and going up brings t
 back, the folder just left selected. the deepest level holds nothing to list, so it is never
 entered: it is opened.
 
+## the root
+
+a data path of one base is listed from its roots; one of several bases is listed from a folder per
+base, named after the country in upper case (`BR`, `AR`), each listing the roots of its base, so a
+path starts with the base (`AR/Brasil/São Paulo`). the listing shows `base` where the level goes.
+
 ## the ladder
 
-the levels the database holds make a ladder, `country / state / city / neighborhood / street`
-under the brazil preset. under a folder the ladder expects the next level: the places deeper than
+the levels a base holds make a ladder, `country / state / city / neighborhood / street`
+in a brazilian base. under a folder the ladder expects the next level: the places deeper than
 that lack a level, so a state lists its cities, and its neighbourhoods and streets outside any
 city go first into a folder of their own, `no city`; inside it the rule applies again, and the
 streets outside any neighbourhood go into `no neighborhood`. a nested area of the same level as its
@@ -21,7 +27,7 @@ parent is listed as any other folder. a folder counts the places directly inside
 
 ## the leaf
 
-the deepest level of the ladder is the leaf, the street under the brazil preset and the city in a
+the deepest level of the ladder is the leaf, the street in a brazilian base and the city in a
 base extracted without streets. it is listed counting nothing, and opening it replaces the listing
 with the address of the path walked down to it, above a map of it. the address is the one the api
 answers for that path, read through `address::at_path`: the name, the label, the post code and
@@ -35,7 +41,7 @@ the levels of the path come last, one per line, from the smallest level of the s
 street, the level 12, whether the base holds the level or not. a line is named after the number of
 the level and what it stands for, as `admin level 2 (country)`, and holds the area of the path at
 that level, followed by the osm way or relation it came from, as `Santos (relation 298442)`, or
-`n/a` when the path has no area of that level: a street under the brazil preset reads its country,
+`n/a` when the path has no area of that level: a street of a brazilian base reads its country,
 state, city and neighbourhood at the levels 2, 4, 8 and 10 and `n/a` at the six others, and one
 opened from `no neighborhood` reads `n/a` at the level 10 too. the leaf has the line of its own
 level, which repeats its name and its ways, so the lines read as the whole path. two areas of one
