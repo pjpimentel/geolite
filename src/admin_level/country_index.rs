@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use geo::{Centroid, CoordsIter, EuclideanDistance, Geometry, Point, Polygon};
 use rstar::{AABB, RTree};
 
@@ -31,7 +33,13 @@ pub struct country_index {
   tree: RTree<spatial_entry>,
 }
 
+static SHARED: OnceLock<country_index> = OnceLock::new();
+
 impl country_index {
+  pub fn shared() -> &'static country_index {
+    SHARED.get_or_init(country_index::from_boundaries)
+  }
+
   pub fn from_boundaries() -> Self {
     let mut entries: Vec<country_entry> = Vec::new();
     let mut boxes: Vec<spatial_entry> = Vec::new();
@@ -68,6 +76,13 @@ impl country_index {
       .and_then(|point| self.inside(point))
       .or_else(|| first_vertex.and_then(|point| self.inside(point)))
       .or_else(|| centroid.or(first_vertex).and_then(|point| self.nearest(point)))
+  }
+
+  // the rule of a row, so a point is looked for in the base its street was written to
+  pub fn country_at(&self, longitude: f64, latitude: f64) -> Option<&'static str> {
+    self
+      .inside([longitude, latitude])
+      .or_else(|| self.nearest([longitude, latitude]))
   }
 
   // the outlines of two neighbours overlap along their border, each drawn a few kilometres into

@@ -49,10 +49,10 @@ address/        an address resolved from a text or from a coordinate — not a t
   input             what the user typed: a `lat,lon` pair or a text
   label             the friendly-name template: parse, validate, render; and `place_label`, the one label without a template
   filter            the shared last pass: quality, region, last levels, the cut at ten
-  text              `address::query_by_text`: the search, the matches, the house number, the sort, and the point of a street that answers without one
-  coordinates       `address::query_by_coordinates`: the nearest streets, the matches under the areas that hold each street's nearest point, the number at the point
+  text              the three steps of a text the fan-out calls apart: the region, one query of the index, the hits read into matches with the house number, the sort, and the point of a street that answers without one
+  coordinates       one base's answer to a coordinate: the nearest streets, the matches under the areas that hold each street's nearest point, the number at the point
   path              `address::at_path`: the match of an area under a path already known, without a search
-  fan_out           `address::query_by_text_across` and `_by_coordinates_across`: one question over every base of the data path, the answers joined by coverage or by distance
+  fan_out           `address::query_by_text_across` and `_by_coordinates_across`: a text asked of every base at once, the queries of the index walked across them and the answers joined by coverage; a coordinate asked of the base of the country whose boundary holds the point
   house_number      the number of each street, resolved before its match is built; the rule itself is `house_number`
 osm_pbf_file/   a source `.osm.pbf` file — the `osm_pbf_files` table
   repository        the ddl, the index, the writes and reads of the ledger and the counts of a file over an attached base

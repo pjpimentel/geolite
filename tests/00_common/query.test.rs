@@ -8,6 +8,28 @@ pub fn matches(result: &Value) -> &Vec<Value> {
     .expect("matches must be an array")
 }
 
+pub fn countries_of(result: &Value) -> Vec<String> {
+  matches(result)
+    .iter()
+    .map(|m| {
+      m["attributes"]["country_iso_3166_1_alpha_2_code"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+    })
+    .collect()
+}
+
+pub fn files_of(result: &Value) -> Vec<String> {
+  result["databases"]
+    .as_array()
+    .expect("databases is a list")
+    .iter()
+    .filter_map(|database| database["file"].as_str())
+    .map(str::to_string)
+    .collect()
+}
+
 pub fn first(result: &Value) -> &Value {
   matches(result)
     .first()

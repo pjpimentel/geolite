@@ -16,6 +16,7 @@ pub use entity::{
   admin_level, database_status, query_house_number, query_match, query_match_attributes,
   query_output, query_service,
 };
+pub(crate) use fan_out::in_parallel;
 pub use filter::parse_min_quality;
 pub use input::query_input;
 pub use label::validate_friendly_name_format;
@@ -33,19 +34,25 @@ pub fn at_path(conn: &rusqlite::Connection, id: i64, path: &[i64]) -> Option<que
   path::run(conn, id, path)
 }
 
-// a base a question is asked of: its label, its connection and its index when it has one
+// a base a question is asked of: its label, its country, its connection, held alone while the
+// question runs, and its index when it has one
 pub struct base<'a> {
   pub file: &'a str,
-  pub conn: &'a rusqlite::Connection,
+  pub iso: &'a str,
+  pub conn: &'a mut rusqlite::Connection,
   pub index: Option<&'a tantivy_index>,
 }
 
-pub fn query_by_text_across(bases: &[base], text: &str, opts: &query_opts) -> query_output {
+pub fn country_of_point(latitude: f64, longitude: f64) -> Option<&'static str> {
+  crate::admin_level::country_index::country_index::shared().country_at(longitude, latitude)
+}
+
+pub fn query_by_text_across(bases: &mut [base], text: &str, opts: &query_opts) -> query_output {
   fan_out::by_text(bases, text, opts)
 }
 
 pub fn query_by_coordinates_across(
-  bases: &[base],
+  bases: &mut [base],
   latitude: f64,
   longitude: f64,
   opts: &query_opts,

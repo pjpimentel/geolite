@@ -147,7 +147,9 @@ three field variants — folded (lower case, no diacritics), strict (as written)
 names, or the country on its path for a row written before every row carried one — are expanded
 in both directions into the folded text, so `rua` finds `r.` and back.
 
-`search` runs three queries, each one only when the one before is empty. the strict one demands
+`search` runs one of three queries, the one `search_tier` names; the caller walks them in the
+order of `search_tier::WALK`, each one only when the one before answered nothing — `address`'s
+fan-out, across every base of the data path at once. the strict one demands
 every token exactly, in the name or in the ancestry, and wins when it finds anything — phrase order
 and the strict and lower forms only re-rank that set, never widen it. the second one is the strict
 one without demanding the words the caller names as optional, which the text service fills with

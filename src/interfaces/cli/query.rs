@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::address::{base, query_input, query_opts};
-use crate::admin_level_hierarchy::tantivy_index;
+use crate::admin_level_hierarchy::{tantivy_boosts, tantivy_index};
 use crate::database::store::base_files;
 
 pub fn command_handler_query(
@@ -12,24 +12,25 @@ pub fn command_handler_query(
   opts: query_opts,
 ) {
   let served = crate::interfaces::cli::served_bases(data_path, single);
-  let selected = match crate::interfaces::cli::select_bases(&served, countries) {
+  let mut selected = match crate::interfaces::cli::select_bases(&served, countries) {
     Ok(selected) => selected,
     Err(message) => {
       eprintln!("\x1b[1;31merror\x1b[0m: {message}");
       std::process::exit(1);
     }
   };
-  let boosts = crate::presets::DEFAULT.index_addresses.boosts;
-  let conns: Vec<rusqlite::Connection> = selected
-    .iter()
-    .map(|base| crate::database::store::open_base_immutable(&base.sqlite))
-    .collect();
-  let indexes: Vec<Option<tantivy_index>> = selected
-    .iter()
-    .map(|base| crate::admin_level_hierarchy::search_index::load(Path::new(&base.index), boosts))
-    .collect();
   let input = query_input::parse(text);
-  if input == query_input::text && indexes.iter().all(Option::is_none) {
+  if let query_input::coordinates {
+    latitude,
+    longitude,
+  } = input
+  {
+    let country = crate::address::country_of_point(latitude, longitude);
+    selected.retain(|base| country.is_some_and(|iso| base.iso.eq_ignore_ascii_case(iso)));
+  }
+  let boosts = crate::presets::DEFAULT.index_addresses.boosts;
+  let mut opened = open_at_once(&selected, boosts);
+  if input == query_input::text && opened.iter().all(|(_, index)| index.is_none()) {
     eprintln!(
       "\x1b[1;31merror\x1b[0m: tantivy index not found for {} — run `geolite exec index-addresses` first",
       selected
@@ -41,12 +42,13 @@ pub fn command_handler_query(
     std::process::exit(1);
   }
   let labels: Vec<String> = selected.iter().map(base_files::label).collect();
-  let bases: Vec<base> = labels
+  let mut bases: Vec<base> = labels
     .iter()
-    .zip(&conns)
-    .zip(&indexes)
-    .map(|((file, conn), index)| base {
+    .zip(&selected)
+    .zip(&mut opened)
+    .map(|((file, files), (conn, index))| base {
       file,
+      iso: &files.iso,
       conn,
       index: index.as_ref(),
     })
@@ -55,8 +57,20 @@ pub fn command_handler_query(
     query_input::coordinates {
       latitude,
       longitude,
-    } => crate::address::query_by_coordinates_across(&bases, latitude, longitude, &opts),
-    query_input::text => crate::address::query_by_text_across(&bases, text, &opts),
+    } => crate::address::query_by_coordinates_across(&mut bases, latitude, longitude, &opts),
+    query_input::text => crate::address::query_by_text_across(&mut bases, text, &opts),
   };
   println!("{}", serde_json::to_string_pretty(&result).unwrap());
+}
+
+fn open_at_once(
+  bases: &[base_files],
+  boosts: tantivy_boosts,
+) -> Vec<(rusqlite::Connection, Option<tantivy_index>)> {
+  crate::address::in_parallel(bases.iter().collect(), |files| {
+    (
+      crate::database::store::open_base_immutable(&files.sqlite),
+      crate::admin_level_hierarchy::search_index::load(Path::new(&files.index), boosts),
+    )
+  })
 }

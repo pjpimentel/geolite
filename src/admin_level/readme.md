@@ -138,7 +138,9 @@ country closest to it. so every row has a country. the outlines are the ones of 
 extracts, each drawn a few kilometres into its neighbours, so a point near a border is inside two
 of them: it goes to the country whose outline is farthest from it, the one it is deeper inside,
 which is the true border when both outlines run the same distance past it. the point test is the
-one of the hierarchy resolver, in `point_in_polygon`.
+one of the hierarchy resolver, in `point_in_polygon`. the query reads the same index, built once
+per process (`shared`), to send a coordinate to the base of the country whose outline holds it:
+the rule that wrote the row is the one that finds it.
 
 the country decides two things before the row is written (`extract::identity_of`): whether the
 level is one the country keeps at all (`admin_levels`, the reason a brazilian `region` or

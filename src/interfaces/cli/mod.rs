@@ -184,16 +184,17 @@ pub(crate) fn select_bases(
   let Some(countries) = countries else {
     return Ok(bases.to_vec());
   };
-  countries
-    .iter()
-    .map(|iso| {
-      bases
-        .iter()
-        .find(|base| base.iso.eq_ignore_ascii_case(iso))
-        .cloned()
-        .ok_or_else(|| format!("countries: no base for '{iso}'"))
-    })
-    .collect()
+  let mut selected: Vec<base_files> = Vec::with_capacity(countries.len());
+  for iso in countries {
+    let base = bases
+      .iter()
+      .find(|base| base.iso.eq_ignore_ascii_case(iso))
+      .ok_or_else(|| format!("countries: no base for '{iso}'"))?;
+    if !selected.iter().any(|picked| picked.iso == base.iso) {
+      selected.push(base.clone());
+    }
+  }
+  Ok(selected)
 }
 
 pub fn run() {

@@ -126,6 +126,21 @@ pub struct search_hit {
   pub score: f32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum search_tier {
+  every_token,
+  without_optional,
+  loose,
+}
+
+impl search_tier {
+  pub const WALK: [search_tier; 3] = [
+    search_tier::every_token,
+    search_tier::without_optional,
+    search_tier::loose,
+  ];
+}
+
 pub struct tantivy_index {
   reader: IndexReader,
   id_field: Field,
@@ -451,16 +466,13 @@ fn run_query(searcher: &Searcher, query: BooleanQuery, limit: usize) -> Vec<sear
 }
 
 impl tantivy_index {
-  // three queries, each one running only when the one before is empty. the strict one demands
-  // every token exactly, in the name or in the ancestry: only documents covering the whole query
-  // come back. the second one is the strict one with the tokens of `optional_words` no longer
-  // demanded: a house number is a word no document holds, and without this step it would send
-  // the whole query to the loose one, where a document repeating half of the query outranks the
-  // one covering everything but the number. the loose one takes exact and fuzzy terms as Should
-  // clauses, which covers a typo, an extra word or partial coverage. the score is the raw bm25
-  // of whichever query found the document, in the order tantivy delivered.
+  // one of the three queries, walked by the caller in the order of `search_tier::WALK`, the next
+  // one only when the one before answered nothing. a house number is a word no document holds:
+  // without the middle one the whole query would go to the loose one, where a document repeating
+  // half of the query outranks the one covering everything but the number
   pub fn search(
     &self,
+    tier: search_tier,
     query: &str,
     optional_words: &[&str],
     limit: usize,
@@ -471,32 +483,25 @@ impl tantivy_index {
     if tokens.is_empty() {
       return vec![];
     }
-    let searcher = self.reader.searcher();
-    let run = |mut clauses: Vec<clause>| {
-      clauses.extend(self.filter_clauses(last_admin_levels, allowed_ids));
-      run_query(&searcher, BooleanQuery::new(clauses), limit)
-    };
-
-    let strict_hits = run(self.strict_clauses(query, &tokens, &HashSet::new()));
-    if !strict_hits.is_empty() {
-      return strict_hits;
-    }
-
-    let optional: HashSet<String> = optional_words
-      .iter()
-      .flat_map(|word| tokenize(word))
-      .collect();
-    // with no token left to demand, the filters would be the only Must clauses and every document
-    // they let through would come back, scored or not
-    let demands_a_token = tokens.iter().any(|token| !optional.contains(token));
-    if !optional.is_empty() && demands_a_token {
-      let hits = run(self.strict_clauses(query, &tokens, &optional));
-      if !hits.is_empty() {
-        return hits;
+    let mut clauses = match tier {
+      search_tier::every_token => self.strict_clauses(query, &tokens, &HashSet::new()),
+      search_tier::without_optional => {
+        let optional: HashSet<String> = optional_words
+          .iter()
+          .flat_map(|word| tokenize(word))
+          .collect();
+        // with no token left to demand, the filters would be the only Must clauses and every
+        // document they let through would come back, scored or not
+        let demands_a_token = tokens.iter().any(|token| !optional.contains(token));
+        if optional.is_empty() || !demands_a_token {
+          return vec![];
+        }
+        self.strict_clauses(query, &tokens, &optional)
       }
-    }
-
-    run(self.loose_clauses(&tokens))
+      search_tier::loose => self.loose_clauses(&tokens),
+    };
+    clauses.extend(self.filter_clauses(last_admin_levels, allowed_ids));
+    run_query(&self.reader.searcher(), BooleanQuery::new(clauses), limit)
   }
 
   fn strict_clauses(

@@ -146,9 +146,9 @@ indexes are built once, over the rows that stay. no index stage deletes or folds
 
 ### query
 ```bash
-$ geolite query "-23.970949,-46.318730"
-$ geolite query "rua castro alves, embare, santos, sao paulo"
-$ geolite query "rua castro alves, embare, santos, sao paulo" --countries br   # the bases named; every base of the data path otherwise
+$ geolite query "-23.970949,-46.318730"                                         # the base of the country whose boundary holds the point
+$ geolite query "rua castro alves, embare, santos, sao paulo"                   # every base of the data path at once
+$ geolite query "rua castro alves, embare, santos, sao paulo" --countries br   # the bases named
 ```
 
 ### explore

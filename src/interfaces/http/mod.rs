@@ -89,6 +89,7 @@ pub fn serve(bound: bound_server, bases: Vec<base_files>, threads: u8) {
     })
     .collect();
   let served = Arc::new(served);
+  crate::admin_level::country_index::country_index::shared();
 
   // SAFETY: on_shutdown_signal only performs an atomic store, which is async-signal-safe.
   unsafe {
@@ -111,7 +112,7 @@ pub fn serve(bound: bound_server, bases: Vec<base_files>, threads: u8) {
       let server = server.clone();
       let served = served.clone();
       std::thread::spawn(move || {
-        let bases: Vec<worker_base> = served
+        let mut bases: Vec<worker_base> = served
           .iter()
           .map(|base| worker_base {
             files: &base.files,
@@ -124,7 +125,7 @@ pub fn serve(bound: bound_server, bases: Vec<base_files>, threads: u8) {
         // shutdown flag every poll interval (tiny_http's unblock() only wakes one thread).
         while !SHUTDOWN.load(Ordering::Relaxed) {
           match server.recv_timeout(Duration::from_millis(250)) {
-            Ok(Some(request)) => handle(request, &bases),
+            Ok(Some(request)) => handle(request, &mut bases),
             Ok(None) => {}
             Err(_) => break,
           }
@@ -152,22 +153,35 @@ fn parse_countries(raw: &str) -> Result<Vec<String>, String> {
   Ok(isos)
 }
 
-fn select<'a>(bases: &'a [worker_base<'a>], countries: Option<&[String]>) -> Result<Vec<&'a worker_base<'a>>, String> {
+// the bases named, in the order named, a country named twice asked once: a base is held alone
+// while a question runs
+fn select<'a, 'b>(
+  bases: &'b mut [worker_base<'a>],
+  countries: Option<&[String]>,
+) -> Result<Vec<&'b mut worker_base<'a>>, String> {
   let Some(countries) = countries else {
-    return Ok(bases.iter().collect());
+    return Ok(bases.iter_mut().collect());
   };
-  countries
-    .iter()
-    .map(|iso| {
-      bases
-        .iter()
-        .find(|base| base.files.iso.eq_ignore_ascii_case(iso))
-        .ok_or_else(|| format!("countries: no base for '{iso}'"))
-    })
-    .collect()
+  let mut wanted: Vec<usize> = Vec::with_capacity(countries.len());
+  for iso in countries {
+    let found = bases
+      .iter()
+      .position(|base| base.files.iso.eq_ignore_ascii_case(iso))
+      .ok_or_else(|| format!("countries: no base for '{iso}'"))?;
+    if !wanted.contains(&found) {
+      wanted.push(found);
+    }
+  }
+  let mut picked: Vec<(usize, &'b mut worker_base<'a>)> = bases
+    .iter_mut()
+    .enumerate()
+    .filter_map(|(i, base)| wanted.iter().position(|&w| w == i).map(|rank| (rank, base)))
+    .collect();
+  picked.sort_by_key(|(rank, _)| *rank);
+  Ok(picked.into_iter().map(|(_, base)| base).collect())
 }
 
-fn handle(request: tiny_http::Request, bases: &[worker_base]) {
+fn handle(request: tiny_http::Request, bases: &mut [worker_base]) {
   let start = Instant::now();
   let url = request.url().to_string();
   let method = request.method().clone();
@@ -297,11 +311,12 @@ fn handle(request: tiny_http::Request, bases: &[worker_base]) {
             if etag::none_match(&request, &etag) {
               respond_not_modified(request, &etag)
             } else {
-              let asked: Vec<crate::address::base> = selected
-                .iter()
+              let mut asked: Vec<crate::address::base> = selected
+                .into_iter()
                 .map(|base| crate::address::base {
                   file: &base.label,
-                  conn: &base.conn,
+                  iso: &base.files.iso,
+                  conn: &mut base.conn,
                   index: base.index,
                 })
                 .collect();
@@ -309,9 +324,11 @@ fn handle(request: tiny_http::Request, bases: &[worker_base]) {
                 crate::address::query_input::coordinates {
                   latitude,
                   longitude,
-                } => crate::address::query_by_coordinates_across(&asked, latitude, longitude, &opts),
+                } => crate::address::query_by_coordinates_across(
+                  &mut asked, latitude, longitude, &opts,
+                ),
                 crate::address::query_input::text => {
-                  crate::address::query_by_text_across(&asked, &raw, &opts)
+                  crate::address::query_by_text_across(&mut asked, &raw, &opts)
                 }
               };
               match serde_json::to_string(&result) {
