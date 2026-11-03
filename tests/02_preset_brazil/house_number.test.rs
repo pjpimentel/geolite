@@ -790,7 +790,11 @@ fn _01_05_a_presumed_number_is_never_below_one() {
 #[test]
 #[ignore]
 fn _01_06_every_street_a_point_answers_carries_a_number_on_its_own_point() {
-  let result = world().query_json(&[&lat_lon(point_from(NUMBERED_POINT))]);
+  let result = world().query_json(&[
+    &lat_lon(point_from(NUMBERED_POINT)),
+    "--include-wkt",
+    "true",
+  ]);
   assert_eq!(matches(&result).len(), 10);
   for m in matches(&result) {
     let street = name_at(m, 12).expect("a coordinate match is a street");

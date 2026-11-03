@@ -257,10 +257,9 @@ fn handle(request: tiny_http::Request, bases: &mut [worker_base]) {
         .map(|s| parse_countries(&s))
         .transpose()
         .and_then(|countries| select(bases, countries.as_deref()).map(|selected| (countries, selected)));
-      // opt-out: only include_wkt=false switches it off; absent or any other value keeps it
       let include_wkt = query_param(&query_string, "include_wkt")
-        .map(|s| s != "false")
-        .unwrap_or(true);
+        .map(|s| s == "true")
+        .unwrap_or(false);
       match (
         q,
         friendly_name_format,

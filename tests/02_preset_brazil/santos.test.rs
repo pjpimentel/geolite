@@ -548,7 +548,7 @@ fn _00_15_a_number_on_one_way_of_a_folded_street_resolves_from_osm_data_on_the_o
 #[test]
 #[ignore]
 fn _00_16_a_street_of_several_ways_answers_a_point_on_the_street() {
-  let result = world().query_json(&[TEXT_QUERY]);
+  let result = world().query_json(&[TEXT_QUERY, "--include-wkt", "true"]);
   let top = first(&result);
   let street = Wkt(
     wkt_at(top, 12)
@@ -974,7 +974,10 @@ fn _03_04_a_response_past_the_chunked_threshold_stays_identity_encoded() {
   let s = w.start_server();
   let r = get(
     s.port,
-    &format!("/geocode?query={}", encode(COORDINATES_QUERY)),
+    &format!(
+      "/geocode?query={}&include_wkt=true",
+      encode(COORDINATES_QUERY)
+    ),
   );
   assert_eq!(r.status, 200);
   assert!(
@@ -1192,7 +1195,7 @@ fn _04_00_header_stage_reports_the_fixture_generator() {
 #[ignore]
 fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
   let w = world();
-  let result = w.query_json(&[TEXT_QUERY]);
+  let result = w.query_json(&[TEXT_QUERY, "--include-wkt", "true"]);
   let top = first(&result);
   let wkt_of =
     |level: u64| wkt_at(top, level).unwrap_or_else(|| panic!("level {level} must carry geometry"));
@@ -1217,7 +1220,13 @@ fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
 #[ignore]
 fn _05_01_include_wkt_attaches_geometry_to_every_level_on_the_coordinate_path() {
   // the quality cut leaves the one match at 0 m: every match would carry the country ring
-  let result = world().query_json(&[NUMBERED_POINT, "--min-quality", "1"]);
+  let result = world().query_json(&[
+    NUMBERED_POINT,
+    "--min-quality",
+    "1",
+    "--include-wkt",
+    "true",
+  ]);
   let top = first(&result);
   assert_eq!(levels_of(top), [2, 4, 8, 10, 12]);
   assert!(
@@ -1238,7 +1247,7 @@ fn _05_01_include_wkt_attaches_geometry_to_every_level_on_the_coordinate_path() 
 #[ignore]
 fn _05_02_the_wkt_of_a_folded_street_has_one_line_per_merged_way() {
   for (query, ways) in [(TEXT_QUERY, 2), (FIVE_WAYS_QUERY, 5)] {
-    let result = world().query_json(&[query]);
+    let result = world().query_json(&[query, "--include-wkt", "true"]);
     let street = level_at(first(&result), 12).expect("the top match is a street");
     let trace = street["osm_merged_way_ids"]
       .as_array()

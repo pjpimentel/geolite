@@ -97,7 +97,7 @@ enum commands {
     bounding_wkt: Option<crate::admin_level::geometry::bounding_geometry>,
     #[arg(long, value_delimiter = ',', value_parser = crate::admin_level::level::parse)]
     last_admin_levels: Option<Vec<crate::admin_level::level>>,
-    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false)]
     include_wkt: bool,
     #[arg(long, value_delimiter = ',')]
     countries: Option<Vec<String>>,

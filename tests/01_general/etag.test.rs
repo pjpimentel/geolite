@@ -196,3 +196,18 @@ fn _00_08_the_etag_of_a_question_survives_a_restart() {
   let first = etag_at(w.start_server());
   assert_eq!(etag_at(w.start_server()), first);
 }
+
+// 00.09. etag: a question without include_wkt is the same question as include_wkt=false, and the
+// geometry is another
+#[test]
+#[ignore]
+fn _00_09_an_absent_include_wkt_shares_the_etag_of_false_and_true_has_its_own() {
+  let s = world().start_server();
+  let absent = get(s.port, "/geocode?query=rua%20castro%20alves");
+  let disabled = get(s.port, &ask(ANY_TEXT).http_path());
+  let enabled = get(s.port, &ask(ANY_TEXT).with_wkt().http_path());
+  assert_eq!(absent.status, 200);
+  assert_eq!(etag_of(&absent), etag_of(&disabled));
+  assert_eq!(absent.body, disabled.body);
+  assert_ne!(etag_of(&absent), etag_of(&enabled));
+}

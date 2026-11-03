@@ -3,6 +3,7 @@
 ## **planned** - 0.0.x
 
 1. REMOVED the web ui served at `/` by `http-server`, so the server serves only the api.
+1. REMOVED the `wkt` of every level and the `include_wkt` flag from the answer of `/geocode` (not backward compatible), so an answer names a level and never carries its shape.
 1. MODIFIED the storage of a base to one file, the `data.sqlite3` and the `index.tantivy` of its folder packed together, so a base is one file to copy, publish and merge.
 1. MODIFIED the abbreviations of a preset to be replaced in the name when the row is written, `r.` stored as `rua`, instead of expanded as aliases on indexing and on query, so a name is persisted once in its full form and the index holds one token per word.
 1. ADDED a repository of prebuilt data per region and schema version, with a `geolite fetch <region>` that downloads instead of building, so a user queries without the build.
@@ -16,6 +17,11 @@
 1. ADDED the boundary of a country to its preset, the wkt of `boundaries/<iso>.wkt` carried by `<iso>.rs`, so a country is one file holding its outline and its policy.
 1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
 1. ADDED e2e scenarios over south america asking the landmarks and the official addresses of each of its countries, on real data cut around each one, so the answers over a continent are checked on the places a user actually types.
+1. ADDED an endpoint to `http-server` answering the full record of one level named by an answer, its `wkt` among it, so a client asks the shape only of the level it draws.
+
+## **2026-11-03** - 0.0.18
+
+1. MODIFIED `include_wkt` to be off by default on `/geocode` and on `query`, only the literal `true` turning it on, so an answer weighs kilobytes instead of tens of megabytes. this changes the contract: a client that reads the `wkt` of a level must now ask for it.
 
 ## **2026-10-23** - 0.0.17
 

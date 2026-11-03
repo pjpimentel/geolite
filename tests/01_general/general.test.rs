@@ -585,22 +585,28 @@ fn _01_17_a_missing_query_param_returns_bad_request() {
 // 01.18. contract
 #[test]
 #[ignore]
-fn _01_18_only_the_literal_false_disables_the_geometry() {
+fn _01_18_only_the_literal_true_enables_the_geometry() {
   let w = world();
   let s = w.start_server();
   let base = format!("/geocode?query={}", encode(ANY_POINT));
 
-  let disabled = get(s.port, &format!("{base}&include_wkt=false"));
+  let enabled = get(s.port, &format!("{base}&include_wkt=true"));
   assert!(
-    !disabled.text().contains("\"wkt\""),
-    "include_wkt=false must drop the geometry"
+    enabled.text().contains("\"wkt\""),
+    "include_wkt=true must carry the geometry"
   );
 
-  for value in ["0", "no", "FALSE"] {
-    let kept = get(s.port, &format!("{base}&include_wkt={value}"));
+  let absent = get(s.port, &base);
+  assert!(
+    !absent.text().contains("\"wkt\""),
+    "the geometry must be off when include_wkt is absent"
+  );
+
+  for value in ["false", "0", "1", "no", "TRUE"] {
+    let dropped = get(s.port, &format!("{base}&include_wkt={value}"));
     assert!(
-      kept.text().contains("\"wkt\""),
-      "include_wkt={value} is not the literal `false` and must keep the geometry"
+      !dropped.text().contains("\"wkt\""),
+      "include_wkt={value} is not the literal `true` and must drop the geometry"
     );
   }
 }

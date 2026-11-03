@@ -120,7 +120,8 @@ the seven types of the json (`query_output`, `query_service`, `query_match`, `ad
 owns) are the openapi schema and keep their names; coordinates are rounded to five decimals
 (`round5`). the ladder of a match is built once, in `match_sources`: the paths of the ids climbed
 from the edges, the metadata of the ids and their ancestors, and the wkt only when `include_wkt`
-asks for it (the polygons of countries and states are megabytes). every level of the ladder
+is `true`, off by default on the cli and on http (the polygons of countries and states are
+megabytes: a match with them weighs tens of megabytes, without them a few kilobytes). every level of the ladder
 carries its own `post_code`, `null` when the area has none. a street folded from several ways
 carries `osm_merged_way_ids`, the osm way of each line of its `wkt`, in the order of the lines;
 the key is absent everywhere else, and it is read on every query rather than under
