@@ -97,8 +97,6 @@ enum commands {
     bounding_wkt: Option<crate::admin_level::geometry::bounding_geometry>,
     #[arg(long, value_delimiter = ',', value_parser = crate::admin_level::level::parse)]
     last_admin_levels: Option<Vec<crate::admin_level::level>>,
-    #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
-    include_wkt: bool,
     #[arg(long, value_delimiter = ',')]
     countries: Option<Vec<String>>,
   },
@@ -248,7 +246,6 @@ pub fn run() {
       min_quality,
       bounding_wkt,
       last_admin_levels,
-      include_wkt,
       countries,
     } => query::command_handler_query(
       &args.data_path,
@@ -260,7 +257,6 @@ pub fn run() {
         min_quality,
         bounding: bounding_wkt,
         last_admin_levels,
-        include_wkt,
       },
     ),
     commands::http_server { host, port } => http_server::command_handler_http_server(

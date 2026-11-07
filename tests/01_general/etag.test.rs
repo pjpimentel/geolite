@@ -91,7 +91,6 @@ fn _00_03_every_option_changes_the_etag() {
   let s = world().start_server();
   let variants = [
     ask(ANY_TEXT),
-    ask(ANY_TEXT).with_wkt(),
     ask(ANY_TEXT).last_admin_levels("12"),
     ask(ANY_TEXT).friendly_name_format("{admin_level_8_name}"),
     ask(ANY_TEXT).min_quality("0.5"),
@@ -134,11 +133,18 @@ fn _00_04_the_status_and_the_openapi_document_answer_not_modified_too() {
 #[ignore]
 fn _00_05_an_error_carries_no_etag_and_ignores_if_none_match() {
   let s = world().start_server();
-  let r = get(s.port, "/geocode");
-  assert_eq!((r.status, r.header("etag")), (400, None));
-  let r = get_with(s.port, "/geocode", &[("If-None-Match", "*")]);
-  assert_eq!((r.status, r.header("etag")), (400, None));
-  assert!(!r.body.is_empty(), "the error must keep its body");
+  for (path, status) in [
+    ("/geocode", 400),
+    ("/address", 400),
+    ("/address?id=abc", 400),
+    ("/address?id=xx.r59470", 404),
+  ] {
+    let r = get(s.port, path);
+    assert_eq!((r.status, r.header("etag")), (status, None), "{path}");
+    let r = get_with(s.port, path, &[("If-None-Match", "*")]);
+    assert_eq!((r.status, r.header("etag")), (status, None), "{path}");
+    assert!(!r.body.is_empty(), "{path}: the error must keep its body");
+  }
 }
 
 // 00.06. etag: the preflight lets a browser send `If-None-Match` and the answer lets it read the etag

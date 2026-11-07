@@ -1,9 +1,8 @@
 use std::cmp::Ordering;
-use std::collections::BTreeMap;
 
 use rusqlite::Connection;
 
-use super::entity::{attach_wkt, database_status, query_match, query_output, query_service};
+use super::entity::{database_status, query_match, query_output, query_service};
 use super::filter::MAX_RESULTS;
 use super::{base, coordinates, query_opts, text};
 use crate::admin_level::country_index::country_index;
@@ -38,16 +37,16 @@ pub(super) fn by_text(bases: &mut [base], text: &str, opts: &query_opts) -> quer
       break;
     }
   }
-  let answering: Vec<(usize, &mut Connection, &[search_hit])> = indexed
+  let answering: Vec<(usize, &str, &mut Connection, &[search_hit])> = indexed
     .iter_mut()
     .zip(&hits)
     .enumerate()
     .filter(|(_, (_, h))| !h.is_empty())
-    .map(|(i, (b, h))| (i, &mut *b.conn, h.as_slice()))
+    .map(|(i, (b, h))| (i, b.iso, &mut *b.conn, h.as_slice()))
     .collect();
   let answered = answering.len();
-  let answers = in_parallel(answering, |(i, conn, hits)| {
-    (i, text::matches_of(conn, text, hits, opts))
+  let answers = in_parallel(answering, |(i, iso, conn, hits)| {
+    (i, text::matches_of(conn, iso, text, hits, opts))
   });
   let mut tagged = tag_by_base(answers.into_iter());
   if answered > 1 {
@@ -59,7 +58,7 @@ pub(super) fn by_text(bases: &mut [base], text: &str, opts: &query_opts) -> quer
   query_output {
     service: query_service::text_to_address,
     databases,
-    matches: with_wkt(tagged, |i| &*indexed[i].conn, opts),
+    matches: tagged.into_iter().map(|(_, m)| m).collect(),
   }
 }
 
@@ -83,12 +82,11 @@ pub(super) fn by_coordinates(
     };
   };
   let databases = vec![database_status::of(holder.file, holder.conn, holder.index)];
-  let matches = coordinates::run(holder.conn, latitude, longitude, opts);
-  let tagged = tag_by_base(std::iter::once((0, matches)));
+  let matches = coordinates::run(holder.conn, holder.iso, latitude, longitude, opts);
   query_output {
     service: query_service::coordinates_to_address,
     databases,
-    matches: with_wkt(tagged, |_| &*holder.conn, opts),
+    matches,
   }
 }
 
@@ -119,24 +117,6 @@ fn tag_by_base(
     .collect()
 }
 
-// the polygons of countries and states are megabytes of wkt: they are loaded for the matches that
-// survived the cut, never for the candidates of every base
-fn with_wkt<'a>(
-  mut tagged: Vec<(usize, query_match)>,
-  conn_of: impl Fn(usize) -> &'a Connection,
-  opts: &query_opts,
-) -> Vec<query_match> {
-  if opts.include_wkt {
-    let mut by_base: BTreeMap<usize, Vec<&mut query_match>> = BTreeMap::new();
-    for (i, m) in &mut tagged {
-      by_base.entry(*i).or_default().push(m);
-    }
-    for (i, mut matches) in by_base {
-      attach_wkt(conn_of(i), &mut matches);
-    }
-  }
-  tagged.into_iter().map(|(_, m)| m).collect()
-}
 
 fn databases_of(bases: &[base]) -> Vec<database_status> {
   bases

@@ -3,9 +3,11 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 
 use super::entity::query_house_number;
+use crate::admin_level::level;
 use crate::admin_level::repository::admin_area_row;
 use crate::admin_level::spatial_index::nearest_street;
 use crate::house_number::repository::{numbers_by_street, stored_number};
+use crate::house_number::value::house_number;
 use crate::house_number::{
   house_number_origin, house_number_policy, house_number_resolution, policy, resolution, token,
 };
@@ -56,6 +58,23 @@ pub(super) fn at_point(
         .map(|read| (c.id, read))
     })
     .collect()
+}
+
+pub(super) fn on_street(
+  conn: &Connection,
+  number: &str,
+  street: &admin_area_row,
+  policy: &house_number_policy,
+) -> Option<house_number_resolution> {
+  if street.admin_level != level::street {
+    return None;
+  }
+  let wanted = house_number::recognize(number, policy)?;
+  let known = numbers_by_street(conn, &[street.id])
+    .remove(&street.id)
+    .unwrap_or_default();
+  let geometry = street.wkb.as_ref()?.geometry();
+  resolution::place(&wanted, &known, geometry, policy)
 }
 
 pub(super) fn reported(resolution: &house_number_resolution) -> query_house_number {

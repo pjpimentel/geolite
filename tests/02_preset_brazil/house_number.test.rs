@@ -1,5 +1,5 @@
 use crate::common::ask::ask;
-use crate::common::harness::{decode_wkb, query_at, relabel_country};
+use crate::common::harness::{decode_wkb, query_at, record_of, relabel_country};
 use crate::common::query::{
   distances, first, kind_of, levels_of, matches, meters_per_number, name_at, number_of,
   osm_node_ids, point_of, street_way, wkt_at,
@@ -790,7 +790,9 @@ fn _01_05_a_presumed_number_is_never_below_one() {
 #[test]
 #[ignore]
 fn _01_06_every_street_a_point_answers_carries_a_number_on_its_own_point() {
-  let result = world().query_json(&[&lat_lon(point_from(NUMBERED_POINT))]);
+  let w = world();
+  let s = w.start_server();
+  let result = w.query_json(&[&lat_lon(point_from(NUMBERED_POINT))]);
   assert_eq!(matches(&result).len(), 10);
   for m in matches(&result) {
     let street = name_at(m, 12).expect("a coordinate match is a street");
@@ -802,9 +804,13 @@ fn _01_06_every_street_a_point_answers_carries_a_number_on_its_own_point() {
     let kind = kind_of(m).unwrap_or_else(|| panic!("{street} answers no kind"));
     assert!(SCENARIOS.contains(&kind), "{street}: {kind:?}");
     assert_numbered(m, number, kind, &street);
-    let geometry = Wkt(wkt_at(m, 12).expect("the street carries geometry").as_str())
-      .to_geo()
-      .expect("the street geometry must be valid wkt");
+    let geometry = Wkt(
+      wkt_at(&record_of(s.port, m), 12)
+        .expect("the record of the street carries its geometry")
+        .as_str(),
+    )
+    .to_geo()
+    .expect("the street geometry must be valid wkt");
     assert_on_street(answered_point(m), &geometry, &street);
   }
   let distances = distances(&result);

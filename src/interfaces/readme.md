@@ -3,7 +3,7 @@
 
 ```
 cli/    the `geolite` command: parses the arguments, resolves the paths, and runs one subcommand
-http/   the http server that `geolite http-server` starts: `/geocode`, `/status`, `/openapi.json`, `/docs`
+http/   the http server that `geolite http-server` starts: `/geocode`, `/address`, `/status`, `/openapi.json`, `/docs`
 tui/    the tree of admin levels that `geolite tui` opens: walked like folders down to the address and the map of a leaf, or printed when stdout is not a terminal
 ```
 

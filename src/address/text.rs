@@ -51,6 +51,7 @@ pub(super) fn hits_at(
 
 pub(super) fn matches_of(
   conn: &Connection,
+  iso: &str,
   text: &str,
   hits: &[search_hit],
   opts: &query_opts,
@@ -59,7 +60,7 @@ pub(super) fn matches_of(
   let mut ids: Vec<i64> = hits.iter().map(|hit| hit.admin_level_id).collect();
   ids.sort_unstable();
   ids.dedup();
-  let mut sources = match_sources::load(conn, &ids);
+  let mut sources = match_sources::load(conn, iso, &ids);
   sources.load_leaf_boxes(conn);
   let records = crate::admin_level::repository::load_full_by_ids(conn, &ids);
   let record_map: HashMap<i64, &admin_area_row> = records.iter().map(|r| (r.id, r)).collect();

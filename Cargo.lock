@@ -932,7 +932,7 @@ dependencies = [
 
 [[package]]
 name = "geolite"
-version = "0.0.17"
+version = "0.0.18"
 dependencies = [
  "clap",
  "flate2",
@@ -951,7 +951,6 @@ dependencies = [
  "tiny_http",
  "ureq",
  "utoipa",
- "uuid",
 ]
 
 [[package]]
@@ -2236,12 +2235,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha1_smol"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
-
-[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2900,7 +2893,6 @@ dependencies = [
  "getrandom 0.4.2",
  "js-sys",
  "serde_core",
- "sha1_smol",
  "wasm-bindgen",
 ]
 

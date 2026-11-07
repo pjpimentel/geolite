@@ -6,7 +6,6 @@ use serde_json::Value;
 #[derive(Clone)]
 pub struct ask {
   input: String,
-  include_wkt: bool,
   friendly_name_format: Option<String>,
   min_quality: Option<String>,
   bounding_wkt: Option<String>,
@@ -16,7 +15,6 @@ pub struct ask {
 pub fn ask(input: &str) -> ask {
   ask {
     input: input.to_string(),
-    include_wkt: false,
     friendly_name_format: None,
     min_quality: None,
     bounding_wkt: None,
@@ -25,11 +23,6 @@ pub fn ask(input: &str) -> ask {
 }
 
 impl ask {
-  pub fn with_wkt(mut self) -> Self {
-    self.include_wkt = true;
-    self
-  }
-
   pub fn friendly_name_format(mut self, value: &str) -> Self {
     self.friendly_name_format = Some(value.to_string());
     self
@@ -51,12 +44,7 @@ impl ask {
   }
 
   pub fn cli_args(&self) -> Vec<String> {
-    let mut args = vec![
-      "query".to_string(),
-      self.input.clone(),
-      "--include-wkt".to_string(),
-      self.include_wkt.to_string(),
-    ];
+    let mut args = vec!["query".to_string(), self.input.clone()];
     for (flag, value) in [
       ("--friendly-name-format", &self.friendly_name_format),
       ("--min-quality", &self.min_quality),
@@ -72,11 +60,7 @@ impl ask {
   }
 
   pub fn http_path(&self) -> String {
-    let mut path = format!(
-      "/geocode?query={}&include_wkt={}",
-      encode(&self.input),
-      self.include_wkt
-    );
+    let mut path = format!("/geocode?query={}", encode(&self.input));
     for (param, value) in [
       ("friendly_name_format", &self.friendly_name_format),
       // the http surface calls it `quality`, the cli `--min-quality`.
@@ -104,9 +88,6 @@ impl std::fmt::Display for ask {
       if let Some(value) = value {
         write!(f, " {flag}={value}")?;
       }
-    }
-    if self.include_wkt {
-      write!(f, " +wkt")?;
     }
     Ok(())
   }

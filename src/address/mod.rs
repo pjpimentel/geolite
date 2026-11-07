@@ -3,6 +3,7 @@ mod entity;
 mod fan_out;
 mod filter;
 mod house_number;
+mod id;
 mod input;
 mod label;
 mod path;
@@ -18,6 +19,7 @@ pub use entity::{
 };
 pub(crate) use fan_out::in_parallel;
 pub use filter::parse_min_quality;
+pub use id::address_id;
 pub use input::query_input;
 pub use label::validate_friendly_name_format;
 
@@ -27,11 +29,29 @@ pub struct query_opts<'a> {
   pub min_quality: Option<f64>,
   pub bounding: Option<bounding_geometry>,
   pub last_admin_levels: Option<Vec<level>>,
-  pub include_wkt: bool,
 }
 
-pub fn at_path(conn: &rusqlite::Connection, id: i64, path: &[i64]) -> Option<query_match> {
-  path::run(conn, id, path)
+pub fn at_path(
+  conn: &rusqlite::Connection,
+  iso: &str,
+  id: i64,
+  path: &[i64],
+) -> Option<query_match> {
+  path::run(conn, iso, id, path, None)
+}
+
+pub fn record(conn: &rusqlite::Connection, id: &address_id) -> Option<query_match> {
+  path::run(
+    conn,
+    &id.iso,
+    id.leaf,
+    &id.path,
+    id.house_number.as_deref(),
+  )
+}
+
+pub fn with_shapes(conn: &rusqlite::Connection, record: &mut query_match) {
+  entity::attach_wkt(conn, &mut [record]);
 }
 
 // a base a question is asked of: its label, its country, its connection, held alone while the

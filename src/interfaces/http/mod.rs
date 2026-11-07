@@ -193,7 +193,7 @@ fn handle(request: tiny_http::Request, bases: &mut [worker_base]) {
 
   let known_route = matches!(
     path.as_str(),
-    "/" | "/geocode" | "/status" | "/openapi.json" | "/docs"
+    "/" | "/geocode" | "/address" | "/status" | "/openapi.json" | "/docs"
   );
 
   if known_route && method == Method::Options {
@@ -238,6 +238,49 @@ fn handle(request: tiny_http::Request, bases: &mut [worker_base]) {
       }
     }
     "/openapi.json" => respond_ok(request, openapi::spec_json()),
+    "/address" => match query_param(&query_string, "id") {
+      None => respond_json(
+        request,
+        StatusCode(400),
+        r#"{"error":"missing query param: id"}"#,
+      ),
+      Some(raw) => match crate::address::address_id::parse(&raw) {
+        None => respond_json(
+          request,
+          StatusCode(400),
+          r#"{"error":"id must be a country code and the osm elements of a path, e.g. br.r59470.r2931354.w255710390"}"#,
+        ),
+        Some(id) => {
+          let located = bases
+            .iter()
+            .find(|base| base.files.iso.eq_ignore_ascii_case(&id.iso))
+            .and_then(|base| crate::address::record(&base.conn, &id).map(|found| (base, found)));
+          match located {
+            None => respond_json(
+              request,
+              StatusCode(404),
+              r#"{"error":"address not found"}"#,
+            ),
+            Some((base, mut found)) => {
+              let etag = etag::of_address(&id);
+              if etag::none_match(&request, &etag) {
+                respond_not_modified(request, &etag)
+              } else {
+                crate::address::with_shapes(&base.conn, &mut found);
+                match serde_json::to_string(&found) {
+                  Ok(body) => respond_ok_with_etag(request, &body, &etag),
+                  Err(_) => respond_json(
+                    request,
+                    StatusCode(500),
+                    r#"{"error":"serialization error"}"#,
+                  ),
+                }
+              }
+            }
+          }
+        }
+      },
+    },
     "/docs" => respond_html(request, StatusCode(200), openapi::SWAGGER_HTML),
     "/geocode" => {
       let q = query_param(&query_string, "query");
@@ -257,10 +300,6 @@ fn handle(request: tiny_http::Request, bases: &mut [worker_base]) {
         .map(|s| parse_countries(&s))
         .transpose()
         .and_then(|countries| select(bases, countries.as_deref()).map(|selected| (countries, selected)));
-      // opt-out: only include_wkt=false switches it off; absent or any other value keeps it
-      let include_wkt = query_param(&query_string, "include_wkt")
-        .map(|s| s != "false")
-        .unwrap_or(true);
       match (
         q,
         friendly_name_format,
@@ -305,7 +344,6 @@ fn handle(request: tiny_http::Request, bases: &mut [worker_base]) {
               min_quality,
               bounding,
               last_admin_levels,
-              include_wkt,
             };
             let etag = etag::of_question(&raw, &opts, countries.as_deref());
             if etag::none_match(&request, &etag) {

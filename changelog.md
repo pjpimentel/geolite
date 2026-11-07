@@ -17,6 +17,13 @@
 1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
 1. ADDED e2e scenarios over south america asking the landmarks and the official addresses of each of its countries, on real data cut around each one, so the answers over a continent are checked on the places a user actually types.
 
+## **2026-11-07** - 0.0.18
+
+1. REMOVED the `wkt` of the admin levels from the answers of `/geocode` and `geolite query`, with the `include_wkt` option of both (not backward compatible), so an answer weighs its matches and never the ring of a country.
+1. MODIFIED the id of a match into the path it took, the country of its base, the osm element of each level from the root to the leaf and the house number answered, `br.r59470.r2931354.w255710390.n197` (not backward compatible), so an answer is found again by its id and nothing is stored for it.
+1. MODIFIED the web ui to ask `/address` for the shapes of the match selected, so the map draws a geometry only when one is looked at.
+1. ADDED `GET /address?id=<id>` to `http-server`, the record of one match with the `wkt` of every level and its house number on its point, so a client reads the shapes of an address it already holds.
+
 ## **2026-10-23** - 0.0.17
 
 1. REMOVED the `--preset` flag and the preset inferred from the source name, every row extracted, indexed and answered under the preset of the country whose boundary holds it (not backward compatible), so a base of many countries answers each one under its own preset.

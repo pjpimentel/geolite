@@ -466,7 +466,7 @@ fn _03_00_an_unreadable_geometry_warns_and_drops_the_row() {
     ("santos", "Santos", "blob too short"),
     ("sao paulo", "São Paulo", "WKB parse failed"),
   ] {
-    let out = w.geolite_in(&s.dir, &["query", query, "--include-wkt", "false"]);
+    let out = w.geolite_in(&s.dir, &["query", query]);
     assert_eq!(out.status, 0, "the query must answer: {}", out.stderr);
     assert!(
       out.stderr.contains(warning),

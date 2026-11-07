@@ -245,7 +245,7 @@ pub(crate) fn assert_the_indexes_are_cleared_and_recreated(
   );
   assert!(!s.dir.join("br/index.tantivy").exists());
   assert_eq!(rtree_rows(s), 0);
-  let asked = w.geolite_in(&s.dir, &["query", query, "--include-wkt", "false"]);
+  let asked = w.geolite_in(&s.dir, &["query", query]);
   assert_eq!(asked.status, 1);
   assert!(
     asked.stderr.contains("tantivy index not found"),
