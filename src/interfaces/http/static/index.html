@@ -848,17 +848,14 @@
     };
   }
 
-  async function record_of(id) {
-    if (records.has(id)) return records.get(id);
-    try {
-      const res = await fetch('/address?id=' + encodeURIComponent(id));
-      if (!res.ok) return null;
-      const record = await res.json();
-      records.set(id, record);
-      return record;
-    } catch (_) {
-      return null;
-    }
+  function record_of(id) {
+    if (records.has(id)) return Promise.resolve(records.get(id));
+    return fetch('/address?id=' + encodeURIComponent(id))
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (record) {
+        if (record) records.set(id, record);
+        return record;
+      }, function () { return null; });
   }
 
   function draw_selection_geoms(record) {
@@ -906,7 +903,7 @@
       const leaf_layer = draw_selection_geoms(record);
       if (leaf_layer) {
         try { map.fitBounds(leaf_layer.getBounds(), { padding: [60, 60], maxZoom: 16 }); }
-        catch (_) {}
+        catch (_) { map.flyTo([row.latitude, row.longitude], 15, { duration: 0.6 }); }
       }
     });
   }

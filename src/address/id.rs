@@ -75,14 +75,12 @@ fn push_element(encoded: &mut String, id: i64) {
 }
 
 fn parse_element(segment: &str) -> Option<i64> {
-  let (digits, element_of): (&str, fn(u64) -> admin_level_id) =
-    if let Some(digits) = segment.strip_prefix('r') {
-      (digits, admin_level_id::from_relation)
-    } else if let Some(digits) = segment.strip_prefix('w') {
-      (digits, admin_level_id::from_way)
-    } else {
-      return None;
-    };
+  let element_of: fn(u64) -> admin_level_id = match segment.as_bytes().first()? {
+    b'r' => admin_level_id::from_relation,
+    b'w' => admin_level_id::from_way,
+    _ => return None,
+  };
+  let digits = &segment[1..];
   if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
     return None;
   }
