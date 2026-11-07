@@ -10,12 +10,14 @@
 1. ADDED a layer compatible with the google geocoding and places sdk (`/maps/api/geocode/json`, `/maps/api/place/*`), so a client of the sdk changes only the endpoint.
 1. ADDED a feasibility study of vector tiles built from the pbf and served at `/tiles/{z}/{x}/{y}.pbf`, so it is decided whether geolite serves the map besides the geocode.
 1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
-1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
+1. ADDED a places api to `http-server` over the areas `/address` names: a place by its osm element, its children, a text search and an autocomplete, so a client browses places instead of only geocoding.
 1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
 1. ADDED a study of the presets as toml files instead of rust consts, the readability gained against the crates and the binary size it costs, so the format of a preset is decided by numbers.
 1. ADDED the boundary of a country to its preset, the wkt of `boundaries/<iso>.wkt` carried by `<iso>.rs`, so a country is one file holding its outline and its policy.
 1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
 1. ADDED e2e scenarios over south america asking the landmarks and the official addresses of each of its countries, on real data cut around each one, so the answers over a continent are checked on the places a user actually types.
+1. ADDED `geolite address <id>` answering the record `/address` answers, so the shapes of an address are read without the server.
+1. ADDED a stored id to every address of a base, so an address is named by one key and not by its path.
 
 ## **2026-11-07** - 0.0.18
 
