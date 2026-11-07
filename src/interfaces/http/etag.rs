@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tiny_http::{Header, Request};
 
-use crate::address::query_opts;
+use crate::address::{address_id, query_opts};
 
 #[derive(Serialize)]
 struct question<'a> {
@@ -11,8 +11,13 @@ struct question<'a> {
   min_quality: Option<f64>,
   bounding_wkt: Option<&'a str>,
   last_admin_levels: Option<Vec<u8>>,
-  include_wkt: bool,
   country: Option<Vec<String>>,
+}
+
+#[derive(Serialize)]
+struct address_question {
+  version: &'static str,
+  id: String,
 }
 
 pub fn of_question(input: &str, opts: &query_opts<'_>, country: Option<&[String]>) -> String {
@@ -21,7 +26,6 @@ pub fn of_question(input: &str, opts: &query_opts<'_>, country: Option<&[String]
     min_quality,
     bounding,
     last_admin_levels,
-    include_wkt,
   } = opts;
   let question = question {
     version: env!("CARGO_PKG_VERSION"),
@@ -32,10 +36,17 @@ pub fn of_question(input: &str, opts: &query_opts<'_>, country: Option<&[String]
     last_admin_levels: last_admin_levels
       .as_ref()
       .map(|levels| levels.iter().map(|level| level.value()).collect()),
-    include_wkt: *include_wkt,
     country: country.map(|isos| isos.iter().map(|iso| iso.to_ascii_lowercase()).collect()),
   };
   of_body(&serde_json::to_string(&question).expect("a question serializes"))
+}
+
+pub fn of_address(id: &address_id) -> String {
+  let question = address_question {
+    version: env!("CARGO_PKG_VERSION"),
+    id: id.to_string(),
+  };
+  of_body(&serde_json::to_string(&question).expect("an address question serializes"))
 }
 
 pub fn of_body(body: &str) -> String {

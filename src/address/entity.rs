@@ -5,6 +5,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use utoipa::ToSchema;
 
+use super::id::address_id;
 use super::label;
 use crate::admin_level::geometry::bounding_box;
 use crate::admin_level::level;
@@ -116,22 +117,6 @@ pub(super) fn round5(v: f64) -> f64 {
   (v * 100_000.0).round() / 100_000.0
 }
 
-// one area reached through two paths is two answers, so the identity of a match is its path and
-// not its area: the ids from the root down to the leaf, the way a directory path reads
-fn path_id(own_id: i64, path: &[i64]) -> String {
-  // uuid v5 of "https://github.com/pjpimentel/geolite" under the url namespace, computed once:
-  // `new_v5` is not const, and the namespace never changes
-  const NAMESPACE: uuid::Uuid = uuid::Uuid::from_u128(0x4d29_6f1c_5a5f_5b2e_9b8a_2f7d_3c61_8e04);
-
-  let mut name = String::with_capacity((path.len() + 1) * 12);
-  for id in path.iter().rev() {
-    name.push_str(&id.to_string());
-    name.push('/');
-  }
-  name.push_str(&own_id.to_string());
-  uuid::Uuid::new_v5(&NAMESPACE, name.as_bytes()).to_string()
-}
-
 pub(super) struct leaf<'a> {
   pub(super) id: i64,
   pub(super) level: level,
@@ -141,6 +126,7 @@ pub(super) struct leaf<'a> {
 }
 
 pub(super) struct match_sources {
+  iso: String,
   paths: HashMap<i64, Vec<Vec<i64>>>,
   pub(super) meta: HashMap<i64, admin_meta_row>,
   merged_way_ids: HashMap<i64, crate::admin_level::geometry::merged_way_ids>,
@@ -148,7 +134,7 @@ pub(super) struct match_sources {
 }
 
 impl match_sources {
-  pub(super) fn load(conn: &Connection, ids: &[i64]) -> Self {
+  pub(super) fn load(conn: &Connection, iso: &str, ids: &[i64]) -> Self {
     let edges = crate::admin_level_hierarchy::repository::ancestry_of(conn, ids);
     let paths: HashMap<i64, Vec<Vec<i64>>> =
       ids.iter().map(|&id| (id, paths_of(id, &edges))).collect();
@@ -159,6 +145,7 @@ impl match_sources {
     let meta = crate::admin_level::repository::load_metadata_by_ids(conn, &meta_ids);
     let merged_way_ids = crate::admin_level::repository::merged_way_ids_by_ids(conn, &meta_ids);
     match_sources {
+      iso: iso.to_string(),
       paths,
       meta,
       merged_way_ids,
@@ -326,7 +313,7 @@ impl match_sources {
         post_code: self.post_code_of(leaf.id, path),
       },
       house_number: house_number.cloned(),
-      id: path_id(leaf.id, path),
+      id: address_id::encode(&self.iso, leaf.id, path, number),
       ladder_ids,
     }
   }

@@ -19,6 +19,14 @@ only when no base asked has its index. `/status` reports one entry per base, `fi
 sqlite (`br/data.sqlite3`), and `is_ok` is every service of every base; the answer of `/geocode`
 names the bases it asked in `databases`, one entry each in the same shape. `--sqlite-path` serves one base alone.
 
+no answer of `/geocode` carries the shape of a level: `/address?id=<id>` answers the record of
+one match, found again by its id — the base of the country the id names first, the path it spells
+checked against the hierarchy, and the match built as `/geocode` builds it, with the `wkt` of
+every level, the house number the id names placed on the street again and `null` relevance. an id
+that is not a country code and osm elements is a 400, a country without a base, a path the leaf
+does not have or a number on a leaf that is no street is a 404 `address not found`. the web ui
+asks it when a result is selected and draws the shapes from it.
+
 every json answer carries an `etag`, and a request whose `If-None-Match` names it — as one tag, in
 a list, weak under `W/` or as `*` — is answered `304` with no body and the etag again, so a client
 holding an answer re-asks for the price of the headers. the etag of a `/geocode` answer is derived
@@ -26,7 +34,10 @@ from the question, not from the body: the md5 of the input, every option and the
 geolite answering. a `304` is decided before sqlite or tantivy are asked anything, so it costs
 nothing, and a `200` pays the md5 of a short string instead of the body. an upgrade changes every
 etag; a base rebuilt by the same version does not, so a client
-holding an answer of the old base is told `304` until the next upgrade. the `/status` report and
+holding an answer of the old base is told `304` until the next upgrade. the etag of an `/address`
+record is the md5 of its id and the version, decided once the record is located and before its
+shapes are read, so an id nobody holds is a `404` whatever the header and a `304` never pays the
+polygons. the `/status` report and
 `/openapi.json` carry the md5 of their body. an error carries no etag and is never a `304`. the
 preflight allows `If-None-Match` and the answer exposes `ETag`, so a browser client can send the
 one and read the other; the logic is [`etag.rs`](etag.rs).

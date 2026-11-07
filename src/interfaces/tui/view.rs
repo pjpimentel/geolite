@@ -314,7 +314,8 @@ impl view {
       }
       None => {
         let conn = self.tree.conn_of(&self.folder.items[index]);
-        self.leaf = super::leaf::open(conn, &self.folder, index).map(Box::new);
+        let iso = self.tree.iso_of(&self.folder.items[index]);
+        self.leaf = super::leaf::open(conn, iso, &self.folder, index).map(Box::new);
         self.zoom = zoom::default();
         self.scroll = 0;
       }

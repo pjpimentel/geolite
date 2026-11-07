@@ -225,8 +225,6 @@ fn _02_query_still_answers_on_a_database_stamped_with_another_schema_version() {
       &w.index_path.to_string_lossy(),
       "query",
       "rua",
-      "--include-wkt",
-      "false",
     ],
   );
   assert_eq!(

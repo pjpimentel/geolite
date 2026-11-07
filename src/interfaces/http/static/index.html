@@ -671,6 +671,8 @@
   let input_coords    = null;
   let selection_line  = null;
   let selection_geoms = [];
+  const records = new Map();
+  let selection_seq = 0;
   let selected_index  = null;
 
   function is_coords(q) {
@@ -715,6 +717,7 @@
   }
 
   function clear_markers() {
+    ++selection_seq;
     markers.forEach(function (m) { map.removeLayer(m); });
     markers = [];
     if (input_marker) { map.removeLayer(input_marker); input_marker = null; }
@@ -845,9 +848,19 @@
     };
   }
 
-  function draw_selection_geoms(row) {
+  function record_of(id) {
+    if (records.has(id)) return Promise.resolve(records.get(id));
+    return fetch('/address?id=' + encodeURIComponent(id))
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (record) {
+        if (record) records.set(id, record);
+        return record;
+      }, function () { return null; });
+  }
+
+  function draw_selection_geoms(record) {
     clear_selection_geoms();
-    const levels = (row.admin_levels || []).filter(function (l) { return l.wkt; });
+    const levels = (record.admin_levels || []).filter(function (l) { return l.wkt; });
     let leaf_layer = null;
     levels.forEach(function (lvl, i) {
       const geom = parse_wkt(lvl.wkt);
@@ -882,16 +895,21 @@
         opacity: 0.8,
       }).addTo(map);
     }
-    const leaf_layer = draw_selection_geoms(row);
-    if (leaf_layer) {
-      try { map.fitBounds(leaf_layer.getBounds(), { padding: [60, 60], maxZoom: 16 }); }
-      catch (_) { map.flyTo([row.latitude, row.longitude], 15, { duration: 0.6 }); }
-    } else {
-      map.flyTo([row.latitude, row.longitude], 15, { duration: 0.6 });
-    }
+    clear_selection_geoms();
+    map.flyTo([row.latitude, row.longitude], 15, { duration: 0.6 });
+    const seq = ++selection_seq;
+    record_of(row.id).then(function (record) {
+      if (seq !== selection_seq || !record) return;
+      const leaf_layer = draw_selection_geoms(record);
+      if (leaf_layer) {
+        try { map.fitBounds(leaf_layer.getBounds(), { padding: [60, 60], maxZoom: 16 }); }
+        catch (_) { map.flyTo([row.latitude, row.longitude], 15, { duration: 0.6 }); }
+      }
+    });
   }
 
   function deselect_result() {
+    ++selection_seq;
     selected_index = null;
     results_body_el.querySelectorAll('.result').forEach(function (x) { x.classList.remove('active'); });
     update_markers(null);
@@ -954,7 +972,7 @@
       longitude: match.longitude,
       distance_km: match.coordinates_distance_in_meters ?? null,
       similarity: match.similarity,
-      admin_levels: match.admin_levels || [],
+      id: match.id,
     };
   }
 

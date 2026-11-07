@@ -56,12 +56,11 @@ pub(crate) struct ApiError {
     ("quality" = Option<f64>, Query, minimum = 0.0, maximum = 1.0, description = "minimum match quality in `[0, 1]`; lower-quality matches are dropped, a value outside the range is a 400"),
     ("bounding_wkt" = Option<String>, Query, description = "WKT POLYGON or MULTIPOLYGON; keeps only matches inside it"),
     ("last_admin_levels" = Option<String>, Query, description = "comma-separated admin levels (e.g. `8,10`); keeps matches whose last admin level is one of them (OR); a house number is not a level, a numbered street ends at `12`"),
-    ("include_wkt" = Option<bool>, Query, description = "include admin-level `wkt` geometry in the response (default `true`; set `false` to omit)"),
     ("countries" = Option<String>, Query, description = "comma-separated iso 3166-1 alpha-2 codes (e.g. `br,ar`); narrows the bases a text asks at once, and the one a coordinate asks, the base of the country whose boundary holds the point; a code without a base is a 400; absent, every base of the data path"),
     ("If-None-Match" = Option<String>, Header, description = "the `etag` of an answer already held (a list, a weak `W/` tag and `*` count); when it names this answer the response is a 304 with no body"),
   ),
   responses(
-    (status = 200, description = "geocoding result", body = crate::address::query_output,
+    (status = 200, description = "geocoding result; no admin level carries a `wkt`, `/address` answers the record of a match with them", body = crate::address::query_output,
       headers(
         ("etag" = String, description = "the etag of the answer, derived from the question and the version of geolite, quoted; sent back in `If-None-Match` it turns an unchanged answer into a 304 before anything is computed"),
       )),
@@ -73,6 +72,28 @@ pub(crate) struct ApiError {
 )]
 #[allow(dead_code)]
 fn geocode() {}
+
+/// the record of one match of `/geocode`, found by its `id`: the same shape, with the `wkt` of every admin level.
+#[utoipa::path(
+  get,
+  path = "/address",
+  params(
+    ("id" = String, Query, description = "the `id` of a match of `/geocode`: the country code of its base, the osm element of each level from the root to the leaf, `r<id>` a relation and `w<id>` a way, and the house number answered after the leaf as `n<number>`, e.g. `br.r59470.r2931354.w255710390.n197`; case does not matter"),
+    ("If-None-Match" = Option<String>, Header, description = "the `etag` of a record already held (a list, a weak `W/` tag and `*` count); when it names this record the response is a 304 with no body"),
+  ),
+  responses(
+    (status = 200, description = "the record of the address: the match as `/geocode` answers it, with the `wkt` of every admin level and the house number the id names placed on its street again, `null` for what belongs to a question (`similarity`, `score`, `coordinates_distance_in_meters`)", body = crate::address::query_match,
+      headers(
+        ("etag" = String, description = "the etag of the record, derived from the id and the version of geolite, quoted; sent back in `If-None-Match` it turns an unchanged record into a 304 before any shape is read"),
+      )),
+    (status = 304, description = "the record is the one `If-None-Match` names: no body, the same `etag`, no shape read"),
+    (status = 400, description = "missing or invalid `id`", body = ApiError),
+    (status = 404, description = "no base of the data path holds the country, the path is not one the leaf has, or the leaf is no street for the number", body = ApiError),
+    (status = 500, description = "response serialization error", body = ApiError),
+  ),
+)]
+#[allow(dead_code)]
+fn address() {}
 
 /// service and per-database availability (returns 503 when `is_ok` is false).
 #[utoipa::path(
@@ -97,7 +118,7 @@ fn status() {}
     title = "geolite",
     description = "",
   ),
-  paths(geocode, status),
+  paths(address, geocode, status),
   components(schemas(
     crate::address::query_output,
     crate::address::query_service,

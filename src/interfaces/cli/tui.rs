@@ -7,7 +7,7 @@ use crate::interfaces::tui::{listing, view};
 pub fn command_handler_tui(data_path: &str, single: Option<&base_files>, path: Option<&str>) {
   let bases: Vec<(String, rusqlite::Connection)> = crate::interfaces::cli::served_bases(data_path, single)
     .iter()
-    .map(|base| (base.iso.to_ascii_uppercase(), require_data(&base.sqlite)))
+    .map(|base| (base.iso.to_string(), require_data(&base.sqlite)))
     .collect();
   let tree = tree::open(bases);
   let opened = match tree.resolve(path.unwrap_or("")) {

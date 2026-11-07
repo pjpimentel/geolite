@@ -10,12 +10,21 @@
 1. ADDED a layer compatible with the google geocoding and places sdk (`/maps/api/geocode/json`, `/maps/api/place/*`), so a client of the sdk changes only the endpoint.
 1. ADDED a feasibility study of vector tiles built from the pbf and served at `/tiles/{z}/{x}/{y}.pbf`, so it is decided whether geolite serves the map besides the geocode.
 1. ADDED queries and the ledger counters to the tui, so the terminal answers what the api answers.
-1. ADDED a places api to `http-server`: search by text and by id, autocomplete, the details and the children of a place, so a client browses places instead of only geocoding.
+1. ADDED a places api to `http-server` over the areas `/address` names: a place by its osm element, its children, a text search and an autocomplete, so a client browses places instead of only geocoding.
 1. ADDED location identifiers to every match of both services, a placepin code, a geohash and others, computed from the point and never stored (the placepin one through a rust crate of our own, to be published if none exists by then), so a point is said and typed as a short code.
 1. ADDED a study of the presets as toml files instead of rust consts, the readability gained against the crates and the binary size it costs, so the format of a preset is decided by numbers.
 1. ADDED the boundary of a country to its preset, the wkt of `boundaries/<iso>.wkt` carried by `<iso>.rs`, so a country is one file holding its outline and its policy.
 1. ADDED a `--preset` override to `extract-osm-admin-levels`, `index-addresses`, `query` and `http-server`, every row read under the named preset instead of its country's, so a base is built and answered under one policy when the boundaries are not the ones wanted.
 1. ADDED e2e scenarios over south america asking the landmarks and the official addresses of each of its countries, on real data cut around each one, so the answers over a continent are checked on the places a user actually types.
+1. ADDED `geolite address <id>` answering the record `/address` answers, so the shapes of an address are read without the server.
+1. ADDED a stored id to every address of a base, so an address is named by one key and not by its path.
+
+## **2026-11-07** - 0.0.18
+
+1. REMOVED the `wkt` of the admin levels from the answers of `/geocode` and `geolite query`, with the `include_wkt` option of both (not backward compatible), so an answer weighs its matches and never the ring of a country.
+1. MODIFIED the id of a match into the path it took, the country of its base, the osm element of each level from the root to the leaf and the house number answered, `br.r59470.r2931354.w255710390.n197` (not backward compatible), so an answer is found again by its id and nothing is stored for it.
+1. MODIFIED the web ui to ask `/address` for the shapes of the match selected, so the map draws a geometry only when one is looked at.
+1. ADDED `GET /address?id=<id>` to `http-server`, the record of one match with the `wkt` of every level and its house number on its point, so a client reads the shapes of an address it already holds.
 
 ## **2026-10-23** - 0.0.17
 

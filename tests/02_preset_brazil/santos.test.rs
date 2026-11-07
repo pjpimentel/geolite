@@ -1,8 +1,10 @@
 use crate::common::ask::ask;
-use crate::common::harness::{encode, get, query_at, relabel_country, scenario, world, world_cell};
+use crate::common::harness::{
+  encode, get, query_at, record_of, relabel_country, scenario, world, world_cell,
+};
 use crate::common::query::{
-  distances, first, kind_of, leaves, level_at, levels_of, matches, name_at, names_at, number_of,
-  point_of, street_way, way_ids, wkt_at,
+  distances, first, id_of, kind_of, leaves, level_at, levels_of, matches, name_at, names_at,
+  number_of, point_of, street_way, way_ids, wkt_at,
 };
 use crate::house_number::{
   CONSTANTS, FROM_OSM_DATA, MULTIPLE_REFERENCES, PLACEMENT_TOLERANCE_IN_METERS, assert_numbered,
@@ -89,7 +91,7 @@ const SQL_SELECT_COUNTRY_ISO_CODE: &str = "
 fn post_coded_street_answer() -> Value {
   json!({
     "matches": [{
-      "id": "c8e841fc-db3a-5bc8-ab40-019e7ef4b4d5",
+      "id": "br.r59470.r298204.w756594045",
       "friendly_name": "Ateneu São Vicente, São Paulo, Brasil, 11320-060",
       "admin_levels": [
         { "level": 2, "post_code": null },
@@ -208,7 +210,7 @@ fn _00_03_friendly_name_format_house_number_alias() {
 #[ignore]
 fn _00_04_the_text_query_matches_are_exactly_these() {
   // every match, whole and in order: the two ways of the street touch, so they answer as one
-  // street, and the id of a match is the uuid of the path it took
+  // street, and the id of a match is the path it took, root to leaf
   let result = world().run(&[TEXT_QUERY]);
   world().assert_exact(
     &Value::Array(matches(&result).clone()),
@@ -258,7 +260,7 @@ fn _00_04_the_text_query_matches_are_exactly_these() {
         },
         "coordinates_distance_in_meters": null,
         "friendly_name": "Rua Castro Alves, Embaré, Santos, São Paulo, Brasil",
-        "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
+        "id": "br.r59470.r298204.r298442.r4282882.w255710390",
         "latitude": -23.9694,
         "longitude": -46.3175,
         "score": 108.577,
@@ -326,7 +328,7 @@ fn _00_05_the_coordinate_query_top_match_is_exactly_this() {
         "osm_node_ids": [6_192_895_729_u64],
         "meters_per_number": null,
       },
-      "id": "667a5689-8c2e-50b0-a462-2fed26c98e82",
+      "id": "br.r59470.r298204.r298442.r4282882.w255710390.n35",
       "latitude": -23.9709,
       "longitude": -46.3188,
       "score": null,
@@ -417,7 +419,7 @@ fn _00_09_both_services_write_the_numbered_label_along_the_path() {
       &ask(input),
       &json!({
         "matches": [{
-          "id": "e62f6c36-4709-566a-a4d8-be7167c931c6",
+          "id": "br.r59470.r298204.r298442.r4074000.w196616079.w185852089.n4",
           "friendly_name": "Rua Prefeito Antenor Bué, 4, Conjunto Habitacional Jaú, Aparecida, Santos, São Paulo, Brasil",
         }]
       }),
@@ -548,11 +550,13 @@ fn _00_15_a_number_on_one_way_of_a_folded_street_resolves_from_osm_data_on_the_o
 #[test]
 #[ignore]
 fn _00_16_a_street_of_several_ways_answers_a_point_on_the_street() {
-  let result = world().query_json(&[TEXT_QUERY]);
+  let w = world();
+  let s = w.start_server();
+  let result = w.query_json(&[TEXT_QUERY]);
   let top = first(&result);
   let street = Wkt(
-    wkt_at(top, 12)
-      .expect("the street carries geometry")
+    wkt_at(&record_of(s.port, top), 12)
+      .expect("the record of the street carries its geometry")
       .as_str(),
   )
   .to_geo()
@@ -969,12 +973,17 @@ fn _03_03_a_numbered_street_keeps_its_leaf_at_the_street_and_level_30_is_refused
 #[ignore]
 fn _03_04_a_response_past_the_chunked_threshold_stays_identity_encoded() {
   let w = world();
-  // the country ring pushes this response into megabytes, well past tiny_http's 32 KiB
-  // chunked threshold. this is the regression test for force_content_length.
+  // the country ring pushes a record into megabytes, well past tiny_http's 32 KiB chunked
+  // threshold. this is the regression test for force_content_length.
   let s = w.start_server();
-  let r = get(
+  let answer = get(
     s.port,
     &format!("/geocode?query={}", encode(COORDINATES_QUERY)),
+  )
+  .json();
+  let r = get(
+    s.port,
+    &format!("/address?id={}", encode(id_of(first(&answer)))),
   );
   assert_eq!(r.status, 200);
   assert!(
@@ -1051,15 +1060,27 @@ fn _03_06_both_services_answer_the_street_post_code() {
   let w = world();
   w.assert_cli(&ask(POST_CODED_STREET), &post_coded_street_answer());
 
-  // the point carries a presumed number in its label; every post code stays where it was
+  // the point carries a presumed number in its label and in its id; every post code stays where
+  // it was
   let mut expected = post_coded_street_answer();
-  expected["matches"][0]
+  let street = expected["matches"][0]
     .as_object_mut()
-    .expect("a match is an object")
-    .remove("friendly_name");
+    .expect("a match is an object");
+  let street_id = street
+    .remove("id")
+    .expect("the street answer carries an id");
+  street.remove("friendly_name");
   let result = w.assert_cli(&ask(POST_CODED_POINT), &expected);
   let top = first(&result);
   let number = number_of(top).expect("every street a point answers carries a number");
+  assert_eq!(
+    id_of(top),
+    format!(
+      "{}.n{number}",
+      street_id.as_str().expect("an id is a string")
+    ),
+    "the number answered joins the id of the street"
+  );
   assert_eq!(
     top["friendly_name"],
     format!("Ateneu São Vicente, {number}, São Paulo, Brasil, 11320-060")
@@ -1084,11 +1105,14 @@ fn _03_07_the_two_services_order_same_level_ancestors_differently() {
       "Conjunto Habitacional Jaú",
     ),
   ] {
-    let result = w.assert_cli(
-      &ask(input),
-      &json!({ "matches": [{ "id": "9695f186-46eb-539f-a831-ac0489ebd841" }] }),
-    );
+    let result = w.run(&[input]);
     let top = first(&result);
+    let path = "br.r59470.r298204.r298442.r4074000.w196616079.w185852085";
+    let expected = match number_of(top) {
+      Some(number) => format!("{path}.n{number}"),
+      None => path.to_string(),
+    };
+    assert_eq!(id_of(top), expected, "input {input:?}");
     assert_eq!(levels_of(top), [2, 4, 8, 10, 10, 12], "input {input:?}");
     assert_eq!(names_at(top, 10), level_10_names, "input {input:?}");
 
@@ -1187,15 +1211,16 @@ fn _04_00_header_stage_reports_the_fixture_generator() {
   );
 }
 
-// 05.00. contract
+// 05.00. contract: the record of a text match carries the geometry of every level
 #[test]
 #[ignore]
-fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
+fn _05_00_the_record_of_a_text_match_carries_the_geometry_of_every_level() {
   let w = world();
+  let s = w.start_server();
   let result = w.query_json(&[TEXT_QUERY]);
-  let top = first(&result);
+  let top = record_of(s.port, first(&result));
   let wkt_of =
-    |level: u64| wkt_at(top, level).unwrap_or_else(|| panic!("level {level} must carry geometry"));
+    |level: u64| wkt_at(&top, level).unwrap_or_else(|| panic!("level {level} must carry geometry"));
   assert!(
     wkt_of(12).starts_with("MULTILINESTRING"),
     "the two ways of the street fold into a multi-line"
@@ -1212,21 +1237,22 @@ fn _05_00_include_wkt_true_attaches_geometry_to_every_level() {
   );
 }
 
-// 05.01. contract: the coordinate path loads the same geometry per level
+// 05.01. contract: the record of a coordinate match carries the same geometry per level
 #[test]
 #[ignore]
-fn _05_01_include_wkt_attaches_geometry_to_every_level_on_the_coordinate_path() {
-  // the quality cut leaves the one match at 0 m: every match would carry the country ring
-  let result = world().query_json(&[NUMBERED_POINT, "--min-quality", "1"]);
-  let top = first(&result);
-  assert_eq!(levels_of(top), [2, 4, 8, 10, 12]);
+fn _05_01_the_record_of_a_coordinate_match_carries_the_geometry_of_every_level() {
+  let w = world();
+  let s = w.start_server();
+  let result = w.query_json(&[NUMBERED_POINT, "--min-quality", "1"]);
+  let top = record_of(s.port, first(&result));
+  assert_eq!(levels_of(&top), [2, 4, 8, 10, 12]);
   assert!(
-    wkt_at(top, 12).is_some_and(|wkt| wkt.starts_with("LINESTRING")),
+    wkt_at(&top, 12).is_some_and(|wkt| wkt.starts_with("LINESTRING")),
     "streets are always lines"
   );
   for level in [10, 8, 4, 2] {
     assert!(
-      wkt_at(top, level).is_some_and(|wkt| wkt.starts_with("MULTIPOLYGON")),
+      wkt_at(&top, level).is_some_and(|wkt| wkt.starts_with("MULTIPOLYGON")),
       "level {level} is an area"
     );
   }
@@ -1237,15 +1263,21 @@ fn _05_01_include_wkt_attaches_geometry_to_every_level_on_the_coordinate_path() 
 #[test]
 #[ignore]
 fn _05_02_the_wkt_of_a_folded_street_has_one_line_per_merged_way() {
+  let w = world();
+  let s = w.start_server();
   for (query, ways) in [(TEXT_QUERY, 2), (FIVE_WAYS_QUERY, 5)] {
-    let result = world().query_json(&[query]);
+    let result = w.query_json(&[query]);
     let street = level_at(first(&result), 12).expect("the top match is a street");
     let trace = street["osm_merged_way_ids"]
       .as_array()
       .unwrap_or_else(|| panic!("{query:?} answers a folded street"));
     assert_eq!(trace.len(), ways, "the fixture changed for {query:?}");
     assert_eq!(trace[0], street["osm_way_id"], "its own way comes first");
-    let wkt = street["wkt"].as_str().expect("the street carries geometry");
+    let record = record_of(s.port, first(&result));
+    let drawn = level_at(&record, 12).expect("the record keeps the street");
+    let wkt = drawn["wkt"]
+      .as_str()
+      .expect("the record of the street carries its geometry");
     match Wkt(wkt)
       .to_geo()
       .expect("the street geometry must be valid wkt")

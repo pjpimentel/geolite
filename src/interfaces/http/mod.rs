@@ -193,7 +193,7 @@ fn handle(request: tiny_http::Request, bases: &mut [worker_base]) {
 
   let known_route = matches!(
     path.as_str(),
-    "/" | "/geocode" | "/status" | "/openapi.json" | "/docs"
+    "/" | "/geocode" | "/address" | "/status" | "/openapi.json" | "/docs"
   );
 
   if known_route && method == Method::Options {
@@ -221,133 +221,171 @@ fn handle(request: tiny_http::Request, bases: &mut [worker_base]) {
 
   let status = match path.as_str() {
     "/" => respond_html(request, StatusCode(200), INDEX_HTML),
-    "/status" => {
-      let report = status::build(
-        bases
-          .iter()
-          .map(|base| (base.label.clone(), &base.conn, base.index)),
-      );
-      match serde_json::to_string(&report) {
-        Ok(body) if report.is_ok => respond_ok(request, &body),
-        Ok(body) => respond_json(request, StatusCode(503), &body),
-        Err(_) => respond_json(
-          request,
-          StatusCode(500),
-          r#"{"error":"serialization error"}"#,
-        ),
-      }
-    }
+    "/status" => status(request, bases),
     "/openapi.json" => respond_ok(request, openapi::spec_json()),
+    "/address" => address(request, bases, &query_string),
     "/docs" => respond_html(request, StatusCode(200), openapi::SWAGGER_HTML),
-    "/geocode" => {
-      let q = query_param(&query_string, "query");
-      let friendly_name_format = query_param(&query_string, "friendly_name_format")
-        .map(|s| crate::address::validate_friendly_name_format(&s))
-        .transpose();
-      let min_quality = query_param(&query_string, "quality")
-        .map(|s| crate::address::parse_min_quality(&s))
-        .transpose();
-      let bounding_wkt = query_param(&query_string, "bounding_wkt")
-        .map(|s| crate::admin_level::geometry::parse_bounding_wkt(&s))
-        .transpose();
-      let last_admin_levels = query_param(&query_string, "last_admin_levels")
-        .map(|s| parse_last_admin_levels(&s))
-        .transpose();
-      let countries = query_param(&query_string, "countries")
-        .map(|s| parse_countries(&s))
-        .transpose()
-        .and_then(|countries| select(bases, countries.as_deref()).map(|selected| (countries, selected)));
-      // opt-out: only include_wkt=false switches it off; absent or any other value keeps it
-      let include_wkt = query_param(&query_string, "include_wkt")
-        .map(|s| s != "false")
-        .unwrap_or(true);
-      match (
-        q,
-        friendly_name_format,
-        min_quality,
-        bounding_wkt,
-        last_admin_levels,
-        countries,
-      ) {
-        (None, _, _, _, _, _) => respond_json(
-          request,
-          StatusCode(400),
-          r#"{"error":"missing query param: query"}"#,
-        ),
-        (_, Err(msg), _, _, _, _)
-        | (_, _, Err(msg), _, _, _)
-        | (_, _, _, Err(msg), _, _)
-        | (_, _, _, _, Err(msg), _)
-        | (_, _, _, _, _, Err(msg)) => {
-          let body = serde_json::json!({ "error": msg }).to_string();
-          respond_json(request, StatusCode(400), &body)
-        }
-        (
-          Some(raw),
-          Ok(friendly_name_format),
-          Ok(min_quality),
-          Ok(bounding),
-          Ok(last_admin_levels),
-          Ok((countries, selected)),
-        ) => {
-          let input = crate::address::query_input::parse(&raw);
-          let no_index = selected.iter().all(|base| base.index.is_none());
-          if no_index && input == crate::address::query_input::text {
-            // degraded boot: text search needs the tantivy index; coordinate queries still work.
-            respond_json(
-              request,
-              StatusCode(503),
-              r#"{"error":"text_to_address service unavailable"}"#,
-            )
-          } else {
-            let opts = crate::address::query_opts {
-              friendly_name_format: friendly_name_format.as_deref(),
-              min_quality,
-              bounding,
-              last_admin_levels,
-              include_wkt,
-            };
-            let etag = etag::of_question(&raw, &opts, countries.as_deref());
-            if etag::none_match(&request, &etag) {
-              respond_not_modified(request, &etag)
-            } else {
-              let mut asked: Vec<crate::address::base> = selected
-                .into_iter()
-                .map(|base| crate::address::base {
-                  file: &base.label,
-                  iso: &base.files.iso,
-                  conn: &mut base.conn,
-                  index: base.index,
-                })
-                .collect();
-              let result = match input {
-                crate::address::query_input::coordinates {
-                  latitude,
-                  longitude,
-                } => crate::address::query_by_coordinates_across(
-                  &mut asked, latitude, longitude, &opts,
-                ),
-                crate::address::query_input::text => {
-                  crate::address::query_by_text_across(&mut asked, &raw, &opts)
-                }
-              };
-              match serde_json::to_string(&result) {
-                Ok(body) => respond_ok_with_etag(request, &body, &etag),
-                Err(_) => respond_json(
-                  request,
-                  StatusCode(500),
-                  r#"{"error":"serialization error"}"#,
-                ),
-              }
-            }
-          }
-        }
-      }
-    }
+    "/geocode" => geocode(request, bases, &query_string),
     _ => respond_json(request, StatusCode(404), r#"{"error":"not found"}"#),
   };
 
   log_access(&method, &url, status, start.elapsed().as_millis());
+}
+
+fn status(request: tiny_http::Request, bases: &[worker_base]) -> u16 {
+  let report = status::build(
+    bases
+      .iter()
+      .map(|base| (base.label.clone(), &base.conn, base.index)),
+  );
+  match serde_json::to_string(&report) {
+    Ok(body) if report.is_ok => respond_ok(request, &body),
+    Ok(body) => respond_json(request, StatusCode(503), &body),
+    Err(_) => respond_serialization_error(request),
+  }
+}
+
+fn address(request: tiny_http::Request, bases: &[worker_base], query_string: &str) -> u16 {
+  let Some(raw) = query_param(query_string, "id") else {
+    return respond_json(
+      request,
+      StatusCode(400),
+      r#"{"error":"missing query param: id"}"#,
+    );
+  };
+  let Some(id) = crate::address::address_id::parse(&raw) else {
+    return respond_json(
+      request,
+      StatusCode(400),
+      r#"{"error":"id must be a country code and the osm elements of a path, e.g. br.r59470.r2931354.w255710390"}"#,
+    );
+  };
+  let located = bases
+    .iter()
+    .find(|base| base.files.iso.eq_ignore_ascii_case(&id.iso))
+    .and_then(|base| crate::address::record(&base.conn, &id).map(|found| (base, found)));
+  let Some((base, mut found)) = located else {
+    return respond_json(
+      request,
+      StatusCode(404),
+      r#"{"error":"address not found"}"#,
+    );
+  };
+  let etag = etag::of_address(&id);
+  if etag::none_match(&request, &etag) {
+    return respond_not_modified(request, &etag);
+  }
+  crate::address::with_shapes(&base.conn, &mut found);
+  respond_serialized_with_etag(request, &found, &etag)
+}
+
+struct geocode_options {
+  friendly_name_format: Option<String>,
+  min_quality: Option<f64>,
+  bounding: Option<crate::admin_level::geometry::bounding_geometry>,
+  last_admin_levels: Option<Vec<level>>,
+  countries: Option<Vec<String>>,
+}
+
+fn parse_geocode_options(query_string: &str) -> Result<geocode_options, String> {
+  Ok(geocode_options {
+    friendly_name_format: query_param(query_string, "friendly_name_format")
+      .map(|s| crate::address::validate_friendly_name_format(&s))
+      .transpose()?,
+    min_quality: query_param(query_string, "quality")
+      .map(|s| crate::address::parse_min_quality(&s))
+      .transpose()?,
+    bounding: query_param(query_string, "bounding_wkt")
+      .map(|s| crate::admin_level::geometry::parse_bounding_wkt(&s))
+      .transpose()?,
+    last_admin_levels: query_param(query_string, "last_admin_levels")
+      .map(|s| parse_last_admin_levels(&s))
+      .transpose()?,
+    countries: query_param(query_string, "countries")
+      .map(|s| parse_countries(&s))
+      .transpose()?,
+  })
+}
+
+fn geocode(request: tiny_http::Request, bases: &mut [worker_base], query_string: &str) -> u16 {
+  let Some(raw) = query_param(query_string, "query") else {
+    return respond_json(
+      request,
+      StatusCode(400),
+      r#"{"error":"missing query param: query"}"#,
+    );
+  };
+  let options = match parse_geocode_options(query_string) {
+    Ok(options) => options,
+    Err(msg) => return respond_bad_request(request, &msg),
+  };
+  let selected = match select(bases, options.countries.as_deref()) {
+    Ok(selected) => selected,
+    Err(msg) => return respond_bad_request(request, &msg),
+  };
+  let input = crate::address::query_input::parse(&raw);
+  let no_index = selected.iter().all(|base| base.index.is_none());
+  if no_index && input == crate::address::query_input::text {
+    // degraded boot: text search needs the tantivy index; coordinate queries still work.
+    return respond_json(
+      request,
+      StatusCode(503),
+      r#"{"error":"text_to_address service unavailable"}"#,
+    );
+  }
+  let opts = crate::address::query_opts {
+    friendly_name_format: options.friendly_name_format.as_deref(),
+    min_quality: options.min_quality,
+    bounding: options.bounding,
+    last_admin_levels: options.last_admin_levels,
+  };
+  let etag = etag::of_question(&raw, &opts, options.countries.as_deref());
+  if etag::none_match(&request, &etag) {
+    return respond_not_modified(request, &etag);
+  }
+  let mut asked: Vec<crate::address::base> = selected
+    .into_iter()
+    .map(|base| crate::address::base {
+      file: &base.label,
+      iso: &base.files.iso,
+      conn: &mut base.conn,
+      index: base.index,
+    })
+    .collect();
+  let result = match input {
+    crate::address::query_input::coordinates {
+      latitude,
+      longitude,
+    } => crate::address::query_by_coordinates_across(&mut asked, latitude, longitude, &opts),
+    crate::address::query_input::text => {
+      crate::address::query_by_text_across(&mut asked, &raw, &opts)
+    }
+  };
+  respond_serialized_with_etag(request, &result, &etag)
+}
+
+fn respond_bad_request(request: tiny_http::Request, msg: &str) -> u16 {
+  let body = serde_json::json!({ "error": msg }).to_string();
+  respond_json(request, StatusCode(400), &body)
+}
+
+fn respond_serialization_error(request: tiny_http::Request) -> u16 {
+  respond_json(
+    request,
+    StatusCode(500),
+    r#"{"error":"serialization error"}"#,
+  )
+}
+
+fn respond_serialized_with_etag(
+  request: tiny_http::Request,
+  answer: &impl serde::Serialize,
+  etag: &str,
+) -> u16 {
+  match serde_json::to_string(answer) {
+    Ok(body) => respond_ok_with_etag(request, &body, etag),
+    Err(_) => respond_serialization_error(request),
+  }
 }
 
 fn cors_origin() -> Header {

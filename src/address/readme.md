@@ -48,7 +48,7 @@ skips it, and the one base of the point for a coordinate, none when none holds i
 `base` holds the connection and the optional tantivy index; the house-number policy is the one
 of the country of each street, read from its row (`match_sources::house_number_policy_of`);
 `query_opts` carries what the flags carry (`friendly_name_format`, `min_quality`, `bounding`,
-`last_admin_levels`, `include_wkt`).
+`last_admin_levels`).
 
 `text` is three steps the fan-out calls apart, so the index of every base is asked before the
 rows of any: `region_of`, the ids of the region's envelope when a region was asked; `hits_at`,
@@ -82,12 +82,13 @@ by `house_number.kind`.
 
 ## the address of a path — `path`
 
-`address::at_path(conn, id, path)` answers the one match of an area under a path already known,
-the areas from the nearest one outward, without a search: it is what the tui opens at the end of
-the folders walked. it holds no index, so it is a function
-and not a method of `address`. the match is the one the text service builds — the same ladder,
-label, attributes and id, and the point of `resting_point` — without a score, a similarity or a
-house number, which belong to a question asked.
+`address::at_path(conn, iso, id, path)` answers the one match of an area under a path already
+known, the areas from the nearest one outward, without a search: it is what the tui opens at the
+end of the folders walked, and what `record` answers for an id. it refuses a path the hierarchy
+does not give the area, so a forged id is no address. it holds no index, so it is a function and
+not a method of `address`. the match is the one the text service builds — the same ladder, label,
+attributes and id, and the point of `resting_point`, or of the number when the record names one —
+without a score or a similarity, which belong to a question asked.
 
 what the three share is built once, in `match_sources::match_at`: the ladder, the label, the
 attributes, the rounded point and the id of the path. each caller adds what is its own, the score
@@ -119,12 +120,13 @@ the seven types of the json (`query_output`, `query_service`, `query_match`, `ad
 `query_match_attributes`, `query_house_number`, and `house_number_scenario`, which `house_number`
 owns) are the openapi schema and keep their names; coordinates are rounded to five decimals
 (`round5`). the ladder of a match is built once, in `match_sources`: the paths of the ids climbed
-from the edges, the metadata of the ids and their ancestors, and the wkt only when `include_wkt`
-asks for it (the polygons of countries and states are megabytes). every level of the ladder
-carries its own `post_code`, `null` when the area has none. a street folded from several ways
-carries `osm_merged_way_ids`, the osm way of each line of its `wkt`, in the order of the lines;
-the key is absent everywhere else, and it is read on every query rather than under
-`include_wkt`, because it also says which ways a street stands for when no shape is asked.
+from the edges and the metadata of the ids and their ancestors; no level of an answer carries its
+shape (the polygons of countries and states are megabytes: a match with them weighs tens of
+megabytes, without them a few kilobytes), the record of `/address` is the one answer that does.
+every level of the ladder carries its own `post_code`, `null` when the area has none. a street
+folded from several ways carries `osm_merged_way_ids`, the osm way of each line of the `wkt` its
+record draws, in the order of the lines; the key is absent everywhere else, and it is read on
+every query, because it also says which ways a street stands for when no shape is asked.
 
 `query_house_number` is the number and where it came from: `kind` the word, `osm_node_ids` the
 osm nodes the number was read from — the one node of a stored number, every reference of a street
@@ -180,10 +182,28 @@ path and the level of the street on the coordinate path: the leaf of a numbered 
 street, so `12` keeps it, bare or numbered, and `30` is refused where the levels are parsed, like
 any value outside the scale.
 
+## the id and the record — `id`, `record`
+
+one area reached through two paths is two answers, so the identity of a match is its path and not
+its area. `address_id` writes it the way a directory path reads: the country of the base the row
+lives in, then the osm element of every level from the root down to the leaf, `r<id>` a relation
+and `w<id>` a way, then the house number answered as `n<number>`,
+`br.r59470.r298204.r298442.r4282882.w255710390.n35`; a folded street is its row, the `w` of its
+own way, a root alone is `br.r59470` and a street without a number ends at its way. nothing is
+stored for it: `encode` reads the internal ids of the path (`admin_level::id`) and `parse` gives
+them back, lowercase, the base named by the prefix, so a client can also build the id from the
+`osm_*` and the `house_number` of an answer. `record` answers the match of an id again through
+`path`, the number placed on the street once more by `house_number::on_street` (the same
+`resolution::place` the text service uses, so the point and the origin are the ones answered; a
+number on a leaf that is no street is no address), and `with_shapes` then fills every level from
+`wkt_by_ids` (`attach_wkt`), apart so the http server locates a record before it decides a `304`
+and reads the polygons only for a `200`: the one answer that carries a shape, with nothing of a
+question in it — `similarity`, `score` and `coordinates_distance_in_meters` are `null`.
+
 ## what belongs elsewhere
 
 no rule of another concept sits here any more: the similarity is
 `admin_level_hierarchy::search_index::coverage`, the numbers of a street, the 50 m rule and the
 presumption along the street are `house_number`'s, the rtree read behind the coordinate service is `admin_level::spatial_index::nearest`
-and the wkt of a match comes from `admin_level::repository::wkt_by_ids`, the ways of a folded street
+and the wkt of a record comes from `admin_level::repository::wkt_by_ids`, the ways of a folded street
 from `merged_way_ids_by_ids` beside it.

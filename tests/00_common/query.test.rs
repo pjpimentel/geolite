@@ -30,6 +30,10 @@ pub fn files_of(result: &Value) -> Vec<String> {
     .collect()
 }
 
+pub fn id_of(m: &Value) -> &str {
+  m["id"].as_str().expect("a match carries an id")
+}
+
 pub fn first(result: &Value) -> &Value {
   matches(result)
     .first()

@@ -95,6 +95,7 @@ pub enum opened {
 
 struct opened_base {
   name: String,
+  iso: String,
   conn: Connection,
   ladder: Vec<level>,
   counts: HashMap<i64, usize>,
@@ -111,11 +112,12 @@ pub struct tree {
 pub fn open(bases: Vec<(String, Connection)>) -> tree {
   let bases: Vec<opened_base> = bases
     .into_iter()
-    .map(|(name, conn)| opened_base {
+    .map(|(iso, conn)| opened_base {
       ladder: levels_present(&conn),
       counts: children_count_by_parent(&conn),
       root_count: roots(&conn).len(),
-      name,
+      name: iso.to_ascii_uppercase(),
+      iso,
       conn,
     })
     .collect();
@@ -129,6 +131,10 @@ pub fn open(bases: Vec<(String, Connection)>) -> tree {
 impl tree {
   pub fn conn_of(&self, item: &item) -> &Connection {
     &self.bases[item.base].conn
+  }
+
+  pub fn iso_of(&self, item: &item) -> &str {
+    &self.bases[item.base].iso
   }
 
   pub fn roots(&self) -> folder {
@@ -189,7 +195,8 @@ impl tree {
         continue;
       }
       let conn = self.conn_of(&folder.items[index]);
-      let leaf = super::leaf::open(conn, &folder, index)
+      let iso = self.iso_of(&folder.items[index]);
+      let leaf = super::leaf::open(conn, iso, &folder, index)
         .ok_or_else(|| format!("'{segment}' has no shape to draw"))?;
       return match segments.next() {
         Some(below) => Err(format!("no '{below}' under '{}'", leaf.breadcrumb())),

@@ -28,13 +28,13 @@ fn areas_above(folder: &folder) -> Vec<i64> {
     .collect()
 }
 
-pub fn open(conn: &Connection, folder: &folder, index: usize) -> Option<leaf> {
+pub fn open(conn: &Connection, iso: &str, folder: &folder, index: usize) -> Option<leaf> {
   let item = folder.items.get(index)?;
   let entry::place(node) = &item.entry else {
     return None;
   };
   let above = areas_above(folder);
-  let address = crate::address::at_path(conn, node.id, &above)?;
+  let address = crate::address::at_path(conn, iso, node.id, &above)?;
   let drawn: Vec<i64> = std::iter::once(node.id)
     .chain(above.iter().copied())
     .collect();

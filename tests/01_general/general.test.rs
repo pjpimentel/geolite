@@ -1,8 +1,9 @@
 use crate::common::ask::ask;
 use crate::common::harness::{
-  assert_in_order, encode, get, plain, relabel_country, request, scenario, world, world_cell,
+  assert_in_order, encode, get, plain, record_of, relabel_country, request, scenario, world,
+  world_cell,
 };
-use crate::common::query::{countries_of, files_of, first, kind_of, matches, number_of};
+use crate::common::query::{countries_of, files_of, first, id_of, kind_of, matches, number_of};
 use crate::extract::{REGENERATE, extracted};
 use crate::house_number::{HOUSE_NUMBERS, NODE_OF_197};
 use crate::isolated_admin_levels::NOTHING_ISOLATED;
@@ -297,7 +298,7 @@ fn _00_11_the_build_folds_the_streets_between_the_hierarchy_and_the_search_index
 #[ignore]
 fn _01_00_coordinates_query_prints_pretty_printed_json() {
   let w = world();
-  let out = w.geolite(&["query", ANY_POINT, "--include-wkt", "false"]);
+  let out = w.geolite(&["query", ANY_POINT]);
   assert_eq!(out.status, 0, "stderr: {}", out.stderr);
   serde_json::from_str::<Value>(&out.stdout).expect("stdout must be valid json");
   // to_string_pretty, not to_string: two-space indentation and `service` first, in
@@ -364,19 +365,18 @@ fn _01_04_text_query_reports_the_text_service() {
   assert_eq!(world().run(&[ANY_TEXT])["service"], "text_to_address");
 }
 
-// 01.05. contract
+// 01.05. contract: an answer names its levels and never carries their shape
 #[test]
 #[ignore]
-fn _01_05_include_wkt_false_omits_every_geometry() {
-  for m in matches(&world().run(&[ANY_TEXT])) {
-    for level in m["admin_levels"]
-      .as_array()
-      .expect("admin_levels must be an array")
-    {
-      assert!(
-        level.get("wkt").is_none(),
-        "wkt must be skipped entirely when disabled"
-      );
+fn _01_05_no_answer_of_geocode_carries_a_geometry() {
+  for input in [ANY_TEXT, ANY_POINT] {
+    for m in matches(&world().run(&[input])) {
+      for level in m["admin_levels"]
+        .as_array()
+        .expect("admin_levels must be an array")
+      {
+        assert!(level.get("wkt").is_none(), "{input}: {level}");
+      }
     }
   }
 }
@@ -482,7 +482,12 @@ fn _01_11_an_unknown_route_returns_not_found() {
 fn _01_12_a_non_get_method_on_a_known_route_returns_method_not_allowed() {
   let w = world();
   let s = w.start_server();
-  for (method, path) in [("POST", "/geocode"), ("PUT", "/status"), ("DELETE", "/")] {
+  for (method, path) in [
+    ("POST", "/geocode"),
+    ("POST", "/address"),
+    ("PUT", "/status"),
+    ("DELETE", "/"),
+  ] {
     let r = request(s.port, method, path);
     assert_eq!(r.status, 405, "{method} {path}");
     assert_eq!(r.text(), r#"{"error":"method not allowed"}"#);
@@ -507,18 +512,22 @@ fn _01_13_a_non_get_method_on_an_unknown_route_returns_not_found() {
 fn _01_14_options_on_a_known_route_returns_no_content_with_cors_preflight_headers() {
   let w = world();
   let s = w.start_server();
-  let r = request(s.port, "OPTIONS", "/geocode");
-  assert_eq!(r.status, 204);
-  assert_eq!(
-    r.header("access-control-allow-methods"),
-    Some("GET, OPTIONS")
-  );
-  assert_eq!(
-    r.header("access-control-allow-headers"),
-    Some("Content-Type, If-None-Match")
-  );
-  assert_eq!(r.header("content-length"), Some("0"));
-  assert!(r.body.is_empty());
+  for path in ["/geocode", "/address"] {
+    let r = request(s.port, "OPTIONS", path);
+    assert_eq!(r.status, 204, "{path}");
+    assert_eq!(
+      r.header("access-control-allow-methods"),
+      Some("GET, OPTIONS"),
+      "{path}"
+    );
+    assert_eq!(
+      r.header("access-control-allow-headers"),
+      Some("Content-Type, If-None-Match"),
+      "{path}"
+    );
+    assert_eq!(r.header("content-length"), Some("0"), "{path}");
+    assert!(r.body.is_empty(), "{path}");
+  }
 }
 
 // 01.15. contract
@@ -533,6 +542,8 @@ fn _01_15_every_response_carries_the_cors_origin_header() {
     "/status",
     "/openapi.json",
     "/geocode",
+    "/address",
+    "/address?id=br.r1",
     "/nope",
   ] {
     assert_eq!(
@@ -555,6 +566,8 @@ fn _01_16_every_response_declares_its_length_and_never_chunks() {
     "/status",
     "/openapi.json",
     "/geocode",
+    "/address",
+    "/address?id=br.r1",
     "/nope",
   ] {
     let r = get(s.port, path);
@@ -580,29 +593,6 @@ fn _01_17_a_missing_query_param_returns_bad_request() {
   let r = get(s.port, "/geocode");
   assert_eq!(r.status, 400);
   assert_eq!(r.text(), r#"{"error":"missing query param: query"}"#);
-}
-
-// 01.18. contract
-#[test]
-#[ignore]
-fn _01_18_only_the_literal_false_disables_the_geometry() {
-  let w = world();
-  let s = w.start_server();
-  let base = format!("/geocode?query={}", encode(ANY_POINT));
-
-  let disabled = get(s.port, &format!("{base}&include_wkt=false"));
-  assert!(
-    !disabled.text().contains("\"wkt\""),
-    "include_wkt=false must drop the geometry"
-  );
-
-  for value in ["0", "no", "FALSE"] {
-    let kept = get(s.port, &format!("{base}&include_wkt={value}"));
-    assert!(
-      kept.text().contains("\"wkt\""),
-      "include_wkt={value} is not the literal `false` and must keep the geometry"
-    );
-  }
 }
 
 // 01.19. contract
@@ -641,10 +631,14 @@ fn _01_20_the_openapi_spec_documents_exactly_these_routes_and_schemas() {
     .map(String::as_str)
     .collect();
   paths.sort_unstable();
-  assert_eq!(paths, ["/geocode", "/status"]);
+  assert_eq!(paths, ["/address", "/geocode", "/status"]);
   assert!(
     spec["paths"]["/geocode"]["get"].is_object(),
     "geocode is a GET"
+  );
+  assert!(
+    spec["paths"]["/address"]["get"].is_object(),
+    "address is a GET"
   );
   assert!(
     spec["paths"]["/status"]["get"].is_object(),
@@ -683,6 +677,13 @@ fn _01_21_the_error_bodies_are_exactly_these() {
   let query = encode(ANY_TEXT);
   let cases: Vec<(&str, &str, String)> = vec![
     ("GET", "missing_query", "/geocode".to_string()),
+    ("GET", "missing_id", "/address".to_string()),
+    ("GET", "invalid_id", "/address?id=abc".to_string()),
+    (
+      "GET",
+      "unknown_address",
+      "/address?id=xx.r59470".to_string(),
+    ),
     (
       "GET",
       "unknown_route",
@@ -729,6 +730,10 @@ fn _01_21_the_error_bodies_are_exactly_these() {
         "body": "{\"error\":\"bounding_wkt: must be a POLYGON or MULTIPOLYGON\"}",
         "status": 400,
       },
+      "invalid_id": {
+        "body": "{\"error\":\"id must be a country code and the osm elements of a path, e.g. br.r59470.r2931354.w255710390\"}",
+        "status": 400,
+      },
       "invalid_last_admin_levels": {
         "body": "{\"error\":\"last_admin_levels: invalid level 'abc'\"}",
         "status": 400,
@@ -741,6 +746,10 @@ fn _01_21_the_error_bodies_are_exactly_these() {
         "body": "{\"error\":\"method not allowed\"}",
         "status": 405,
       },
+      "missing_id": {
+        "body": "{\"error\":\"missing query param: id\"}",
+        "status": 400,
+      },
       "missing_query": {
         "body": "{\"error\":\"missing query param: query\"}",
         "status": 400,
@@ -748,6 +757,10 @@ fn _01_21_the_error_bodies_are_exactly_these() {
       "non_numeric_quality": {
         "body": "{\"error\":\"quality: not a number: invalid float literal\"}",
         "status": 400,
+      },
+      "unknown_address": {
+        "body": "{\"error\":\"address not found\"}",
+        "status": 404,
       },
       "unknown_route": {
         "body": "{\"error\":\"not found\"}",
@@ -883,7 +896,7 @@ fn _01_28_the_http_server_answers_over_every_base_of_the_data_path() {
   assert_eq!(files_of(&status), ["ar/data.sqlite3", "br/data.sqlite3"]);
 
   let text = format!(
-    "/geocode?query={}&include_wkt=false",
+    "/geocode?query={}",
     encode("rua castro alves, embare, santos")
   );
   let answer = get(s.port, &text).json();
@@ -900,7 +913,7 @@ fn _01_28_the_http_server_answers_over_every_base_of_the_data_path() {
     both.contains(&"AR".to_string()) && both.contains(&"BR".to_string()),
     "a text answers both countries: {both:?}"
   );
-  let point = format!("/geocode?query={}&include_wkt=false", encode(ANY_POINT));
+  let point = format!("/geocode?query={}", encode(ANY_POINT));
   let by_country = get(s.port, &point).json();
   assert_eq!(
     by_country["databases"],
@@ -937,6 +950,21 @@ fn _01_28_the_http_server_answers_over_every_base_of_the_data_path() {
     "{}",
     refused.text()
   );
+  for (iso, country) in [("ar", "AR"), ("br", "BR")] {
+    let answer = get(s.port, &format!("{text}&countries={iso}")).json();
+    let top = first(&answer);
+    let id = id_of(top);
+    assert!(
+      id.starts_with(&format!("{iso}.")),
+      "the id names its base: {id}"
+    );
+    let record = record_of(s.port, top);
+    assert_eq!(record["id"], top["id"]);
+    assert_eq!(
+      record["attributes"]["country_iso_3166_1_alpha_2_code"], country,
+      "the prefix routes the record to its base"
+    );
+  }
 }
 
 // 01.30. contract: the cli narrows a question of a data path of two bases with `--countries`, its
@@ -949,15 +977,12 @@ fn _01_30_query_countries_narrows_the_cli_to_the_bases_named() {
   w.copy_base_into(&dir, "ar");
   let text = "rua castro alves, embare, santos";
 
-  let both = w.geolite_in(&dir, &["query", "--include-wkt", "false", text]);
+  let both = w.geolite_in(&dir, &["query", text]);
   assert_eq!(both.status, 0, "{}", both.stderr);
   let both: Value = serde_json::from_str(&both.stdout).expect("the query must print json");
   assert_eq!(files_of(&both), ["ar/data.sqlite3", "br/data.sqlite3"]);
 
-  let narrowed = w.geolite_in(
-    &dir,
-    &["query", "--include-wkt", "false", "--countries", "ar", text],
-  );
+  let narrowed = w.geolite_in(&dir, &["query", "--countries", "ar", text]);
   assert_eq!(narrowed.status, 0, "{}", narrowed.stderr);
   let narrowed: Value = serde_json::from_str(&narrowed.stdout).expect("the query must print json");
   assert_eq!(
@@ -1039,7 +1064,7 @@ fn _01_29_the_response_schema_documents_the_origin_of_a_house_number() {
 #[ignore]
 fn _02_00_a_nonsense_query_returns_no_matches() {
   let w = world();
-  let out = w.geolite(&["query", "zzzz qqqq wwww", "--include-wkt", "false"]);
+  let out = w.geolite(&["query", "zzzz qqqq wwww"]);
   assert_eq!(out.status, 0, "an empty result is not an error");
   let result: Value = serde_json::from_str(&out.stdout).expect("stdout must be json");
   assert!(matches(&result).is_empty());
@@ -1268,10 +1293,7 @@ fn _02_15_an_unparsable_bounding_wkt_returns_bad_request() {
 fn _02_16_a_malformed_percent_escape_decodes_as_a_literal() {
   let w = world();
   let s = w.start_server();
-  let broken = get(
-    s.port,
-    "/geocode?query=rua%20castro%20alves%zz&include_wkt=false",
-  );
+  let broken = get(s.port, "/geocode?query=rua%20castro%20alves%zz");
   assert_eq!(broken.status, 200);
   assert_eq!(
     first(&broken.json())["admin_levels"]
@@ -1281,7 +1303,7 @@ fn _02_16_a_malformed_percent_escape_decodes_as_a_literal() {
     Some("Rua Castro Alves"),
   );
 
-  let accented = get(s.port, "/geocode?query=embar%C3%A9&include_wkt=false");
+  let accented = get(s.port, "/geocode?query=embar%C3%A9");
   assert_eq!(accented.status, 200);
   assert!(
     !matches(&accented.json()).is_empty(),
@@ -1432,8 +1454,9 @@ fn _04_00_distant_coordinates_still_resolve_because_streets_have_no_distance_cap
   );
 }
 
-// 05.00. regression guard: the id names the path an answer took, a pure function of the area ids,
-// never an insert-order rowid, and the same query answers the same ids twice
+// 05.00. regression guard: the id is the path an answer took, the country of its base, the osm
+// element of every level from the root to the leaf and the number answered, never an insert-order
+// rowid, and the same query answers the same ids twice
 #[test]
 #[ignore]
 fn _05_00_match_id_names_the_path_and_repeats_across_runs() {
@@ -1441,13 +1464,47 @@ fn _05_00_match_id_names_the_path_and_repeats_across_runs() {
   let ids: Vec<String> = matches(&result)
     .iter()
     .map(|m| {
-      let id = m["id"].as_str().expect("id must be a string").to_string();
-      assert_eq!(id.len(), 36, "a uuid in its hyphenated form: {id}");
+      let id = id_of(m).to_string();
+      let mut segments = id.split('.');
+      assert_eq!(
+        segments.next(),
+        Some("br"),
+        "the country of the base first: {id}"
+      );
+      let mut elements: Vec<String> = segments.map(str::to_string).collect();
+      if let Some(number) = m["house_number"]["number"].as_str() {
+        assert_eq!(
+          elements.pop().as_deref(),
+          Some(format!("n{number}").as_str()),
+          "the number answered comes after the leaf: {id}"
+        );
+      }
+      let ladder: Vec<String> = m["admin_levels"]
+        .as_array()
+        .expect("admin_levels must be an array")
+        .iter()
+        .map(|level| {
+          match (
+            level["osm_relation_id"].as_u64(),
+            level["osm_way_id"].as_u64(),
+          ) {
+            (Some(relation), _) => format!("r{relation}"),
+            (None, Some(way)) => format!("w{way}"),
+            (None, None) => panic!("a level names its osm element: {level}"),
+          }
+        })
+        .collect();
       assert!(
-        m["admin_levels"]
-          .as_array()
-          .is_some_and(|levels| !levels.is_empty()),
+        !ladder.is_empty(),
         "a match must carry at least one admin level"
+      );
+      assert_eq!(elements.last(), ladder.last(), "the leaf comes last: {id}");
+      let (mut elements, mut ladder) = (elements, ladder);
+      elements.sort_unstable();
+      ladder.sort_unstable();
+      assert_eq!(
+        elements, ladder,
+        "one element per level of the ladder: {id}"
       );
       id
     })

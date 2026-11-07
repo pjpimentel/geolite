@@ -239,9 +239,7 @@ impl world {
   }
 
   pub fn run(&self, args: &[&str]) -> serde_json::Value {
-    let mut full = args.to_vec();
-    full.extend_from_slice(&["--include-wkt", "false"]);
-    self.query_json(&full)
+    self.query_json(args)
   }
 
   pub fn query_json(&self, args: &[&str]) -> serde_json::Value {
@@ -557,9 +555,23 @@ pub fn assert_in_order(text: &str, lines: &[&str]) {
   }
 }
 
+// the record of a match, asked of `/address` by the id its answer gave
+pub fn record_of(port: u16, m: &serde_json::Value) -> serde_json::Value {
+  let id = m["id"].as_str().expect("a match carries an id");
+  let r = get(port, &format!("/address?id={}", encode(id)));
+  assert_eq!(
+    r.status,
+    200,
+    "/address?id={id} answered {}: {}",
+    r.status,
+    r.text()
+  );
+  r.json()
+}
+
 // a text query against the database of a scratch or of the world
 pub fn query_at(w: &world, data_path: &Path, text: &str) -> serde_json::Value {
-  let out = w.geolite_in(data_path, &["query", text, "--include-wkt", "false"]);
+  let out = w.geolite_in(data_path, &["query", text]);
   assert_eq!(
     out.status, 0,
     "query {text:?} exited {}:\n{}",
