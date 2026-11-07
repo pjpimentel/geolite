@@ -144,7 +144,7 @@ $ geolite query "rua castro alves, embare, santos, sao paulo" --countries br   #
 
 ### explore
 ```bash
-$ geolite http-server   # open http://localhost:8080; GET /address?id=<id> answers a match again, its shapes with it
+$ geolite http-server   # open http://localhost:8080;
 $ geolite tui           # the admin levels walked like folders, one per country at the root
 ```
 
